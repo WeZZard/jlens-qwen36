@@ -12,17 +12,31 @@ The goal is practical:
 > Can we build visual debuggers for hidden diagnostic signals inside
 > local LLMs?
 
-![slice visualization](assets/screenshot.png)
+![C++ bug example](assets/screenshot_bug.png)
 
 ## Demo examples
 
-**C++ bug detection.** Feed the model `void main(void) { return 1; }` and
-ask it to find issues. At layer 43, around the `return 1;` line, the
-J-lens readout surfaces `errors`, `problems`, `violations`, `mistakes`,
-`incorrect`, `wrong` — the model is privately detecting the bug before
-writing its answer.
+**C++ bug detection.** Feed the model the following prompt:
 
-![C++ bug example](assets/screenshot_bug.png)
+```
+Find the issues:
+
+```c++
+void main(void) {
+  return 1;
+}
+```
+```
+
+At layer 43, position 20 (the newline after `return 1;`), the J-lens
+readout surfaces:
+
+```
+errors(5787)  problems(5154)  violations(25709)  mistakes(20017)
+incorrect(14673)  wrong(4808)  error(1412)  corrections(48684)
+```
+
+The model is privately detecting the bug before writing its answer.
 
 This is **not** proof that the model "knows" the bug in a mechanistic
 sense. It is an example of why J-lens-style readouts may be useful as a
