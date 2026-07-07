@@ -1,12 +1,17 @@
-"""Hybrid analytic fit: analytic MLP + closed-form norm + VJP attention.
+"""Full-depth analytic fit: exact-branch Jacobians, chain-multiplied.
 
-Uses the analytic MLP Jacobian (77x faster) and closed-form RMSNorm
-Jacobian (12000x faster) from analytic_layer.py, with VJP for the
-attention branch (still the bottleneck, ~14-19s per layer).
+Uses decoder_layer_jacobian(analytic_attn=True) — analytic attention +
+MLP branches with input norms folded per-position (analytic_attn.py) —
+and the closed-form final-norm Jacobian.
 
-Per-layer M_l cost: ~15-20s (was ~60s) = ~3x speedup.
-Full 64-layer chain per prompt: ~19min (was ~34min for 23 layers).
-20 prompts, full 64-layer depth: ~6.3h (overnight, with full depth!).
+With include_gbeta=True (measured g/beta gap 4.9-7.5%, see
+scripts/measure_gbeta_gap.py) the GDN branch runs the ops BPTT:
+~27s per GDN layer, ~1.4s per FA layer => ~22 min/prompt full depth,
+~7h for 20 prompts. With include_gbeta=False (Metal kernel path) it
+drops to ~3.5s/layer => ~1h for 20 prompts, at the cost of dropping
+the decay-gate paths (readout-grade, not intervention-grade).
+
+Chain convention: J_l transports acts[l] (see fit_analytic_single_prompt).
 """
 
 from __future__ import annotations
@@ -36,7 +41,21 @@ def fit_analytic_single_prompt(
     max_seq_len: int = 32,
     skip_first: int = SKIP_FIRST_N_POSITIONS,
 ) -> dict[int, np.ndarray]:
-    """Compute J_l for all source layers via chain-multiply with analytic M_l."""
+    """Compute J_l for all source layers via chain-multiply with analytic M_l.
+
+    Convention: J_l transports acts[l], the residual AFTER layer l (what
+    lens.transport applies it to and what interventions patch). So
+    J_{n_layers-1} = J_norm, and each chain step multiplies the Jacobian of
+    layer l EVALUATED AT ITS INPUT acts[l-1]:
+
+        J_{l-1} = J_l @ M_l,   M_l = d(layer_l(h))/dh at h = acts[l-1]
+
+    The previous version evaluated layer l at acts[l] (its own OUTPUT) and
+    saved the product under index l — an off-by-one that both linearized at
+    the wrong point and left an extra layer-l factor in every J_l (33-49%
+    rel error on a toy chain vs 3-5% for this indexing; the residual is the
+    known position-averaging approximation).
+    """
     n_layers = model.n_layers
     D = model.d_model
     source_layers = sorted(set(source_layers))
@@ -55,19 +74,26 @@ def fit_analytic_single_prompt(
 
     J_current = J_norm
     results: dict[int, np.ndarray] = {}
+    if n_layers - 1 in source_layers:
+        results[n_layers - 1] = J_current.copy()
 
-    for l in range(n_layers - 1, min_src - 1, -1):
-        logger.info("  computing M_%d (analytic hybrid)...", l)
+    for l in range(n_layers - 1, min_src, -1):
+        logger.info("  computing M_%d (layer %d at its input acts[%d])...", l, l, l - 1)
         t0 = time.perf_counter()
-        M_l = np.array(decoder_layer_jacobian(model, l, acts[l], skip_first=skip_first).astype(mx.float32))
+        # include_gbeta=True per the measured 4.9-7.5% g/beta gap
+        # (scripts/measure_gbeta_gap.py, 2026-07-08): required for causal
+        # interventions; forces the ops BPTT for GDN layers (~27s vs ~3.6s).
+        M_l = np.array(decoder_layer_jacobian(
+            model, l, acts[l - 1], skip_first=skip_first, include_gbeta=True,
+        ).astype(mx.float32))
         mx.eval(M_l)
         logger.info("    %.1fs, ||M||=%.3e", time.perf_counter() - t0, np.linalg.norm(M_l))
 
         J_current = J_current @ M_l
-        logger.info("    J_%d ||.||=%.3e", l, np.linalg.norm(J_current))
+        logger.info("    J_%d ||.||=%.3e", l - 1, np.linalg.norm(J_current))
 
-        if l in source_layers:
-            results[l] = J_current.copy()
+        if l - 1 in source_layers:
+            results[l - 1] = J_current.copy()
 
     return results
 

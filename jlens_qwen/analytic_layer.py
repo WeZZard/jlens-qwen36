@@ -21,6 +21,13 @@ Each component is assembled analytically:
 
 This module implements the MLP branch first (the biggest cost), then
 builds up to the full layer.
+
+Measured on Qwen3.6-27B-4bit (2026-07-08, scripts/verify_analytic_layer.py),
+analytic_attn=True vs the old hybrid vs the exact 5120-VJP reference:
+- GDN layer 32: 4.2s vs 28.3s vs 54s  (rel err 2.14e-2 vs 2.59e-2)
+- FA  layer 35: 1.4s vs 19.3s vs 45s  (rel err 1.45e-2 vs 1.97e-2)
+i.e. ~7-14x over the hybrid, ~13-32x over the exact VJP, while being
+MORE accurate (the residual error is the branch-product junction).
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ import numpy as np
 
 from .model import MLXLensModel
 from .analytic import rms_norm_jacobian, final_norm_jacobian
+from .analytic_attn import attn_branch_jacobian, _linear_weight, _valid_mask
 
 
 def _dequantize_linear(layer, module) -> tuple[mx.array, mx.array]:
@@ -41,13 +49,7 @@ def _dequantize_linear(layer, module) -> tuple[mx.array, mx.array]:
 
     Returns the dequantized weight and bias as fp32 mx arrays.
     """
-    w = module["weight"]
-    s = module["scales"]
-    b = module["biases"]
-    w_deq = mx.dequantize(w, s, b, group_size=module.group_size, bits=module.bits)
-    bias = None
-    # Check if there's a bias — QuantizedLinear typically doesn't for these layers
-    return w_deq.astype(mx.float32), bias
+    return _linear_weight(module)
 
 
 def mlp_jacobian(
@@ -123,24 +125,88 @@ def mlp_jacobian(
     return J_a + J_b  # [D, D]
 
 
+def mlp_branch_jacobian(
+    mlp,
+    h_mid: mx.array,
+    w_norm: mx.array,
+    eps: float,
+    valid_mask: mx.array,
+) -> mx.array:
+    """Analytic Jacobian of the full MLP branch d(mlp(norm(h)))/dh with the
+    post-attention RMSNorm folded PER-POSITION (exact, unlike
+    `mlp_jacobian @ rms_norm_jacobian` which multiplies position averages).
+
+    Per position: J(s) = W_down [diag(dA_s) W_gate + diag(dB_s) W_up] J_n(s)
+    with dA_s = silu'(g_s) u_s, dB_s = silu(g_s). Splitting
+    J_n(s) = diag(w)/r_s - (w .* x_hat_s) x_hat_s^T/(D r_s), the position sum
+    factors into diagonal rescales plus rank-|valid| outer-product
+    corrections — same cost as the decorrelated version.
+
+    h_mid: [S, D] pre-norm residual entering the MLP branch.
+    Returns [D, D], position-averaged over valid positions.
+    """
+    S, D = h_mid.shape
+    xf = h_mid.astype(mx.float32)
+    r = mx.sqrt((xf * xf).mean(axis=-1, keepdims=True) + eps)  # [S, 1]
+    x_hat = xf / r
+    w = w_norm.astype(mx.float32)
+    xn = mx.fast.rms_norm(xf, w, eps)  # [S, D]
+    m_over_r = valid_mask / r[:, 0]    # [S]
+    n_valid = valid_mask.sum()
+
+    W_gate, _ = _linear_weight(mlp.gate_proj)  # [I, D]
+    W_up, _ = _linear_weight(mlp.up_proj)      # [I, D]
+    W_down, _ = _linear_weight(mlp.down_proj)  # [D, I]
+
+    g = mx.matmul(xn, W_gate.T)  # [S, I]
+    u = mx.matmul(xn, W_up.T)    # [S, I]
+    sig = mx.sigmoid(g)
+    dA = sig * (1.0 + g * (1.0 - sig)) * u  # silu'(g) * u, [S, I]
+    dB = g * sig                             # silu(g), [S, I]
+
+    wx = w[None] * x_hat  # [S, D]
+    inner = mx.zeros((W_gate.shape[0], D), dtype=mx.float32)
+    for dcoef, W in ((dA, W_gate), (dB, W_up)):
+        # diag part: diag(sum_s dcoef_s m_s/r_s) @ W @ diag(w)
+        d1 = mx.einsum("si,s->i", dcoef, m_over_r)  # [I]
+        inner = inner + (W * d1[:, None]) * w[None]
+        # rank part: sum_s (dcoef_s .* (W (w .* x_hat_s))) x_hat_s^T / (D r_s)
+        p = mx.matmul(wx, W.T)  # [S, I]
+        P = dcoef * p * (m_over_r / D)[:, None]  # [S, I]
+        inner = inner - mx.matmul(P.T, x_hat)    # [I, D]
+
+    return mx.matmul(W_down, inner) / n_valid
+
+
 def decoder_layer_jacobian(
     model: MLXLensModel,
     layer_idx: int,
     h_in: mx.array,
     *,
     skip_first: int = 4,
+    analytic_attn: bool = True,
+    include_gbeta: bool = False,
+    chunk: int = 256,
 ) -> mx.array:
     """Full per-layer Jacobian M_l = d(h_{l+1})/d(h_l), position-averaged.
 
     Assembles from the layer structure:
-        r = attn(norm_in(x))
-        h = x + r
-        out = h + mlp(norm_post(h))
-    => d(out)/d(x) = I + M_mlp @ (I + M_attn @ M_norm_in)
+        r = attn(norm_in(x));  h_mid = x + r;  out = h_mid + mlp(norm_post(h_mid))
+    => d(out)/d(x) = (I + M_mlp_branch) @ (I + M_attn_branch)
 
-    For now, the attention branch uses the VJP-based per_layer_jacobian
-    (slow but exact). The MLP branch uses the analytic Hadamard trick.
-    A future version will also make the attention branch analytic.
+    analytic_attn=True (default): both branch Jacobians are analytic and
+    EXACT within their branch (input norms folded per-position, attention
+    core backpropagated with analytic seeds — see analytic_attn.py). The
+    single remaining within-layer approximation is the product junction
+    between the two averaged branch factors (position decorrelation of
+    M_mlp_branch @ M_attn_branch).
+
+    analytic_attn=False: the original hybrid (VJP attention + averaged
+    norm factors), kept for A/B comparison. It carries three decorrelated
+    junctions instead of one.
+
+    include_gbeta: include the GDN x->g/beta gate paths (see
+    PERFORMANCE_REVIEW.md §4.1). False matches the kernel-fit reference.
 
     Args:
         model: the MLX model.
@@ -184,40 +250,38 @@ def decoder_layer_jacobian(
     h_mid = h + r  # [S, D] — residual after attention
     x_normed_post = layer.post_attention_layernorm(h_mid.astype(h_in.dtype)).astype(mx.float32)  # [S, D]
 
-    # M_norm_in: Jacobian of input_layernorm (RMSNorm), position-averaged.
+    weight_post = layer.post_attention_layernorm["weight"].astype(mx.float32)
+    eps_post = float(layer.post_attention_layernorm.eps) if hasattr(layer.post_attention_layernorm, "eps") else 1e-6
+
+    if analytic_attn:
+        # Exact branch Jacobians (input norms folded per-position).
+        M_attn_full = attn_branch_jacobian(
+            layer, h, skip_first=skip_first,
+            include_gbeta=include_gbeta, chunk=chunk,
+        )  # d(r)/d(x)
+        M_mid = mx.eye(D) + M_attn_full  # d(h_mid)/d(x)
+        M_mlp_branch = mlp_branch_jacobian(
+            layer.mlp, h_mid, weight_post, eps_post, valid_mask
+        )  # d(mlp(norm_post(h)))/d(h_mid)
+        # Single remaining approximation: the averaged-product junction.
+        return M_mid + M_mlp_branch @ M_mid
+
+    # Original hybrid path (three decorrelated junctions), kept for A/B.
     weight_in = layer.input_layernorm["weight"].astype(mx.float32)
     eps_in = float(layer.input_layernorm.eps) if hasattr(layer.input_layernorm, "eps") else 1e-6
     M_norm_in = rms_norm_jacobian(h, weight_in, eps_in, valid_mask=valid_mask)  # [D, D]
 
-    # M_attn: Jacobian of the attention sub-layer (attn(norm_in(x)) w.r.t. norm_in(x)),
-    # position-averaged. For now, use VJP (slow). TODO: analytic.
-    # The VJP gives d(layer_out)/d(h_in) which is the FULL layer Jacobian.
-    # I need d(attn(norm_in(x)))/d(norm_in(x)) = d(r)/d(x_normed_in).
-    # Let me compute it via VJP on just the attention sub-layer.
     M_attn = _attn_jacobian_vjp(model, layer_idx, x_normed_in, valid_mask, skip_first)  # [D, D]
-
-    # M_mlp: analytic Jacobian of the MLP branch.
     M_mlp = mlp_jacobian(model, layer_idx, x_normed_post, valid_mask)  # [D, D]
-
-    # M_norm_post: Jacobian of post_attention_layernorm, position-averaged.
-    weight_post = layer.post_attention_layernorm["weight"].astype(mx.float32)
-    eps_post = float(layer.post_attention_layernorm.eps) if hasattr(layer.post_attention_layernorm, "eps") else 1e-6
     M_norm_post = rms_norm_jacobian(h_mid, weight_post, eps_post, valid_mask=valid_mask)  # [D, D]
 
-    # Assemble: d(out)/d(x) = I + M_mlp @ M_norm_post @ (I + M_attn @ M_norm_in)
-    # Wait, let me re-derive:
-    # r = attn(norm_in(x))  => d(r)/d(x) = M_attn @ M_norm_in
-    # h_mid = x + r          => d(h_mid)/d(x) = I + M_attn @ M_norm_in
-    # mlp_in = norm_post(h_mid) => d(mlp_in)/d(x) = M_norm_post @ (I + M_attn @ M_norm_in)
-    # mlp_out = mlp(mlp_in)     => d(mlp_out)/d(x) = M_mlp @ M_norm_post @ (I + M_attn @ M_norm_in)
-    # out = h_mid + mlp_out     => d(out)/d(x) = (I + M_attn @ M_norm_in) + M_mlp @ M_norm_post @ (I + M_attn @ M_norm_in)
-    #                            = (I + M_mlp @ M_norm_post) @ (I + M_attn @ M_norm_in)
-    M_attn_full = M_attn @ M_norm_in  # d(r)/d(x)
-    M_mid = mx.eye(D) + M_attn_full    # d(h_mid)/d(x)
-    M_mlp_full = M_mlp @ M_norm_post @ M_mid  # d(mlp_out)/d(x)
-    M_layer = M_mid + M_mlp_full        # d(out)/d(x)
-
-    return M_layer
+    # r = attn(norm_in(x))      => d(r)/d(x) = M_attn @ M_norm_in
+    # h_mid = x + r             => d(h_mid)/d(x) = I + M_attn @ M_norm_in
+    # out = h_mid + mlp(norm_post(h_mid))
+    M_attn_full = M_attn @ M_norm_in
+    M_mid = mx.eye(D) + M_attn_full
+    M_mlp_full = M_mlp @ M_norm_post @ M_mid
+    return M_mid + M_mlp_full
 
 
 def _attn_jacobian_vjp(
@@ -279,4 +343,33 @@ def valid_positions(seq_len: int, skip_first: int = 4) -> list[int]:
     return list(range(skip_first, seq_len - 1))
 
 
-__all__ = ["mlp_jacobian", "decoder_layer_jacobian", "rms_norm_jacobian"]
+def attn_jacobian_analytic(
+    model: MLXLensModel,
+    layer_idx: int,
+    h_in_2d: mx.array,
+    *,
+    skip_first: int = 4,
+    include_gbeta: bool = False,
+    chunk: int = 256,
+) -> mx.array:
+    """Analytic attention-branch Jacobian, replacing `_attn_jacobian_vjp`.
+
+    NOTE the contract change: takes the PRE-norm residual `h_in_2d` [S, D]
+    and returns d(attn(norm_in(x)))/dx with the input norm folded exactly
+    per-position — i.e. it replaces the product
+    `_attn_jacobian_vjp(...) @ rms_norm_jacobian(...)`, not just the first
+    factor. See analytic_attn.attn_branch_jacobian.
+    """
+    return attn_branch_jacobian(
+        model.layers[layer_idx], h_in_2d,
+        skip_first=skip_first, include_gbeta=include_gbeta, chunk=chunk,
+    )
+
+
+__all__ = [
+    "mlp_jacobian",
+    "mlp_branch_jacobian",
+    "decoder_layer_jacobian",
+    "attn_jacobian_analytic",
+    "rms_norm_jacobian",
+]

@@ -1,0 +1,21 @@
+NOTE: needs ~20 GB and the GPU — do not run while a fit is active.
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files: 100%|██████████| 14/14 [00:00<00:00, 17476.27it/s]
+layers: [32, 35]
+layer 32 (GDN): rel err new=2.140e-02 (4.2s)  old=2.593e-02 (28.3s)  ref exact VJP (54s)
+layer 35 (FA): rel err new=1.445e-02 (1.4s)  old=1.973e-02 (19.3s)  ref exact VJP (45s)
+
+--- Additional finding (Fable 5, during handoff execution) ---
+CHAIN OFF-BY-ONE in fit.py/fit_analytic.py (predates this handoff):
+The chain loop computed M_l = Jac(layer l) evaluated at acts[l] — layer
+l's OUTPUT, not its input acts[l-1] — and saved the product under index l.
+Net effect: every J_l carried an extra layer-l factor at a shifted
+linearization point, while lens.transport applies J_l to acts[l].
+Toy-chain ground truth (tests/test_chain_indexing.py):
+  as-coded: 33-49% rel error;  fixed indexing: 2.6-4.8% (= the known
+  position-averaging approximation).
+FIXED in both fit.py and fit_analytic.py before the v0.2 refit:
+  J_{l-1} = J_l @ M_l with M_l = Jac(layer l @ acts[l-1]); J_{63} = J_norm.
+Consequence: v0.1-demo and the killed hybrid fit both carry this
+off-by-one (readouts looked plausible because the residual stream is
+smooth across adjacent layers — the lens effectively answered for layer
+l-1). The v0.2 fit is the first with aligned indexing.

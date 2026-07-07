@@ -123,11 +123,12 @@ def fit_chain_single_prompt(
 ) -> dict[int, np.ndarray]:
     """Compute J_l for all source layers via chain multiplication, one prompt.
 
-    J_{n_layers} = final norm Jacobian.
-    J_l = J_{l+1} @ M_l, M_l = DecoderLayer l's Jacobian (d(h_{l+1})/d(h_l)).
+    J_l transports acts[l] (the residual AFTER layer l): J_{n_layers-1} is
+    the final-norm Jacobian, and J_{l-1} = J_l @ M_l with M_l the Jacobian
+    of layer l evaluated at its input acts[l-1].
 
-    We compute M_l for ALL layers from min(source_layers) to n_layers-1 (the
-    chain must be continuous), and save J_l only at source_layers.
+    We compute M_l for ALL layers from min(source_layers)+1 to n_layers-1
+    (the chain must be continuous), and save J_l only at source_layers.
     """
     n_layers = model.n_layers
     D = model.d_model
@@ -151,22 +152,29 @@ def fit_chain_single_prompt(
     )
     logger.info("    %.1fs", time.perf_counter() - t0)
 
-    # Chain backward: J_l = J_{l+1} @ M_l.
-    J_current = J_norm  # [D, D], this is J_{n_layers}
+    # Chain backward. Convention: J_l transports acts[l] (residual AFTER
+    # layer l — what lens.transport applies it to), so each step multiplies
+    # the Jacobian of layer l evaluated at ITS INPUT acts[l-1]:
+    #   J_{l-1} = J_l @ M_l,  M_l = d(layer_l(h))/dh at h = acts[l-1]
+    # (The previous indexing evaluated layer l at acts[l] and saved under l
+    # — off by one on both counts: wrong linearization point AND an extra
+    # layer-l factor in every J_l.)
+    J_current = J_norm  # d(final)/d(acts[n_layers-1])
     results: dict[int, np.ndarray] = {}
+    if n_layers - 1 in source_layers:
+        results[n_layers - 1] = J_current.copy()
 
-    for l in range(n_layers - 1, min_src - 1, -1):
-        logger.info("  computing M_%d (layer %d Jacobian)...", l, l)
+    for l in range(n_layers - 1, min_src, -1):
+        logger.info("  computing M_%d (layer %d at its input acts[%d])...", l, l, l - 1)
         t0 = time.perf_counter()
-        M_l = per_layer_jacobian(model, acts[l], l, skip_first=skip_first)
+        M_l = per_layer_jacobian(model, acts[l - 1], l, skip_first=skip_first)
         logger.info("    %.1fs, ||M||=%.3e", time.perf_counter() - t0, np.linalg.norm(M_l))
 
-        # J_l = J_{l+1} @ M_l
         J_current = J_current @ M_l  # [D, D]
-        logger.info("    J_%d ||.||=%.3e", l, np.linalg.norm(J_current))
+        logger.info("    J_%d ||.||=%.3e", l - 1, np.linalg.norm(J_current))
 
-        if l in source_layers:
-            results[l] = J_current.copy()
+        if l - 1 in source_layers:
+            results[l - 1] = J_current.copy()
 
     return results
 
