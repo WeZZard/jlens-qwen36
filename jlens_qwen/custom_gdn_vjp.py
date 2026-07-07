@@ -37,16 +37,40 @@ def _get_backward_kernel():
     # T must be a compile-time constant for the register arrays; we use MAX_T
     # and only fill the first T entries. MAX_T=128 covers our use case (32-token
     # prompts with T<=32; can be raised for longer sequences).
+    #
+    # Layout v4: Grid = (1, 1, B*Hv*Dk). Each thread handles one (b, hv, dk) and
+    # loops over ALL Dv internally (no cross-thread reduction for dq/dk). dv is
+    # written per (b, hv, dv, t) by looping over Dv inside the thread too -- but
+    # that's Dv*T writes per thread. Alternative: separate kernel for dv.
+    # For simplicity, this kernel computes dq, dk (no atomics) and a second
+    # small kernel computes dv.
+    #
+    # Actually, dq[dk] = sum_dv dy[t,dv] * s_post[t, dv, dk]. With one thread per
+    # (b, hv, dk), it loops over Dv to sum. State per thread: state[dk] is a
+    # scalar (not Dk-wide). The forward recurrence for one dk slot depends on
+    # kv_mem = sum_dk state * k, which is a sum over ALL Dk -- so one thread can't
+    # compute kv_mem alone. Need simd_sum over dk threads.
+    #
+    # Reverting to the v3 layout (32 dk threads x Dv dv threads) but using
+    # threadgroup shared memory to reduce the 4 dv threads per threadgroup, then
+    # atomic-add across the 32 threadgroups along Dv. This reduces atomics by 4x.
+    # Even better: use a two-pass approach. Pass 1: each threadgroup writes its
+    # reduced partial to a per-(b,hv,t,dk,tg_y) buffer (no atomics, direct write).
+    # Pass 2: a tiny reduction kernel sums the 32 tg_y slots per (b,hv,t,dk).
+    #
+    # For now, keep v3 with atomics but reduce contention by having only 1 of
+    # the 4 dv threads per threadgroup do the atomic add (after reducing the 4
+    # via shared memory). 4x fewer atomics.
     source = """
         // Grid: (32, Dv, B*Hv). Threadgroup: (32, 4, 1).
-        // Each thread: one (b, hv, dv, dk_chunk) where dk_chunk = n_per_t slots
-        // starting at dk_idx*n_per_t. 32 dk threads cover Dk=192 with n_per_t=6.
+        // 32 dk threads x 4 dv threads per threadgroup.
         auto n = thread_position_in_grid.z;
         auto b_idx = n / Hv;
         auto hv_idx = n % Hv;
         auto hk_idx = hv_idx / (Hv / Hk);
         auto dk_idx = thread_position_in_threadgroup.x;       // 0..31
         auto dv_idx = thread_position_in_grid.y;               // 0..Dv-1
+        auto tg_dv = thread_position_in_threadgroup.y;          // 0..3
         constexpr int n_per_t = Dk / 32;
         constexpr int MAX_T = 128;
 
@@ -64,24 +88,21 @@ def _get_backward_kernel():
         // state_in: [B, Hv, Dv, Dk]
         auto i_state = state_in + (n * Dv + dv_idx) * Dk;
 
-        // Load this thread's n_per_t slice of the initial state.
         float state[n_per_t];
         for (int i = 0; i < n_per_t; ++i) {
           state[i] = static_cast<float>(i_state[n_per_t * dk_idx + i]);
         }
 
-        // Phase 1: forward, storing per-t s_dec and delta in registers.
+        // Phase 1: forward, storing per-t s_dec and delta.
         float s_dec_store[MAX_T][n_per_t];
         float delta_store[MAX_T];
 
         for (int t = 0; t < T; ++t) {
-          // Decay
           float g_t = g_[hv_idx];
           for (int i = 0; i < n_per_t; ++i) {
             state[i] *= g_t;
             s_dec_store[t][i] = state[i];
           }
-          // kv_mem = sum_dk state * k  (reduce over 32 dk threads)
           float kv_mem_partial = 0.0f;
           for (int i = 0; i < n_per_t; ++i) {
             kv_mem_partial += state[i] * k_[n_per_t * dk_idx + i];
@@ -112,6 +133,12 @@ def _get_backward_kernel():
         g_ -= Hv;
         beta_ -= Hv;
 
+        // Threadgroup shared memory for reducing the 4 dv threads' dq/dk partials.
+        // 32 dk * n_per_t * 4 dv = 32*6*4 = 768 floats. Metal threadgroup mem limit
+        // is ~32KB, so 768*4B = 3KB is fine.
+        threadgroup float dq_shared[32 * 6 * 4];  // [dk_idx][i][tg_dv] -- flattened
+        threadgroup float dk_shared[32 * 6 * 4];
+
         for (int t = T - 1; t >= 0; --t) {
           float g_t = g_[hv_idx];
           float beta_t = beta_[hv_idx];
@@ -128,30 +155,49 @@ def _get_backward_kernel():
           float d_delta = simd_sum(d_delta_partial);
           float d_kv_mem = -d_delta * beta_t;
 
-          // dq, dk: atomic-add this thread's partials.
+          // Store this thread's dq, dk partials to shared memory.
           for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
             float s_post_val = s_dec_store[t][i] + k_[s_idx] * delta_store[t];
             float dq_partial = dy_val * s_post_val;
             float dk_partial = ds_post[i] * delta_store[t] + d_kv_mem * s_dec_store[t][i];
-            device atomic<float>* dq_ptr = (device atomic<float>*)(dq_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx);
-            device atomic<float>* dk_ptr = (device atomic<float>*)(dk_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx);
-            atomic_fetch_add_explicit(dq_ptr, dq_partial, memory_order_relaxed);
-            atomic_fetch_add_explicit(dk_ptr, dk_partial, memory_order_relaxed);
+            dq_shared[(dk_idx * n_per_t + i) * 4 + tg_dv] = dq_partial;
+            dk_shared[(dk_idx * n_per_t + i) * 4 + tg_dv] = dk_partial;
           }
 
-          // dv: thread 0 of simdgroup writes (d_delta is simd_sum, valid on thread 0).
+          // dv: thread 0 of simdgroup writes.
           if (thread_index_in_simdgroup == 0) {
             dv_out[(b_idx * T * Hv * Dv) + (t * Hv * Dv) + (hv_idx * Dv) + dv_idx] =
                 static_cast<OutT>(d_delta * beta_t);
           }
 
-          // s_bar = (ds_post + d_kv_mem * k) * g  (for t-1)
+          // s_bar = (ds_post + d_kv_mem * k) * g
           for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
             float ds_dec = ds_post[i] + d_kv_mem * k_[s_idx];
             s_bar[i] = ds_dec * g_t;
           }
+
+          // Reduce the 4 dv threads' partials and atomic-add to global (1/4 atomics).
+          threadgroup_barrier(mem_flags::mem_threadgroup);
+          if (tg_dv == 0) {
+            for (int i = 0; i < n_per_t; ++i) {
+              auto s_idx = n_per_t * dk_idx + i;
+              float dq_sum = 0.0f, dk_sum = 0.0f;
+              for (int d = 0; d < 4; ++d) {
+                dq_sum += dq_shared[(dk_idx * n_per_t + i) * 4 + d];
+                dk_sum += dk_shared[(dk_idx * n_per_t + i) * 4 + d];
+              }
+              // Only atomic-add if there are multiple threadgroups along Dv
+              // (i.e. Dv > 4). For Dv=128, there are 32 threadgroups along Dv,
+              // so we still need atomics. But this is 4x fewer than before.
+              auto dq_ptr = dq_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx;
+              auto dk_ptr = dk_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx;
+              atomic_fetch_add_explicit((device atomic<float>*)dq_ptr, dq_sum, memory_order_relaxed);
+              atomic_fetch_add_explicit((device atomic<float>*)dk_ptr, dk_sum, memory_order_relaxed);
+            }
+          }
+          threadgroup_barrier(mem_flags::mem_threadgroup);
 
           q_ -= Hk * Dk;
           k_ -= Hk * Dk;
