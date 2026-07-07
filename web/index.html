@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>J-Space Visualizer — Qwen3.6-27B</title>
+<style>
+body { margin: 0; font: 13px/1.4 system-ui, -apple-system, sans-serif; color: #333; background: #fff; }
+#app { display: flex; height: 100vh; flex-direction: column; }
+header { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
+header h1 { margin: 0; font-size: 16px; }
+header .meta { color: #666; font-size: 12px; margin-top: 2px; }
+#controls { padding: 8px 12px; border-bottom: 1px solid #ddd; display: flex; gap: 8px; align-items: center; }
+#controls textarea { flex: 1; height: 60px; font: inherit; padding: 4px; }
+#controls button { padding: 6px 12px; cursor: pointer; }
+#main { flex: 1; display: flex; overflow: hidden; }
+#prompt-col { width: 200px; border-right: 1px solid #ddd; overflow-y: auto; padding: 4px; }
+#prompt-col .tok { padding: 1px 4px; margin: 1px 0; border-radius: 3px; cursor: pointer; font-family: monospace; }
+#prompt-col .tok:hover { background: #eef; }
+#prompt-col .tok.selected { background: #cdf; }
+#grid-col { flex: 1; overflow: auto; padding: 4px; }
+#grid { border-collapse: collapse; }
+#grid th, #grid td { border: 1px solid #eee; padding: 2px 4px; font-family: monospace; font-size: 11px; }
+#grid th { background: #f7f7f7; position: sticky; top: 0; }
+#grid td { cursor: pointer; }
+#grid td .word { display: block; }
+#grid td .rank { color: #999; font-size: 9px; }
+#grid td:hover { background: #f0f0ff; }
+#grid td.selected { background: #cdf; }
+#grid td.pinned { outline: 2px solid #f0f; }
+#detail-col { width: 300px; border-left: 1px solid #ddd; overflow-y: auto; padding: 8px; }
+#detail-col h3 { margin: 0 0 8px; }
+#detail-col .readout { font-family: monospace; font-size: 11px; }
+#detail-col .readout .tok { display: inline-block; padding: 1px 4px; margin: 1px; background: #eef; border-radius: 2px; }
+#detail-col .readout .tok.top1 { background: #cdf; }
+.status { color: #999; font-size: 11px; }
+.loading { color: #f60; }
+</style>
+</head><body>
+<div id="app">
+  <header>
+    <h1>J-Space Visualizer — Qwen3.6-27B (4-bit)</h1>
+    <div class="meta" id="lens-info">Loading lens...</div>
+  </header>
+  <div id="controls">
+    <textarea id="prompt" placeholder="Enter a prompt...">Fact: The currency used in the country shaped like a boot is the</textarea>
+    <button id="run-btn">Visualize</button>
+    <span class="status" id="status"></span>
+  </div>
+  <div id="main">
+    <div id="prompt-col"><div class="status">Prompt tokens appear here.</div></div>
+    <div id="grid-col"><div class="status">Click "Visualize" to compute the slice.</div></div>
+    <div id="detail-col"><h3>Detail</h3><div class="readout">Click a cell to see the full top-10 readout at that (position, layer).</div></div>
+  </div>
+</div>
+<script>
+const API = '';
+let state = {
+  slice: null,
+  selectedPos: null,
+  selectedLayer: null,
+  pinned: new Set(),  // token strings
+};
+
+async function loadLensInfo() {
+  const r = await fetch(API + '/api/lens');
+  const info = await r.json();
+  const el = document.getElementById('lens-info');
+  if (info.lens_loaded) {
+    el.textContent = `J-lens: ${info.source_layers.length} layers (${info.source_layers[0]}..${info.source_layers[info.source_layers.length-1]}), ${info.n_prompts} prompts, d_model=${info.d_model}`;
+  } else {
+    el.textContent = `No J-lens loaded (using logit lens J=I). Model: ${info.n_layers} layers, d_model=${info.d_model}`;
+  }
+}
+
+async function runSlice() {
+  const prompt = document.getElementById('prompt').value;
+  const status = document.getElementById('status');
+  status.textContent = 'Computing...';
+  status.className = 'status loading';
+  const r = await fetch(API + '/api/slice', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({prompt, max_seq_len: 128, top_n: 10}),
+  });
+  const data = await r.json();
+  state.slice = data;
+  state.selectedPos = null;
+  state.selectedLayer = null;
+  state.pinned = new Set();
+  status.textContent = `Done (${data.seq_len} tokens, ${data.layers.length} layers)`;
+  status.className = 'status';
+  render();
+}
+
+function render() {
+  if (!state.slice) return;
+  renderPrompt();
+  renderGrid();
+  renderDetail();
+}
+
+function renderPrompt() {
+  const col = document.getElementById('prompt-col');
+  col.innerHTML = '';
+  state.slice.token_strs.forEach((tok, pos) => {
+    const el = document.createElement('div');
+    el.className = 'tok' + (pos === state.selectedPos ? ' selected' : '');
+    el.textContent = tok || '·';
+    el.title = `pos ${pos}: ${JSON.stringify(tok)}`;
+    el.onclick = () => { state.selectedPos = pos; render(); };
+    col.appendChild(el);
+  });
+}
+
+function renderGrid() {
+  const col = document.getElementById('grid-col');
+  col.innerHTML = '';
+  const table = document.createElement('table');
+  table.id = 'grid';
+  const s = state.slice;
+  // Header: layer indices
+  const thead = document.createElement('thead');
+  const hrow = document.createElement('tr');
+  hrow.innerHTML = '<th>pos</th>' + s.layers.map(l => `<th>L${l}</th>`).join('');
+  thead.appendChild(hrow);
+  table.appendChild(thead);
+  // Body: one row per position
+  const tbody = document.createElement('tbody');
+  s.token_strs.forEach((tok, pos) => {
+    const tr = document.createElement('tr');
+    const posCell = document.createElement('th');
+    posCell.textContent = `${pos}:${JSON.stringify(tok).slice(0,8)}`;
+    tr.appendChild(posCell);
+    s.layers.forEach(layer => {
+      const td = document.createElement('td');
+      const cell = s.cells[layer];
+      const top1 = cell.top_tokens[pos][0];
+      const rank0 = cell.top_ids[pos][0];
+      td.innerHTML = `<span class="word">${top1}</span><span class="rank">${rank0}</span>`;
+      td.dataset.pos = pos;
+      td.dataset.layer = layer;
+      if (pos === state.selectedPos && layer === state.selectedLayer) td.classList.add('selected');
+      if (state.pinned.has(top1)) td.classList.add('pinned');
+      td.onclick = () => {
+        state.selectedPos = pos;
+        state.selectedLayer = layer;
+        state.pinned.has(top1) ? state.pinned.delete(top1) : state.pinned.add(top1);
+        render();
+      };
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  col.appendChild(table);
+}
+
+function renderDetail() {
+  const col = document.getElementById('detail-col');
+  col.innerHTML = '<h3>Detail</h3>';
+  if (state.selectedPos === null || state.selectedLayer === null) {
+    col.innerHTML += '<div class="readout">Click a cell to see the full top-10 readout.</div>';
+    return;
+  }
+  const s = state.slice;
+  const pos = state.selectedPos;
+  const layer = state.selectedLayer;
+  const cell = s.cells[layer];
+  col.innerHTML += `<div class="status">Position ${pos} (${JSON.stringify(s.token_strs[pos])}), Layer ${layer}</div>`;
+  const readout = document.createElement('div');
+  readout.className = 'readout';
+  cell.top_tokens[pos].forEach((tok, i) => {
+    const span = document.createElement('span');
+    span.className = 'tok' + (i === 0 ? ' top1' : '');
+    span.textContent = `${tok}(${cell.top_ids[pos][i]})`;
+    if (state.pinned.has(tok)) span.style.outline = '2px solid #f0f';
+    readout.appendChild(span);
+  });
+  col.appendChild(readout);
+
+  if (state.pinned.size > 0) {
+    col.innerHTML += '<h3 style="margin-top:12px">Pinned tokens</h3>';
+    const list = document.createElement('div');
+    list.className = 'readout';
+    state.pinned.forEach(tok => {
+      const span = document.createElement('span');
+      span.className = 'tok';
+      span.textContent = tok;
+      span.onclick = () => { state.pinned.delete(tok); render(); };
+      list.appendChild(span);
+    });
+    col.appendChild(list);
+  }
+}
+
+document.getElementById('run-btn').onclick = runSlice;
+loadLensInfo();
+</script>
+</body></html>
