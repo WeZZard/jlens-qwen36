@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+data/lens/*.npz
+data/lens/*.json
+data/corpus/*.jsonl
