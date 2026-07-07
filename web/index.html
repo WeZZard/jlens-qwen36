@@ -4,290 +4,1166 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>J-Space Visualizer — Qwen3.6-27B</title>
 <style>
-body { margin: 0; font: 13px/1.4 system-ui, -apple-system, sans-serif; color: #333; background: #fff; }
-#app { display: flex; height: 100vh; flex-direction: column; }
-header { padding: 8px 12px; border-bottom: 1px solid #ddd; background: #f7f7f7; }
-header h1 { margin: 0; font-size: 16px; }
-header .meta { color: #666; font-size: 12px; margin-top: 2px; }
-#controls { padding: 8px 12px; border-bottom: 1px solid #ddd; display: flex; gap: 8px; align-items: center; }
-#controls textarea { flex: 1; height: 60px; font: inherit; padding: 4px; }
-#controls button { padding: 6px 12px; cursor: pointer; }
-#main { flex: 1; display: flex; overflow: hidden; }
-#prompt-col { width: 200px; border-right: 1px solid #ddd; overflow-y: auto; padding: 4px; }
-#prompt-col .tok { padding: 1px 4px; margin: 1px 0; border-radius: 3px; cursor: pointer; font-family: monospace; }
-#prompt-col .tok:hover { background: #eef; }
-#prompt-col .tok.selected { background: #cdf; }
-#grid-col { flex: 1; overflow: auto; padding: 4px; }
-#grid { border-collapse: collapse; }
-#grid th, #grid td { border: 1px solid #eee; padding: 1px 3px; font-family: monospace; font-size: 10px; white-space: nowrap; }
-#grid th { background: #f7f7f7; position: sticky; top: 0; min-width: 44px; }
-#grid td { cursor: pointer; min-width: 44px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
-#grid td .word { display: block; }
-#grid td .rank { color: #999; font-size: 9px; }
-#grid td:hover { background: #f0f0ff; }
-#grid td.selected { background: #cdf; }
-#grid td.pinned { outline: 2px solid #f0f; }
-#detail-col { width: 300px; border-left: 1px solid #ddd; overflow-y: auto; padding: 8px; }
-#detail-col h3 { margin: 0 0 8px; }
-#detail-col .readout { font-family: monospace; font-size: 11px; }
-#detail-col .readout .tok { display: inline-block; padding: 1px 4px; margin: 1px; background: #eef; border-radius: 2px; }
-#detail-col .readout .tok.top1 { background: #cdf; }
-.status { color: #999; font-size: 11px; }
-.loading { color: #f60; }
-#gen-panel { border-top: 1px solid #ddd; padding: 8px 12px; background: #f7f7f7; max-height: 35vh; overflow-y: auto; }
-#gen-panel h3 { margin: 0 0 6px; font-size: 13px; }
-#gen-panel .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
-#gen-panel label { font-size: 11px; color: #555; }
-#gen-panel input, #gen-panel select { font: inherit; font-size: 11px; padding: 2px 4px; }
-#gen-panel button { padding: 4px 10px; cursor: pointer; font-size: 11px; }
-.gen-output { font-family: monospace; font-size: 12px; padding: 6px; background: #fff; border: 1px solid #eee; margin: 4px 0; white-space: pre-wrap; }
-.gen-output.base { border-left: 3px solid #999; }
-.gen-output.intervened { border-left: 3px solid #f0f; }
-.diff { color: #d00; font-weight: bold; }
+  :root {
+    --paper-bg: #fdf6e3;
+    --paper-texture: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.5  0 0 0 0 0.4  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+    --surface: #fffef8;
+    --surface-2: #f7f1df;
+    --text: #3a3525;
+    --text-2: #6b6450;
+    --text-3: #9e977f;
+    --border: rgba(60,50,30,0.10);
+    --border-2: rgba(60,50,30,0.16);
+    --accent: #b06a1a;
+    --accent-soft: #f3e6cf;
+    --user-bubble: #b06a1a;
+    --user-bubble-text: #fffef8;
+    --asst-bubble: #f1ead4;
+    --asst-bubble-text: #3a3525;
+    --prefill: #e8e3f5;
+    --prefill-border: #b8a8e0;
+    --token-block: #fffef8;
+    --token-block-border: #cfc6ad;
+    --gen-row: rgba(176,106,26,0.05);
+    --selected: #b06a1a;
+    --selected-soft: #f3e6cf;
+    --frontier: #5a8a3a;
+    --shadow-sm: 0 1px 2px rgba(60,50,30,0.06);
+    --shadow-md: 0 4px 12px rgba(60,50,30,0.08);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --radius-xs: 6px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+    color: var(--text);
+    background-color: var(--paper-bg);
+    background-image: var(--paper-texture);
+    background-repeat: repeat;
+    -webkit-font-smoothing: antialiased;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ===== Top: timeline (paper backdrop, dissolves into content) ===== */
+  #timeline-col {
+    position: relative; z-index: 3;
+    height: 148px; flex-shrink: 0;
+    display: flex; flex-direction: column;
+    background-color: var(--paper-bg);
+    background-image: var(--paper-texture);
+    background-repeat: repeat;
+    border-bottom: none;
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
+  }
+
+  /* ===== Middle: two independently-scrollable columns ===== */
+  #split { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+  #grid-col {
+    position: relative;
+    width: 56%; min-width: 420px;
+    display: flex; flex-direction: column; overflow: hidden;
+    background: transparent;
+    border-right: 1px solid var(--border);
+  }
+  #chat-col {
+    flex: 1; min-width: 320px;
+    display: flex; flex-direction: column;
+    background: transparent;
+    overflow: hidden;
+  }
+
+  /* ----- Chat (right column) ----- */
+  /* (the #chat-header title has been removed; the Clear button is relocated to bottom-right) */
+  #chat-log {
+    flex: 1; overflow-y: auto; padding: 20px 16px 140px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .msg { display: flex; flex-direction: column; gap: 6px; max-width: 88%; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; align-items: flex-start; }
+  .msg .role { font-size: 11px; color: var(--text-3); padding: 0 4px; }
+  .msg .bubble {
+    padding: 10px 14px; border-radius: 16px;
+    font-size: 14px; line-height: 1.5; word-break: break-word;
+    white-space: pre-wrap;
+    box-shadow: var(--shadow-sm);
+  }
+  .msg.user .bubble { background: var(--user-bubble); color: var(--user-bubble-text); border-bottom-right-radius: 4px; }
+  .msg.assistant .bubble { background: var(--asst-bubble); color: var(--asst-bubble-text); border-bottom-left-radius: 4px; }
+  .msg .bubble .tok {
+    padding: 1px 1px; border-radius: 3px; cursor: pointer;
+    transition: background 0.12s;
+  }
+  .msg .bubble .tok:hover { background: rgba(0,0,0,0.08); }
+  .msg.user .bubble .tok:hover { background: rgba(255,255,255,0.18); }
+  .msg .bubble .tok.selected { background: var(--selected-soft); box-shadow: 0 0 0 1px var(--selected); }
+  .msg.user .bubble .tok.selected { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 1px #fff; }
+  .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); }
+  .msg .bubble .placeholder { color: var(--text-3); font-style: italic; }
+
+  /* ===== Bottom: floating message input (fixed, frosted) ===== */
+  #chat-input {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 16px; z-index: 10;
+    width: min(720px, 92vw);
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+  /* auto-follow row sits on top of the input box */
+  #auto-follow-wrap {
+    display: flex; align-items: center; gap: 4px;
+    padding: 0 4px;
+    font-size: 12px; color: var(--text-2);
+    white-space: nowrap;
+    align-self: flex-start;
+  }
+  #auto-follow-wrap input { margin: 0; cursor: pointer; }
+  /* input row holds the textarea + resume + send buttons, frosted together */
+  #chat-input-row {
+    display: flex; gap: 8px; align-items: flex-end;
+    background: rgba(253,246,227,0.72);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid var(--border-2);
+    border-radius: 22px;
+    box-shadow: var(--shadow-md);
+    padding: 8px 10px;
+  }
+  /* resume button (inside the input row when visible) */
+  #resume-btn {
+    padding: 4px 12px; font-size: 12px; font-weight: 500;
+    border: 1px solid var(--accent); background: var(--accent); color: white;
+    border-radius: 12px; cursor: pointer; flex-shrink: 0; height: 44px;
+  }
+  /* clear + settings buttons — fixed to the bottom-right, matching send-btn style */
+  #clear-btn, #settings-btn {
+    position: fixed; bottom: 16px; z-index: 10;
+    height: 44px; padding: 0 18px; border: none; border-radius: 22px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    box-shadow: var(--shadow-sm); transition: background 0.12s, transform 0.1s;
+  }
+  #clear-btn { right: 16px; background: var(--accent); color: white; }
+  #clear-btn:hover { background: #94560f; }
+  #settings-btn { right: 112px; background: var(--surface); color: var(--text-2); border: 1px solid var(--border-2); }
+  #settings-btn:hover { background: var(--surface-2); color: var(--text); }
+  #clear-btn:active, #settings-btn:active { transform: scale(0.97); }
+  #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
+
+  /* settings modal (centered, with dimming backdrop) */
+  #settings-backdrop {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.28);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  #settings-backdrop.visible { display: flex; }
+  #settings-popup {
+    width: min(380px, 92vw);
+    background: rgba(253,246,227,0.96);
+    border: 1px solid var(--border-2); border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 18px 20px;
+  }
+  #settings-popup h3 {
+    margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--text);
+  }
+  #settings-popup .field { margin-bottom: 14px; }
+  #settings-popup .field label {
+    display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px;
+  }
+  #settings-popup .field input {
+    width: 100%; font: inherit; font-size: 13px; padding: 6px 10px;
+    border: 1px solid var(--border-2); border-radius: var(--radius-xs);
+    background: var(--surface); color: var(--text); outline: none;
+  }
+  #settings-popup .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  #settings-popup .field .hint { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+  #settings-popup .actions {
+    display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;
+  }
+  #settings-popup .actions button {
+    min-width: 72px; padding: 6px 16px; border-radius: var(--radius-xs);
+    font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--border-2);
+    background: var(--surface); color: var(--text);
+    transition: background 0.12s;
+  }
+  #settings-popup .actions button.ok { background: var(--accent); color: white; border-color: var(--accent); }
+  #settings-popup .actions button.ok:hover { background: #94560f; }
+  #settings-popup .actions button.cancel:hover { background: var(--border); }
+  #chat-textarea {
+    flex: 1; min-height: 44px; max-height: 120px;
+    font: inherit; font-size: 14px; padding: 10px 14px;
+    border: none; border-radius: 22px;
+    background: transparent; color: var(--text);
+    resize: none; outline: none;
+    transition: box-shadow 0.12s;
+  }
+  #chat-textarea:focus { box-shadow: 0 0 0 3px var(--accent-soft); }
+  #send-btn {
+    height: 44px; padding: 0 18px; border: none; border-radius: 22px;
+    background: var(--accent); color: white; font-size: 14px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    box-shadow: var(--shadow-sm); transition: background 0.12s, transform 0.1s;
+  }
+  #send-btn:hover { background: #94560f; }
+  #send-btn:active { transform: scale(0.97); }
+  #send-btn:disabled { background: var(--text-3); cursor: not-allowed; }
+
+  /* ----- Grid (J-lens output) ----- */
+  /* (the #grid-header panel has been removed) */
+  #grid-body { flex: 1; overflow: auto; padding: 8px 8px 280px 0; background: transparent; }
+  /* (the #grid-header panel has been removed; the grid body now fills the column) */
+  #grid { border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  #grid th, #grid td { padding: 4px 8px; white-space: nowrap; }
+  #grid th {
+    background: rgba(253,246,227,0.85); backdrop-filter: blur(8px); color: var(--text-2); font-weight: 600;
+    position: sticky; top: 0; z-index: 2;
+    border-bottom: 1px solid var(--border-2);
+    min-width: 52px; text-align: center;
+  }
+  #grid th.label {
+    min-width: 140px; text-align: left; position: sticky; left: 0; z-index: 3;
+    border-right: 1px solid var(--border);
+  }
+  #grid td.label {
+    font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 500;
+    color: var(--text); background: rgba(253,246,227,0.85);
+    position: sticky; left: 0; z-index: 1;
+    border-right: 1px solid var(--border);
+    max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  }
+  #grid td.label.gen { color: var(--accent); border-left: 3px solid var(--accent); }
+  #grid td.cell {
+    cursor: pointer; border-radius: 4px; text-align: center;
+    color: var(--text); transition: background 0.12s;
+  }
+  #grid td.cell .word { display: block; font-weight: 500; }
+  #grid td.cell .rank { color: var(--text-3); font-size: 9px; }
+  #grid td.cell:hover { background: var(--accent-soft); }
+  #grid td.cell.selected { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 2px var(--selected); }
+  #grid td.cell.selected .rank { color: var(--text-3); }
+  #grid td.cell.selected-row { background: var(--selected-soft); }
+  #grid tr.gen-row td.cell { background: var(--gen-row); }
+  #grid tr.gen-row td.cell.selected-row { background: var(--accent-soft); }
+
+  /* ----- Detail panel (floating overlay, only when a cell is selected) ----- */
+  #detail {
+    position: absolute;
+    left: 50%; bottom: 16px;
+    transform: translateX(-50%);
+    width: min(560px, 92%);
+    background: rgba(253,246,227,0.88);
+    backdrop-filter: blur(14px) saturate(140%);
+    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 14px 18px;
+    max-height: 40vh; overflow-y: auto;
+    z-index: 5;
+    display: none;
+  }
+  #detail.visible { display: block; }
+  #detail h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+  #detail .empty { color: var(--text-3); font-size: 13px; padding: 8px 0; }
+  #detail .ctx { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
+  #detail .ctx b { color: var(--text); font-family: ui-monospace, Menlo, monospace; }
+  #detail .readout { display: flex; flex-direction: column; gap: 4px; }
+  #detail .readout .row { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+  #detail .readout .row .idx { color: var(--text-3); width: 18px; text-align: right; }
+  #detail .readout .row .tok { font-weight: 500; min-width: 80px; }
+  #detail .readout .row .id { color: var(--text-3); font-size: 11px; }
+  #detail .readout .row .bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  #detail .readout .row .bar > div { height: 100%; background: var(--accent); border-radius: 3px; }
+  #detail .readout .row.top1 .tok { color: var(--accent); font-weight: 600; }
+  #detail .readout .row.top1 .bar > div { background: var(--accent); }
+  #detail .close {
+    position: absolute; top: 8px; right: 10px;
+    border: none; background: transparent; color: var(--text-3);
+    font-size: 18px; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 4px;
+  }
+  #detail .close:hover { color: var(--text); background: var(--border); }
+
+  /* ===== Timeline (now at top; #timeline-col styled in the top section) ===== */
+  /* (the timeline title and the auto-follow/resume controls have been moved out) */
+  #timeline-status { position: absolute; left: 16px; top: 8px; font-size: 12px; color: var(--text-3); z-index: 1; }
+
+  #timeline { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 24px 14px 10px; white-space: nowrap; }
+  .tl-group {
+    display: inline-flex; flex-direction: column; vertical-align: top;
+    margin-right: 10px; padding: 6px 8px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    background: var(--surface-2);
+  }
+  .tl-group.user-group { background: var(--accent-soft); border-color: rgba(0,113,227,0.15); }
+  .tl-preview {
+    font-size: 11px; color: var(--text-3); padding: 0 2px 6px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none; max-width: 100%; font-family: -apple-system, sans-serif;
+  }
+  .tl-blocks { display: inline-flex; align-items: center; gap: 4px; }
+  .tl-block {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 32px; padding: 0 8px;
+    border: 1px solid var(--token-block-border); border-radius: var(--radius-xs);
+    background: var(--token-block); cursor: pointer;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
+    color: var(--text); min-width: 32px; max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+    user-select: none;
+  }
+  .tl-block:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .tl-block.selected { background: var(--selected); color: white; border-color: var(--selected); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .tl-block.prefill {
+    background: var(--prefill); border-color: var(--prefill-border);
+    color: #5b3da8; font-weight: 600; font-family: -apple-system, sans-serif;
+    font-size: 11px; min-width: 40px;
+  }
+  .tl-block.prefill:hover { background: #ddd5f0; }
+  .tl-block.prefill.selected { background: #7b5cc7; color: white; border-color: #7b5cc7; }
+  .tl-block.frontier { box-shadow: 0 0 0 2px var(--frontier); }
+
+  .status { color: var(--text-3); font-size: 13px; }
+  .loading { color: var(--accent); }
+  .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
 </style>
 </head><body>
 <div id="app">
-  <header>
-    <h1>J-Space Visualizer — Qwen3.6-27B (4-bit)</h1>
-    <div class="meta" id="lens-info">Loading lens...</div>
-  </header>
-  <div id="controls">
-    <textarea id="prompt" placeholder="Enter a prompt...">Fact: The currency used in the country shaped like a boot is the</textarea>
-    <button id="run-btn">Visualize</button>
-    <span class="status" id="status"></span>
+  <!-- ===== TOP: timeline (paper backdrop, dissolves into content) ===== -->
+  <div id="timeline-col">
+    <span id="timeline-status" class="status"></span>
+    <div id="timeline"></div>
   </div>
-  <div id="main">
-    <div id="prompt-col"><div class="status">Prompt tokens appear here.</div></div>
-    <div id="grid-col"><div class="status">Click "Visualize" to compute the slice.</div></div>
-    <div id="detail-col"><h3>Detail</h3><div class="readout">Click a cell to see the full top-10 readout at that (position, layer).</div></div>
+
+  <!-- ===== MIDDLE: two independently-scrollable columns ===== -->
+  <div id="split">
+    <!-- ===== LEFT: J-lens grid ===== -->
+    <div id="grid-col">
+      <div id="grid-body"></div>
+      <div id="detail"></div>
+    </div>
+
+    <!-- ===== RIGHT: chat ===== -->
+    <div id="chat-col">
+      <div id="chat-log"></div>
+    </div>
   </div>
-  <div id="gen-panel">
-    <h3>Generate & Intervene</h3>
-    <div class="row">
-      <button id="gen-btn">Generate (baseline)</button>
-      <label>max_tokens <input id="gen-max" type="number" value="32" style="width:50px"></label>
-      <label>temp <input id="gen-temp" type="number" value="0" step="0.1" style="width:50px"></label>
+
+  <!-- ===== BOTTOM: floating message input (fixed, frosted) ===== -->
+  <div id="chat-input">
+    <span id="auto-follow-wrap">
+      <input id="auto-follow-chk" type="checkbox" checked>
+      <label for="auto-follow-chk">Auto-follow</label>
+    </span>
+    <div id="chat-input-row">
+      <textarea id="chat-textarea" placeholder="Message the model…" rows="1"></textarea>
+      <button id="resume-btn" style="display:none">▶ Resume</button>
+      <button id="send-btn">Send</button>
     </div>
-    <div class="row">
-      <label>Intervene:</label>
-      <select id="iv-mode">
-        <option value="none">none</option>
-        <option value="steer">steer (inject concept)</option>
-        <option value="swap">swap (replace concept)</option>
-        <option value="ablate">ablate (remove J-space)</option>
-      </select>
-      <label>layer <input id="iv-layer" type="number" value="57" style="width:40px"></label>
-      <label>token <input id="iv-token" placeholder="e.g. ant" style="width:80px"></label>
-      <label>target <input id="iv-target" placeholder="for swap" style="width:80px"></label>
-      <label>alpha <input id="iv-alpha" type="number" value="100" step="10" style="width:60px"></label>
-      <label><input id="iv-each" type="checkbox"> each step</label>
-      <button id="iv-btn">Generate with intervention</button>
+  </div>
+
+  <!-- ===== Clear + Settings buttons (fixed, bottom-right) ===== -->
+  <button id="settings-btn" title="Generation settings" aria-label="Settings">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+  <button id="clear-btn" title="Clear conversation">Clear</button>
+
+  <!-- ===== Settings modal (centered, dimmed backdrop) ===== -->
+  <div id="settings-backdrop">
+    <div id="settings-popup">
+      <h3>Generation settings</h3>
+      <div class="field">
+        <label for="set-max-tokens">Max output tokens</label>
+        <input id="set-max-tokens" type="number" min="1" step="1">
+        <div class="hint">How many tokens the model generates per turn. Default = model max context (262144). Larger = slower (one full forward per token).</div>
+      </div>
+      <div class="field">
+        <label for="set-temp">Temperature</label>
+        <input id="set-temp" type="number" min="0" step="0.1">
+        <div class="hint">0 = greedy (deterministic). Higher = more random sampling.</div>
+      </div>
+      <div class="field">
+        <label for="set-top-n">Readout depth (top-n)</label>
+        <input id="set-top-n" type="number" min="1" max="50" step="1">
+        <div class="hint">How many top tokens to show per grid cell / detail panel.</div>
+      </div>
+      <div class="actions">
+        <button class="cancel" id="settings-cancel">Cancel</button>
+        <button class="ok" id="settings-ok">OK</button>
+      </div>
     </div>
-    <div id="gen-output"></div>
   </div>
 </div>
+
 <script>
 const API = '';
+const $ = (id) => document.getElementById(id);
+
+// ----- State -----
 let state = {
-  slice: null,
-  selectedPos: null,
-  selectedLayer: null,
-  pinned: new Set(),  // token strings
+  modelId: '',
+  lensInfo: null,
+  messages: [],
+  snapshots: [],
+  gridRows: [],
+  gridTokenStrs: [],
+  gridTokenMsgs: [],   // per position: {msgIdx, isGen}
+  layers: [],
+  selectedSnapshotId: null,
+  selectedCell: null,
+  streaming: false,
+  snapshotByMsgToken: new Map(),
+  // Generation settings (configurable via the settings popup).
+  settings: { maxTokens: 262144, temp: 0.0, topN: 10 },
 };
 
-async function loadLensInfo() {
-  const r = await fetch(API + '/api/lens');
-  const info = await r.json();
-  const el = document.getElementById('lens-info');
-  if (info.lens_loaded) {
-    el.textContent = `J-lens: ${info.source_layers.length} layers (${info.source_layers[0]}..${info.source_layers[info.source_layers.length-1]}), ${info.n_prompts} prompts, d_model=${info.d_model}`;
-  } else {
-    el.textContent = `No J-lens loaded (using logit lens J=I). Model: ${info.n_layers} layers, d_model=${info.d_model}`;
+const STORAGE_KEY = 'jlens-conversation-v1';
+const SETTINGS_KEY = 'jlens-settings-v1';
+const MODEL_MAX_CONTEXT = 262144;  // Qwen3.6-27B max_position_embeddings
+
+function saveState() {
+  try {
+    // Persist only the serializable parts: messages (role + token text +
+    // globalPos), snapshots (the raw server payloads so we can rebuild
+    // everything on load), and layers. Maps are rebuilt on load.
+    const persistable = {
+      messages: state.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
+        prefillSnapshotId: m.prefillSnapshotId,
+      })),
+      snapshots: state.snapshots,
+      layers: state.layers,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+  } catch (e) {
+    console.warn('saveState failed (likely quota):', e);
   }
 }
 
-async function runSlice() {
-  const prompt = document.getElementById('prompt').value;
-  const status = document.getElementById('status');
-  status.textContent = 'Computing...';
-  status.className = 'status loading';
-  const r = await fetch(API + '/api/slice', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({prompt, max_seq_len: 128, top_n: 10}),
-  });
-  const data = await r.json();
-  state.slice = data;
-  state.selectedPos = null;
-  state.selectedLayer = null;
-  state.pinned = new Set();
-  status.textContent = `Done (${data.seq_len} tokens, ${data.layers.length} layers)`;
-  status.className = 'status';
-  render();
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (!saved || !saved.messages || saved.messages.length === 0) return;
+    // Rebuild state from the saved conversation.
+    state.messages = saved.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      tokens: (m.tokens || []).map(t => ({
+        id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
+      })),
+      prefillSnapshotId: m.prefillSnapshotId || null,
+    }));
+    state.snapshots = saved.snapshots || [];
+    state.layers = saved.layers || [];
+    // Rebuild the snapshotByMsgToken map and grid from snapshots.
+    state.snapshotByMsgToken = new Map();
+    state.gridRows = [];
+    state.gridTokenStrs = [];
+    state.gridTokenMsgs = [];
+    for (const snap of state.snapshots) {
+      state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+      const m = state.messages[snap.msg_idx];
+      if (!m) continue;
+      m.role = snap.role;
+      if (snap.token_idx === -1) {
+        m.prefillSnapshotId = snap.snapshot_id;
+        // Rebuild tokens + grid rows from the prefill snapshot.
+        if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
+          const strs = snap.token_strs || [];
+          if (strs.length) {
+            m.tokens = strs.map((str, i) => ({
+              id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
+            }));
+            m.content = strs.join('');
+          }
+          strs.forEach((str, i) => {
+            const globalPos = snap.prefill_pos + i;
+            while (state.gridRows.length <= globalPos) {
+              state.gridRows.push(null);
+              state.gridTokenStrs.push('');
+              state.gridTokenMsgs.push(null);
+            }
+            state.gridTokenStrs[globalPos] = str;
+            state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
+            state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+          });
+        }
+        if (snap.grid && snap.grid.positions) {
+          snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
+        }
+      } else {
+        // Token snapshot (assistant generated token).
+        const globalPos = snap.pos;
+        const tokStr = snap.token;
+        while (state.gridRows.length <= globalPos) {
+          state.gridRows.push(null);
+          state.gridTokenStrs.push('');
+          state.gridTokenMsgs.push(null);
+        }
+        state.gridTokenStrs[globalPos] = tokStr;
+        state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
+        const m2 = state.messages[snap.msg_idx];
+        if (m2) {
+          while (m2.tokens.length <= snap.token_idx) {
+            m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
+          }
+          m2.tokens[snap.token_idx] = {
+            id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
+          };
+          m2.content = m2.tokens.map(t => t.text).join('');
+        }
+        if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
+          writeGridRow(globalPos, snap.grid.cells, 0);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('loadSavedState failed:', e);
+  }
 }
 
-function render() {
-  if (!state.slice) return;
-  renderPrompt();
-  renderGrid();
-  renderDetail();
+function clearState() {
+  state.messages = [];
+  state.snapshots = [];
+  state.gridRows = [];
+  state.gridTokenStrs = [];
+  state.gridTokenMsgs = [];
+  state.layers = [];
+  state.selectedSnapshotId = null;
+  state.selectedCell = null;
+  state.snapshotByMsgToken = new Map();
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 }
 
-function renderPrompt() {
-  const col = document.getElementById('prompt-col');
-  col.innerHTML = '';
-  state.slice.token_strs.forEach((tok, pos) => {
-    const el = document.createElement('div');
-    el.className = 'tok' + (pos === state.selectedPos ? ' selected' : '');
-    el.textContent = tok || '·';
-    el.title = `pos ${pos}: ${JSON.stringify(tok)}`;
-    el.onclick = () => { state.selectedPos = pos; render(); };
-    col.appendChild(el);
+// ----- Settings persistence -----
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      state.settings.maxTokens = s.maxTokens != null ? s.maxTokens : MODEL_MAX_CONTEXT;
+      state.settings.temp = s.temp != null ? s.temp : 0.0;
+      state.settings.topN = s.topN != null ? s.topN : 10;
+    }
+  } catch (e) {}
+  syncSettingsInputs();
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+  } catch (e) {}
+}
+
+function syncSettingsInputs() {
+  $('set-max-tokens').value = state.settings.maxTokens;
+  $('set-temp').value = state.settings.temp;
+  $('set-top-n').value = state.settings.topN;
+}
+
+function readSettingsFromInputs() {
+  state.settings.maxTokens = parseInt($('set-max-tokens').value) || MODEL_MAX_CONTEXT;
+  state.settings.temp = parseFloat($('set-temp').value) || 0;
+  state.settings.topN = parseInt($('set-top-n').value) || 10;
+  if (state.settings.maxTokens < 1) state.settings.maxTokens = 1;
+  if (state.settings.temp < 0) state.settings.temp = 0;
+  if (state.settings.topN < 1) state.settings.topN = 1;
+  saveSettings();
+}
+
+// Cache a snapshot of the settings so the modal can restore them on Cancel.
+let _cachedSettings = null;
+function openSettingsModal() {
+  _cachedSettings = { ...state.settings };
+  syncSettingsInputs();
+  $('settings-backdrop').classList.add('visible');
+  $('set-max-tokens').focus();
+}
+function closeSettingsModal() { $('settings-backdrop').classList.remove('visible'); }
+function commitSettings() { readSettingsFromInputs(); closeSettingsModal(); }
+function cancelSettings() {
+  if (_cachedSettings) {
+    state.settings = { ..._cachedSettings };
+    syncSettingsInputs();
+  }
+  closeSettingsModal();
+}
+
+// ----- Lens + model info -----
+async function loadInfo() {
+  const [lm, l] = await Promise.all([
+    fetch(API + '/api/model').then(r => r.json()),
+    fetch(API + '/api/lens').then(r => r.json()),
+  ]);
+  state.modelId = lm.model_id || 'unknown model';
+  state.lensInfo = l;
+}
+
+// ----- Chat rendering -----
+function renderChat() {
+  const log = $('chat-log');
+  log.innerHTML = '';
+  if (state.messages.length === 0) return;
+  state.messages.forEach((m, mi) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'msg ' + m.role;
+    const role = document.createElement('div');
+    role.className = 'role';
+    role.textContent = m.role === 'user' ? 'You' : 'Assistant';
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    if (m.tokens.length === 0) {
+      const ph = document.createElement('span');
+      ph.className = 'placeholder';
+      ph.textContent = m.role === 'assistant' && state.streaming ? '…' : '…';
+      bubble.appendChild(ph);
+    } else {
+      m.tokens.forEach((t, ti) => {
+        const span = document.createElement('span');
+        span.className = 'tok';
+        span.textContent = t.text;
+        span.title = `msg ${mi} tok ${ti} pos ${t.globalPos}`;
+        span.dataset.msgIdx = mi;
+        span.dataset.tokenIdx = ti;
+        if (state.selectedSnapshotId !== null) {
+          const snap = state.snapshots.find(s => s.snapshot_id === state.selectedSnapshotId);
+          if (snap && snap.msg_idx === mi && snap.token_idx === ti) {
+            span.classList.add('selected');
+          }
+        }
+        if (state.streaming && mi === state.messages.length - 1 && ti === m.tokens.length - 1 && m.role === 'assistant') {
+          span.classList.add('frontier');
+        }
+        span.onclick = () => selectTokenInChat(mi, ti);
+        bubble.appendChild(span);
+      });
+    }
+    wrap.appendChild(role);
+    wrap.appendChild(bubble);
+    log.appendChild(wrap);
   });
+  log.scrollTop = log.scrollHeight;
+}
+
+// ----- Grid rendering -----
+function visiblePositionsForSnapshot(snapId) {
+  if (snapId === null) return state.gridRows.length;
+  const snap = state.snapshots.find(s => s.snapshot_id === snapId);
+  if (!snap) return state.gridRows.length;
+  if (snap.token_idx === -1) {
+    return (snap.prefill_pos != null ? snap.prefill_pos : -1) + 1;
+  } else {
+    return (snap.pos != null ? snap.pos : -1) + 1;
+  }
+}
+
+function cellIntensity(cell) {
+  // Soft heatmap color based on the top-1 score relative to the rest.
+  if (!cell || !cell.top_scores || cell.top_scores.length < 2) return null;
+  const s0 = cell.top_scores[0] || 0;
+  const s1 = cell.top_scores[1] || 0;
+  const gap = s0 - s1;
+  // Larger gap => more confident => stronger tint.
+  const t = Math.max(0, Math.min(1, gap / 8));
+  return t;
 }
 
 function renderGrid() {
-  const col = document.getElementById('grid-col');
-  col.innerHTML = '';
+  const body = $('grid-body');
+  if (state.gridRows.length === 0 || state.layers.length === 0) {
+    body.innerHTML = '';
+    return;
+  }
+  const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
   const table = document.createElement('table');
   table.id = 'grid';
-  const s = state.slice;
-  // Header: layer indices
   const thead = document.createElement('thead');
   const hrow = document.createElement('tr');
-  hrow.innerHTML = '<th>pos</th>' + s.layers.map(l => `<th>L${l}</th>`).join('');
+  const hlabel = document.createElement('th');
+  hlabel.className = 'label';
+  hlabel.textContent = 'position';
+  hrow.appendChild(hlabel);
+  state.layers.forEach(l => {
+    const th = document.createElement('th');
+    th.textContent = 'L' + l;
+    hrow.appendChild(th);
+  });
   thead.appendChild(hrow);
   table.appendChild(thead);
-  // Body: one row per position
+
   const tbody = document.createElement('tbody');
-  s.token_strs.forEach((tok, pos) => {
+  for (let pos = 0; pos < visibleN; pos++) {
     const tr = document.createElement('tr');
-    const posCell = document.createElement('th');
-    posCell.textContent = `${pos}:${JSON.stringify(tok).slice(0,8)}`;
-    tr.appendChild(posCell);
-    s.layers.forEach(layer => {
+    const tokStr = state.gridTokenStrs[pos] || '·';
+    const label = document.createElement('td');
+    label.className = 'label';
+    label.textContent = `${pos} · ${tokStr}`;
+    label.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
+    const meta = state.gridTokenMsgs[pos];
+    if (meta && meta.isGen) {
+      label.classList.add('gen');
+      tr.classList.add('gen-row');
+    }
+    tr.appendChild(label);
+    state.layers.forEach(layer => {
       const td = document.createElement('td');
-      const cell = s.cells[layer];
-      const top1 = cell.top_tokens[pos][0];
-      const rank0 = cell.top_ids[pos][0];
-      td.innerHTML = `<span class="word">${top1}</span><span class="rank">${rank0}</span>`;
-      td.dataset.pos = pos;
-      td.dataset.layer = layer;
-      if (pos === state.selectedPos && layer === state.selectedLayer) td.classList.add('selected');
-      if (state.pinned.has(top1)) td.classList.add('pinned');
-      td.onclick = () => {
-        state.selectedPos = pos;
-        state.selectedLayer = layer;
-        state.pinned.has(top1) ? state.pinned.delete(top1) : state.pinned.add(top1);
-        render();
-      };
+      td.className = 'cell';
+      const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+      if (cell) {
+        const top1 = cell.top_tokens[0] || '·';
+        const id0 = cell.top_ids[0] != null ? cell.top_ids[0] : '';
+        const word = document.createElement('span');
+        word.className = 'word';
+        word.textContent = top1;
+        const rank = document.createElement('span');
+        rank.className = 'rank';
+        rank.textContent = id0;
+        td.appendChild(word);
+        td.appendChild(rank);
+        // Heatmap tint
+        const t = cellIntensity(cell);
+        if (t !== null && state.selectedCell && !(state.selectedCell.pos === pos && state.selectedCell.layer === layer)) {
+          td.style.background = `rgba(0,113,227,${0.04 + t * 0.14})`;
+        }
+        td.dataset.pos = pos;
+        td.dataset.layer = layer;
+        if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
+          td.classList.add('selected');
+        }
+        if (state.selectedCell && state.selectedCell.pos === pos) {
+          td.classList.add('selected-row');
+        }
+        td.onclick = () => selectCell(pos, layer);
+      } else {
+        td.textContent = '';
+      }
       tr.appendChild(td);
     });
     tbody.appendChild(tr);
-  });
+  }
   table.appendChild(tbody);
-  col.appendChild(table);
+  body.innerHTML = '';
+  body.appendChild(table);
+  if (state.selectedSnapshotId === null) {
+    body.scrollTop = body.scrollHeight;
+  } else if (state.selectedCell) {
+    // Center the selected row in the grid body so the floating detail panel
+    // (which hovers at the bottom-center) doesn't overlap it. The grid body
+    // has extra bottom padding so a row near the bottom can be scrolled up
+    // to roughly the vertical center of the J-lens content area.
+    const sel = body.querySelector('td.cell.selected');
+    if (sel) {
+      const row = sel.closest('tr');
+      if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  }
 }
 
 function renderDetail() {
-  const col = document.getElementById('detail-col');
-  col.innerHTML = '<h3>Detail</h3>';
-  if (state.selectedPos === null || state.selectedLayer === null) {
-    col.innerHTML += '<div class="readout">Click a cell to see the full top-10 readout.</div>';
+  const col = $('detail');
+  if (!state.selectedCell) {
+    col.classList.remove('visible');
+    col.innerHTML = '';
     return;
   }
-  const s = state.slice;
-  const pos = state.selectedPos;
-  const layer = state.selectedLayer;
-  const cell = s.cells[layer];
-  col.innerHTML += `<div class="status">Position ${pos} (${JSON.stringify(s.token_strs[pos])}), Layer ${layer}</div>`;
+  const { pos, layer } = state.selectedCell;
+  const tokStr = state.gridTokenStrs[pos] || '·';
+  col.innerHTML = '';
+  // Close button
+  const close = document.createElement('button');
+  close.className = 'close';
+  close.innerHTML = '&times;';
+  close.title = 'Close detail';
+  close.onclick = () => { state.selectedCell = null; renderGrid(); renderDetail(); };
+  col.appendChild(close);
+  const h3 = document.createElement('h3');
+  h3.textContent = 'Detail';
+  col.appendChild(h3);
+  const ctx = document.createElement('div');
+  ctx.className = 'ctx';
+  ctx.innerHTML = `position <b>${pos}</b> · token <b>${escapeHtml(tokStr)}</b> · layer <b>L${layer}</b>`;
+  col.appendChild(ctx);
+  const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+  if (!cell) {
+    col.appendChild(document.createTextNode('No readout at this position.'));
+    col.classList.add('visible');
+    return;
+  }
+  // Find max score for bar normalization
+  const maxScore = Math.max(...cell.top_scores, 1);
   const readout = document.createElement('div');
   readout.className = 'readout';
-  cell.top_tokens[pos].forEach((tok, i) => {
-    const span = document.createElement('span');
-    span.className = 'tok' + (i === 0 ? ' top1' : '');
-    span.textContent = `${tok}(${cell.top_ids[pos][i]})`;
-    if (state.pinned.has(tok)) span.style.outline = '2px solid #f0f';
-    readout.appendChild(span);
+  cell.top_tokens.forEach((tok, i) => {
+    const row = document.createElement('div');
+    row.className = 'row' + (i === 0 ? ' top1' : '');
+    const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = (i+1);
+    const t = document.createElement('span'); t.className = 'tok'; t.textContent = tok;
+    const id = document.createElement('span'); id.className = 'id'; id.textContent = `(${cell.top_ids[i]})`;
+    const bar = document.createElement('span'); bar.className = 'bar';
+    const fill = document.createElement('div');
+    fill.style.width = (cell.top_scores[i] / maxScore * 100) + '%';
+    bar.appendChild(fill);
+    row.appendChild(idx); row.appendChild(t); row.appendChild(id); row.appendChild(bar);
+    readout.appendChild(row);
   });
   col.appendChild(readout);
+  col.classList.add('visible');
+}
 
-  if (state.pinned.size > 0) {
-    col.innerHTML += '<h3 style="margin-top:12px">Pinned tokens</h3>';
-    const list = document.createElement('div');
-    list.className = 'readout';
-    state.pinned.forEach(tok => {
-      const span = document.createElement('span');
-      span.className = 'tok';
-      span.textContent = tok;
-      span.onclick = () => { state.pinned.delete(tok); render(); };
-      list.appendChild(span);
+// ----- Timeline rendering -----
+function renderTimeline() {
+  const tl = $('timeline');
+  if (state.messages.length === 0) {
+    tl.innerHTML = '';
+    return;
+  }
+  tl.innerHTML = '';
+  state.messages.forEach((m, mi) => {
+    const group = document.createElement('div');
+    group.className = 'tl-group' + (m.role === 'user' ? ' user-group' : '');
+    const preview = document.createElement('div');
+    preview.className = 'tl-preview';
+    const previewText = (m.content || '').replace(/\s+/g, ' ').trim();
+    preview.textContent = previewText ? previewText.slice(0, 100) : '(empty)';
+    group.appendChild(preview);
+    const blocks = document.createElement('div');
+    blocks.className = 'tl-blocks';
+    const prefill = document.createElement('div');
+    prefill.className = 'tl-block prefill';
+    prefill.textContent = '◉ pre';
+    prefill.title = 'prefill — state before this message contributes tokens';
+    prefill.dataset.msgIdx = mi;
+    prefill.dataset.tokenIdx = -1;
+    if (isBlockSelected(mi, -1)) prefill.classList.add('selected');
+    if (isFrontier(mi, -1)) prefill.classList.add('frontier');
+    prefill.onclick = () => selectBlock(mi, -1);
+    blocks.appendChild(prefill);
+    // Per-token blocks for both user and assistant messages. User tokens
+    // all share the prefill snapshot (one forward over the whole message);
+    // assistant tokens each have their own generation snapshot.
+    m.tokens.forEach((t, ti) => {
+      const b = document.createElement('div');
+      b.className = 'tl-block';
+      b.textContent = t.text || '·';
+      b.title = `token ${ti}: ${JSON.stringify(t.text)} (pos ${t.globalPos})`;
+      b.dataset.msgIdx = mi;
+      b.dataset.tokenIdx = ti;
+      if (isBlockSelected(mi, ti)) b.classList.add('selected');
+      if (isFrontier(mi, ti)) b.classList.add('frontier');
+      b.onclick = () => selectBlock(mi, ti);
+      blocks.appendChild(b);
     });
-    col.appendChild(list);
+    group.appendChild(blocks);
+    tl.appendChild(group);
+  });
+  if (state.selectedSnapshotId === null) tl.scrollLeft = tl.scrollWidth;
+}
+
+function isBlockSelected(msgIdx, tokenIdx) {
+  if (state.selectedSnapshotId === null) return false;
+  const snap = state.snapshots.find(s => s.snapshot_id === state.selectedSnapshotId);
+  return snap && snap.msg_idx === msgIdx && snap.token_idx === tokenIdx;
+}
+
+function isFrontier(msgIdx, tokenIdx) {
+  if (!state.streaming) return false;
+  const m = state.messages[msgIdx];
+  if (!m) return false;
+  if (m.role === 'user') return tokenIdx === -1;
+  if (m.role === 'assistant') {
+    if (m.tokens.length === 0) return tokenIdx === -1;
+    return tokenIdx === m.tokens.length - 1;
+  }
+  return false;
+}
+
+// ----- Selection logic -----
+function selectBlock(msgIdx, tokenIdx) {
+  const snapId = state.snapshotByMsgToken.get(`${msgIdx}:${tokenIdx}`);
+  if (snapId == null) return;
+  state.selectedSnapshotId = snapId;
+  state.selectedCell = null;
+  updateAutoFollowUI();
+  renderAll();
+}
+function selectTokenInChat(msgIdx, tokenIdx) { selectBlock(msgIdx, tokenIdx); }
+function selectCell(pos, layer) {
+  state.selectedCell = { pos, layer };
+  renderGrid(); renderDetail();
+}
+function updateAutoFollowUI() {
+  const resumeBtn = $('resume-btn');
+  const chk = $('auto-follow-chk');
+  if (state.selectedSnapshotId === null) {
+    resumeBtn.style.display = 'none';
+    chk.checked = true;
+  } else {
+    // Show the resume button whenever the view is pinned away from the
+    // frontier, regardless of whether we're currently streaming. Previously
+    // it was gated on `state.streaming`, which made it disappear when
+    // generation finished while you were inspecting an earlier snapshot —
+    // leaving you stuck with no visible way to resume.
+    resumeBtn.style.display = '';
+    chk.checked = false;
+  }
+}
+function renderAll() { renderChat(); renderGrid(); renderDetail(); renderTimeline(); }
+
+// ----- Ingest a snapshot -----
+function ingestSnapshot(snap) {
+  state.snapshots.push(snap);
+  state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+  while (state.messages.length <= snap.msg_idx) {
+    state.messages.push({ role: '?', content: '', tokens: [], prefillSnapshotId: null });
+  }
+  const m = state.messages[snap.msg_idx];
+  m.role = snap.role;
+
+  if (snap.token_idx === -1) {
+    m.prefillSnapshotId = snap.snapshot_id;
+    if (snap.role === 'user') {
+      // Populate user tokens so the bubble renders the message, and
+      // register each user-token index → prefill snapshot so per-token
+      // blocks in the timeline can drive selection.
+      const strs = snap.token_strs || [];
+      m.content = strs.join('');
+      m.tokens = strs.map((str, i) => ({
+        id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
+      }));
+      strs.forEach((str, i) => {
+        const globalPos = snap.prefill_pos + i;
+        ensureGridRow(globalPos, str, { msgIdx: snap.msg_idx, isGen: false });
+        state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+      });
+    } else if (snap.role === 'assistant' && snap.n_tokens > 0) {
+      // Historical assistant message (multi-turn context): the server sent
+      // all of its tokens in one prefill snapshot. Populate m.tokens so the
+      // bubble + timeline render them, without re-generation.
+      const strs = snap.token_strs || [];
+      m.content = strs.join('');
+      m.tokens = strs.map((str, i) => ({
+        id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
+      }));
+      strs.forEach((str, i) => {
+        const globalPos = snap.prefill_pos + i;
+        ensureGridRow(globalPos, str, { msgIdx: snap.msg_idx, isGen: true });
+        state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+      });
+    }
+    // Write grid rows for all positions the server sent readouts at.
+    if (snap.grid && snap.grid.positions) {
+      snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
+    }
+  } else {
+    const globalPos = snap.pos;
+    const tokStr = snap.token;
+    ensureGridRow(globalPos, tokStr, { msgIdx: snap.msg_idx, isGen: true });
+    while (m.tokens.length <= snap.token_idx) {
+      m.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
+    }
+    m.tokens[snap.token_idx] = {
+      id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
+    };
+    m.content = m.tokens.map(t => t.text).join('');
+    if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
+      writeGridRow(globalPos, snap.grid.cells, 0);
+    }
+  }
+  saveState();
+  renderAll();
+}
+
+function ensureGridRow(globalPos, tokStr, meta) {
+  while (state.gridRows.length <= globalPos) {
+    state.gridRows.push(null);
+    state.gridTokenStrs.push('');
+    state.gridTokenMsgs.push(null);
+  }
+  state.gridTokenStrs[globalPos] = tokStr;
+  if (meta) state.gridTokenMsgs[globalPos] = meta;
+}
+
+function writeGridRow(pos, cells, sliceIndex) {
+  if (!cells) return;
+  if (!state.gridRows[pos]) state.gridRows[pos] = {};
+  for (const layer of Object.keys(cells)) {
+    const c = cells[layer];
+    state.gridRows[pos][parseInt(layer)] = {
+      top_ids: c.top_ids[sliceIndex],
+      top_tokens: c.top_tokens[sliceIndex],
+      top_scores: c.top_scores[sliceIndex],
+    };
+  }
+  if (state.layers.length === 0) {
+    state.layers = Object.keys(cells).map(l => parseInt(l)).sort((a, b) => a - b);
   }
 }
 
-document.getElementById('run-btn').onclick = runSlice;
+// ----- Streaming request -----
+async function sendMessage() {
+  const ta = $('chat-textarea');
+  const content = ta.value.trim();
+  if (!content || state.streaming) return;
 
-// --- Generation + intervention ---
-async function runGenerate(withIntervention) {
-  const prompt = document.getElementById('prompt').value;
-  const maxTokens = parseInt(document.getElementById('gen-max').value) || 32;
-  const temp = parseFloat(document.getElementById('gen-temp').value) || 0;
-  const out = document.getElementById('gen-output');
-  out.innerHTML = '<div class="status loading">Generating...</div>';
+  state.messages.push({ role: 'user', content, tokens: [], prefillSnapshotId: null });
+  state.messages.push({ role: 'assistant', content: '', tokens: [], prefillSnapshotId: null });
+  state.streaming = true;
+  state.selectedSnapshotId = null;
+  updateAutoFollowUI();
+  renderAll();
 
-  let url, body;
-  if (withIntervention) {
-    const mode = document.getElementById('iv-mode').value;
-    if (mode === 'none') { out.innerHTML = '<div class="status">Select an intervention mode.</div>'; return; }
-    url = API + '/api/intervene';
-    body = {
-      prompt, max_tokens: maxTokens, temp,
-      layer: parseInt(document.getElementById('iv-layer').value),
-      mode,
-      token: document.getElementById('iv-token').value || null,
-      target: document.getElementById('iv-target').value || null,
-      alpha: parseFloat(document.getElementById('iv-alpha').value) || 1.0,
-      each_step: document.getElementById('iv-each').checked,
-    };
-  } else {
-    url = API + '/api/generate';
-    body = { prompt, max_tokens: maxTokens, temp };
-  }
+  const payload = {
+    messages: state.messages.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
+    max_tokens: state.settings.maxTokens,
+    temp: state.settings.temp,
+    top_n: state.settings.topN,
+  };
+  ta.value = '';
+  ta.style.height = 'auto';
+  $('timeline-status').textContent = 'streaming…';
+  $('timeline-status').className = 'loading';
+  $('send-btn').disabled = true;
 
   try {
-    const r = await fetch(url, {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    const resp = await fetch(API + '/api/chat_stream', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     });
-    const data = await r.json();
-    if (r.status !== 200) {
-      out.innerHTML = `<div class="status">Error: ${data.detail || JSON.stringify(data)}</div>`;
+    if (!resp.ok) {
+      const txt = await resp.text();
+      $('timeline-status').textContent = 'error: ' + txt.slice(0,200);
+      $('timeline-status').className = 'status';
+      state.streaming = false;
+      updateAutoFollowUI();
+      renderAll();
       return;
     }
-    if (withIntervention) {
-      out.innerHTML = '';
-      const iv = data.intervention;
-      const ivDesc = iv.mode === 'swap' ? `swap ${iv.token}→${iv.target} α=${iv.alpha}` :
-                    iv.mode === 'steer' ? `steer ${iv.token} α=${iv.alpha}` :
-                    iv.mode === 'ablate' ? `ablate top-16` : iv.mode;
-      out.innerHTML = `<div class="status">Intervention at L${iv.layer}: ${ivDesc}</div>`;
-      out.innerHTML += `<div class="gen-output base"><b>Baseline:</b> ${escapeHtml(data.baseline.text)}<br><span class="status">tokens: ${data.baseline.tokens.map(JSON.stringify).join(' ')}</span></div>`;
-      out.innerHTML += `<div class="gen-output intervened"><b>Intervened:</b> ${escapeHtml(data.intervened.text)}<br><span class="status">tokens: ${data.intervened.tokens.map(JSON.stringify).join(' ')}</span></div>`;
-    } else {
-      out.innerHTML = `<div class="gen-output base"><b>Generated:</b> ${escapeHtml(data.text)}<br><span class="status">tokens: ${data.tokens.map(JSON.stringify).join(' ')}</span></div>`;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        handleSSEFrame(frame);
+      }
     }
+    if (buffer.trim()) handleSSEFrame(buffer);
   } catch (e) {
-    out.innerHTML = `<div class="status">Request failed: ${e}</div>`;
+    $('timeline-status').textContent = 'request failed: ' + e;
+    $('timeline-status').className = 'status';
+  } finally {
+    state.streaming = false;
+    updateAutoFollowUI();
+    renderAll();
+    $('timeline-status').textContent = 'done';
+    $('timeline-status').className = 'status';
+    $('send-btn').disabled = false;
   }
 }
 
-function escapeHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function handleSSEFrame(frame) {
+  const lines = frame.split('\n');
+  let event = 'message';
+  let data = '';
+  for (const line of lines) {
+    if (line.startsWith('event: ')) event = line.slice(7).trim();
+    else if (line.startsWith('data: ')) data += line.slice(6);
+  }
+  if (!data) return;
+  let obj;
+  try { obj = JSON.parse(data); } catch (e) { return; }
+  if (event === 'snapshot') ingestSnapshot(obj);
+  else if (event === 'done') $('timeline-status').textContent = `done · ${obj.n_tokens} tokens`;
+  else if (event === 'error') {
+    $('timeline-status').textContent = 'error: ' + (obj.error || '').slice(0,200);
+    $('timeline-status').className = 'status';
+    console.error('stream error', obj);
+  }
 }
 
-document.getElementById('gen-btn').onclick = () => runGenerate(false);
-document.getElementById('iv-btn').onclick = () => runGenerate(true);
-loadLensInfo();
+// ----- Resume control -----
+$('resume-btn').onclick = () => {
+  state.selectedSnapshotId = null;
+  updateAutoFollowUI();
+  renderAll();
+};
+$('auto-follow-chk').onchange = () => {
+  if ($('auto-follow-chk').checked) {
+    state.selectedSnapshotId = null;
+  } else if (state.snapshots.length) {
+    state.selectedSnapshotId = state.snapshots[state.snapshots.length - 1].snapshot_id;
+  }
+  updateAutoFollowUI();
+  renderAll();
+};
+
+// ----- Textarea auto-grow + Enter to send -----
+$('chat-textarea').addEventListener('input', () => {
+  const ta = $('chat-textarea');
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+});
+$('chat-textarea').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+$('send-btn').onclick = sendMessage;
+
+// ----- Clear conversation -----
+$('clear-btn').onclick = () => {
+  if (state.streaming) return;  // don't clear mid-stream
+  if (state.messages.length === 0) return;
+  if (!confirm('Clear the conversation? This cannot be undone.')) return;
+  clearState();
+  renderAll();
+  $('timeline-status').textContent = '';
+};
+
+// ----- Settings modal -----
+$('settings-btn').onclick = () => openSettingsModal();
+$('settings-ok').onclick = commitSettings;
+$('settings-cancel').onclick = cancelSettings;
+// Click on the dimming backdrop (outside the dialog) cancels.
+$('settings-backdrop').addEventListener('click', (e) => {
+  if (e.target === $('settings-backdrop')) cancelSettings();
+});
+// Enter inside a field commits; Escape cancels.
+['set-max-tokens', 'set-temp', 'set-top-n'].forEach((id) => {
+  $(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitSettings(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelSettings(); }
+  });
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('settings-backdrop').classList.contains('visible')) cancelSettings();
+});
+
+function escapeHtml(s) {
+  return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+loadInfo();
+loadSettings();
+loadSavedState();
+renderAll();
 </script>
 </body></html>

@@ -3,12 +3,14 @@
 Endpoints:
 - POST /api/slice  { prompt, max_seq_len } -> slice data (top-k per cell, ranks)
 - POST /api/generate { prompt, ... } -> model's actual next-token logits
+- POST /api/chat_stream { messages, ... } -> SSE stream of J-lens snapshots
 - GET  /api/lens  -> lens metadata (source layers, n_prompts, d_model)
 - GET  /  -> serves the web UI
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -16,7 +18,7 @@ from pathlib import Path
 import mlx.core as mx
 import numpy as np
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -66,6 +68,49 @@ async def lens_info():
         "d_model": _lens.d_model,
         "n_layers": _model.n_layers,
     }
+
+
+@app.get("/api/model")
+async def model_info():
+    return {"model_id": _model_id, "n_layers": _model.n_layers, "d_model": _model.d_model}
+
+
+def _record_layers() -> list[int]:
+    layers = list(_lens.source_layers) if _lens is not None else [_model.n_layers - 1]
+    return sorted(set(layers) | {_model.n_layers - 1})
+
+
+def _readout_at_positions(
+    acts: dict[int, mx.array],
+    positions: list[int],
+    layers: list[int],
+    top_n: int,
+) -> dict[int, dict]:
+    """Compute top-n J-lens tokens at `positions` for each of `layers`.
+
+    Returns {layer: {"top_ids": [[int]*n]*len(positions),
+                     "top_tokens": [[str]*n]*len(positions),
+                     "top_scores": [[float]*n]*len(positions)}}.
+    """
+    out: dict[int, dict] = {}
+    for layer in layers:
+        h = acts[layer][0].astype(mx.float32)  # [seq_len, D]
+        if _lens is not None and layer in _lens.jacobians:
+            h = _lens.transport(h, layer)
+        logits = _model.unembed(_model.final_norm(h))  # [seq_len, vocab]
+        lf = logits.astype(mx.float32)
+        top_ids, top_tokens, top_scores = [], [], []
+        for pos in positions:
+            v = lf[pos]
+            sorted_idx = mx.argsort(v)
+            top = [int(t) for t in sorted_idx[-top_n:][::-1].tolist()]
+            scores = [float(mx.take(v, t).tolist()) for t in top]
+            top_ids.append(top)
+            top_scores.append(scores)
+            top_tokens.append([_model.tokenizer.decode([t]) for t in top])
+        out[layer] = {"top_ids": top_ids, "top_tokens": top_tokens, "top_scores": top_scores}
+        del logits, lf
+    return out
 
 
 @app.post("/api/slice")
@@ -202,6 +247,266 @@ async def intervene_endpoint(req: InterveneRequest):
         "intervention": {"layer": req.layer, "mode": req.mode, "token": req.token,
                          "target": req.target, "alpha": req.alpha},
     }
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+
+class ChatStreamRequest(BaseModel):
+    messages: list[ChatMessage]
+    max_tokens: int = 32
+    temp: float = 0.0
+    top_n: int = 10
+
+
+def _sse(event: str, data: dict) -> bytes:
+    return f"event: {event}\n".encode() + b"data: " + json.dumps(data).encode() + b"\n\n"
+
+
+@app.post("/api/chat_stream")
+async def chat_stream(req: ChatStreamRequest):
+    """Stream J-lens snapshots as the assistant generates tokens.
+
+    Emits `event: snapshot` frames:
+      - prefill (token_idx = -1): grid for all prompt positions so far.
+      - per-token (token_idx = k): row for the new position only.
+    Then `event: done` when generation finishes (or EOS).
+
+    The server streams unconditionally; the client decides which snapshot
+    to render. Snapshots carry a monotonic `snapshot_id` so an SSE
+    reconnect with `Last-Event-ID` can resume.
+    """
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+
+    import asyncio
+
+    layers = _record_layers()
+    top_n = req.top_n
+    temp = req.temp
+    max_tokens = req.max_tokens
+
+    async def gen():
+        snapshot_id = 0
+        token_strs_global: list[str] = []
+
+        try:
+            # Build an effective message list: the client sends user messages
+            # (+ optionally prior assistant turns for multi-turn context). We
+            # auto-append an empty assistant message at the end so generation
+            # always runs after the latest user turn.
+            eff_messages = list(req.messages)
+            if not eff_messages or eff_messages[-1].role != "assistant":
+                eff_messages.append(ChatMessage(role="assistant", content=""))
+
+            tok = _model.tokenizer
+
+            # We build the formatted token sequence using the chat template.
+            # For each message, the template wraps it as:
+            #   <|im_start|>{role}\n{content}<|im_end|>\n
+            # We need to track which token positions are the CONTENT of each
+            # message (excluding the markers), so readouts align to the
+            # actual content tokens.
+            #
+            # Strategy: for each prefix of eff_messages, apply the template
+            # with add_generation_prompt=False to get the token IDs up to and
+            # including that message's <|im_end|>\n. The content tokens are
+            # between the "{role}\n" marker and the "<|im_end|>" marker.
+
+            def content_positions_for(formatted_ids, role, content_ids):
+                """Find the start and end positions of the content within formatted_ids.
+                The template wraps as: <|im_start|>{role}\n{content}<|im_end|>\n
+                We find the content by locating <|im_start|> ... {role}\n ... <|im_end|>."""
+                # For the LAST message, the template might not add <|im_end|>\n
+                # (depends on add_generation_prompt). We handle both cases.
+                # Simple approach: find the LAST <|im_start|> in the sequence,
+                # then skip past the role + \n, that's the content start.
+                # The content end is the next <|im_end|> after that, or end of seq.
+                im_start_id = 248045  # <|im_start|>
+                im_end_id = 248046    # <|im_end|>
+                # Find the last <|im_start|>
+                last_im_start = -1
+                for i in range(len(formatted_ids) - 1, -1, -1):
+                    if formatted_ids[i] == im_start_id:
+                        last_im_start = i
+                        break
+                if last_im_start < 0:
+                    return 0, len(formatted_ids)
+                # After <|im_start|> comes the role word + \n. The role is
+                # encoded as one or more tokens. We find the first \n (198)
+                # after last_im_start; content starts right after it.
+                content_start = last_im_start + 1
+                for i in range(last_im_start + 1, len(formatted_ids)):
+                    if formatted_ids[i] == 198:  # \n
+                        content_start = i + 1
+                        break
+                # Content end: next <|im_end|> after content_start, or end.
+                content_end = len(formatted_ids)
+                for i in range(content_start, len(formatted_ids)):
+                    if formatted_ids[i] == im_end_id:
+                        content_end = i
+                        break
+                return content_start, content_end
+
+            global_pos = 0
+            input_ids = None
+
+            # Process all messages except the last (which is the empty assistant
+            # to generate). Each prior message is context: we apply the template
+            # for the prefix, find the content positions, forward, emit prefill.
+            n_context = len(eff_messages) - 1  # all but the trailing empty asst
+            # Actually, the trailing message might have content if the client
+            # sent an assistant message (but we only auto-append empty). So:
+            # - If the last message has content, it's historical (process as context).
+            # - If the last message is empty, it's the generation target.
+            last_msg = eff_messages[-1]
+            is_generate = (last_msg.role == "assistant" and not last_msg.content)
+            n_to_process = len(eff_messages) if not is_generate else len(eff_messages) - 1
+
+            for msg_idx in range(n_to_process):
+                msg = eff_messages[msg_idx]
+                # Apply the template for messages[0..msg_idx] without generation prompt.
+                prefix_msgs = [{"role": m.role, "content": m.content} for m in eff_messages[:msg_idx + 1]]
+                formatted_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=False)
+                if isinstance(formatted_ids, list):
+                    formatted_ids_list = formatted_ids
+                else:
+                    formatted_ids_list = formatted_ids.tolist() if hasattr(formatted_ids, 'tolist') else list(formatted_ids)
+
+                # Find content positions for this message.
+                content_start, content_end = content_positions_for(formatted_ids_list, msg.role, None)
+                content_ids = formatted_ids_list[content_start:content_end]
+
+                # The input_ids for this step is the full formatted sequence
+                # up to and including this message's <|im_end|>\n.
+                new_input_ids = mx.array([formatted_ids_list])
+                # But we only want readouts at the NEW content positions
+                # (relative to the full sequence).
+                start_pos = content_start
+                end_pos = content_end
+                n_new = end_pos - start_pos
+                if n_new <= 0:
+                    continue
+
+                final, acts = _model.forward(new_input_ids, capture_layers=layers)
+                for l in layers:
+                    mx.eval(acts[l])
+                positions = list(range(start_pos, end_pos))
+                row = _readout_at_positions(acts, positions, layers, top_n)
+                new_token_strs = [tok.decode([t]) for t in content_ids]
+
+                snapshot_id += 1
+                yield _sse("snapshot", {
+                    "snapshot_id": snapshot_id,
+                    "msg_idx": msg_idx,
+                    "token_idx": -1,
+                    "role": msg.role,
+                    "prefill_pos": start_pos,
+                    "n_tokens": n_new,
+                    "token_strs": new_token_strs,
+                    "grid": {"layers": layers, "positions": positions, "cells": row},
+                })
+                del acts, final
+                await asyncio.sleep(0)
+                if msg.role == "assistant" and msg.content:
+                    yield _sse("done", {"msg_idx": msg_idx, "n_tokens": n_new, "historical": True})
+
+            # Now handle the generation target (if the last message is an empty assistant).
+            if is_generate:
+                msg_idx = len(eff_messages) - 1
+                # Apply the template with add_generation_prompt=True to get
+                # the generation prefix (ends with <|im_start|>assistant\n...).
+                prefix_msgs = [{"role": m.role, "content": m.content} for m in eff_messages[:-1]]
+                gen_prefix_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=True)
+                if isinstance(gen_prefix_ids, list):
+                    gen_prefix_list = gen_prefix_ids
+                else:
+                    gen_prefix_list = gen_prefix_ids.tolist() if hasattr(gen_prefix_ids, 'tolist') else list(gen_prefix_ids)
+
+                input_ids = mx.array([gen_prefix_list])
+                global_pos = len(gen_prefix_list)
+
+                # Prefill snapshot: readout at the last position (frontier).
+                final, acts = _model.forward(input_ids, capture_layers=layers)
+                for l in layers:
+                    mx.eval(acts[l])
+                prefill_positions = [global_pos - 1] if global_pos > 0 else []
+                prefill_row = _readout_at_positions(
+                    acts, prefill_positions, layers, top_n
+                ) if prefill_positions else {l: {"top_ids": [], "top_tokens": [], "top_scores": []} for l in layers}
+
+                logits = _model.unembed(final[:, -1, :])
+                lf = logits[0].astype(mx.float32)
+                if temp == 0:
+                    next_tok = int(mx.argmax(lf).tolist())
+                else:
+                    probs = mx.softmax(lf / temp)
+                    next_tok = int(mx.random.categorical(probs).tolist())
+                del logits, lf
+
+                snapshot_id += 1
+                yield _sse("snapshot", {
+                    "snapshot_id": snapshot_id,
+                    "msg_idx": msg_idx,
+                    "token_idx": -1,
+                    "role": "assistant",
+                    "prefill_pos": global_pos - 1,
+                    "n_tokens": 0,
+                    "token_strs": [],
+                    "grid": {"layers": layers, "positions": prefill_positions, "cells": prefill_row},
+                })
+                del acts, final
+                await asyncio.sleep(0)
+
+                n_gen = 0
+                eos_id = getattr(tok, "eos_token_id", None)
+                eos_hit = eos_id is not None and next_tok == eos_id
+                while not eos_hit and n_gen < max_tokens:
+                    input_ids = mx.concatenate([input_ids, mx.array([[next_tok]])], axis=1)
+                    new_pos = global_pos
+                    final, acts = _model.forward(input_ids, capture_layers=layers)
+                    for l in layers:
+                        mx.eval(acts[l])
+                    row = _readout_at_positions(acts, [new_pos], layers, top_n)
+                    logits = _model.unembed(final[:, -1, :])
+                    lf = logits[0].astype(mx.float32)
+                    if temp == 0:
+                        new_next_tok = int(mx.argmax(lf).tolist())
+                    else:
+                        probs = mx.softmax(lf / temp)
+                        new_next_tok = int(mx.random.categorical(probs).tolist())
+                    del logits, lf
+
+                    tok_str = tok.decode([next_tok])
+                    snapshot_id += 1
+                    yield _sse("snapshot", {
+                        "snapshot_id": snapshot_id,
+                        "msg_idx": msg_idx,
+                        "token_idx": n_gen,
+                        "role": "assistant",
+                        "token": tok_str,
+                        "token_id": next_tok,
+                        "pos": new_pos,
+                        "grid": {"layers": layers, "positions": [new_pos], "cells": row},
+                    })
+                    del acts, final
+                    global_pos += 1
+                    n_gen += 1
+                    next_tok = new_next_tok
+                    if eos_id is not None and next_tok == eos_id:
+                        eos_hit = True
+                    await asyncio.sleep(0)
+
+                yield _sse("done", {"msg_idx": msg_idx, "n_tokens": n_gen})
+        except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
+            print(f"[chat_stream] error after snapshot {snapshot_id}: {e}\n{tb}", flush=True)
+            yield _sse("error", {"snapshot_id": snapshot_id, "error": str(e), "traceback": tb})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.get("/", response_class=HTMLResponse)
