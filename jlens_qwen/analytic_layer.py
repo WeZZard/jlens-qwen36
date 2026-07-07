@@ -169,23 +169,19 @@ def decoder_layer_jacobian(
     # norm_in(x) -> input to attention
     x_normed_in = layer.input_layernorm(h.astype(h_in.dtype)).astype(mx.float32)  # [S, D]
     # r = attn(norm_in(x)) -> need the full forward to get this
-    # Actually, run the full layer forward to capture intermediates.
-    # For now, use the VJP for the attention branch and analytic for MLP.
-    # Run the attention sub-layer to get r.
+    # Compute the intermediate activations: r = attn(norm_in(x)), h_mid = x + r
     from mlx_lm.models.base import create_attention_mask, create_ssm_mask
     fa_mask = create_attention_mask(h_in, cache=None)
     ssm_mask = create_ssm_mask(h_in, cache=None)
     mask = ssm_mask if layer.is_linear else fa_mask
-    r = layer(x_normed_in.astype(h_in.dtype), mask=mask, cache=None)  # this is wrong — layer includes MLP
-    # Actually layer.__call__ does: r = attn(input_layernorm(x)); h = x + r; out = h + mlp(post_attn_norm(h))
-    # I need the intermediate r, not the full layer output. Let me compute it manually.
-    # r = self_attn/linear_attn(input_layernorm(x), mask, cache)
+    # The normed input needs to be [1, S, D] for the attention sub-layer.
+    x_normed_4d = x_normed_in[None].astype(h_in.dtype)
     if layer.is_linear:
-        r = layer.linear_attn(x_normed_in.astype(h_in.dtype), mask=mask, cache=None)
+        r = layer.linear_attn(x_normed_4d, mask=mask, cache=None)
     else:
-        r = layer.self_attn(x_normed_in.astype(h_in.dtype), mask=mask, cache=None)
-    r = r.astype(mx.float32)  # [S, D]
-    h_mid = h + r  # [S, D] — the residual after attention
+        r = layer.self_attn(x_normed_4d, mask=mask, cache=None)
+    r = r[0].astype(mx.float32)  # [S, D]
+    h_mid = h + r  # [S, D] — residual after attention
     x_normed_post = layer.post_attention_layernorm(h_mid.astype(h_in.dtype)).astype(mx.float32)  # [S, D]
 
     # M_norm_in: Jacobian of input_layernorm (RMSNorm), position-averaged.

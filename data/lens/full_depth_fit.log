@@ -1,0 +1,21 @@
+2026-07-08 01:48:10,031 HTTP Request: GET https://huggingface.co/api/models/mlx-community/Qwen3.6-27B-4bit/revision/main "HTTP/1.1 200 OK"
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files: 100%|██████████| 14/14 [00:00<00:00, 35717.92it/s]
+Prompts: 20
+Source layers: 63 (0..62) — FULL DEPTH
+Starting full-depth analytic fit...
+2026-07-08 01:48:11,610 === prompt 1/20 ===
+2026-07-08 01:48:12,219   computing final norm Jacobian (J_64)...
+2026-07-08 01:48:12,295     0.1s
+2026-07-08 01:48:12,295   computing M_63 (analytic hybrid)...
+2026-07-08 01:48:40,716     28.4s, ||M||=7.173e+01
+2026-07-08 01:48:40,838     J_63 ||.||=2.084e+01
+2026-07-08 01:48:40,838   computing M_62 (analytic hybrid)...
+2026-07-08 01:49:26,300     45.5s, ||M||=7.392e+01
+2026-07-08 01:49:26,393     J_62 ||.||=2.145e+01
+2026-07-08 01:49:26,395   computing M_61 (analytic hybrid)...
+2026-07-08 01:50:08,149     41.8s, ||M||=7.356e+01
+2026-07-08 01:50:08,261     J_61 ||.||=2.208e+01
+2026-07-08 01:50:08,263   computing M_60 (analytic hybrid)...
+2026-07-08 01:50:51,813     43.5s, ||M||=7.394e+01
+2026-07-08 01:50:51,919     J_60 ||.||=2.287e+01
+2026-07-08 01:50:51,922   computing M_59 (analytic hybrid)...
