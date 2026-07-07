@@ -34,6 +34,16 @@ header .meta { color: #666; font-size: 12px; margin-top: 2px; }
 #detail-col .readout .tok.top1 { background: #cdf; }
 .status { color: #999; font-size: 11px; }
 .loading { color: #f60; }
+#gen-panel { border-top: 1px solid #ddd; padding: 8px 12px; background: #f7f7f7; max-height: 35vh; overflow-y: auto; }
+#gen-panel h3 { margin: 0 0 6px; font-size: 13px; }
+#gen-panel .row { display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+#gen-panel label { font-size: 11px; color: #555; }
+#gen-panel input, #gen-panel select { font: inherit; font-size: 11px; padding: 2px 4px; }
+#gen-panel button { padding: 4px 10px; cursor: pointer; font-size: 11px; }
+.gen-output { font-family: monospace; font-size: 12px; padding: 6px; background: #fff; border: 1px solid #eee; margin: 4px 0; white-space: pre-wrap; }
+.gen-output.base { border-left: 3px solid #999; }
+.gen-output.intervened { border-left: 3px solid #f0f; }
+.diff { color: #d00; font-weight: bold; }
 </style>
 </head><body>
 <div id="app">
@@ -50,6 +60,30 @@ header .meta { color: #666; font-size: 12px; margin-top: 2px; }
     <div id="prompt-col"><div class="status">Prompt tokens appear here.</div></div>
     <div id="grid-col"><div class="status">Click "Visualize" to compute the slice.</div></div>
     <div id="detail-col"><h3>Detail</h3><div class="readout">Click a cell to see the full top-10 readout at that (position, layer).</div></div>
+  </div>
+  <div id="gen-panel">
+    <h3>Generate & Intervene</h3>
+    <div class="row">
+      <button id="gen-btn">Generate (baseline)</button>
+      <label>max_tokens <input id="gen-max" type="number" value="32" style="width:50px"></label>
+      <label>temp <input id="gen-temp" type="number" value="0" step="0.1" style="width:50px"></label>
+    </div>
+    <div class="row">
+      <label>Intervene:</label>
+      <select id="iv-mode">
+        <option value="none">none</option>
+        <option value="steer">steer (inject concept)</option>
+        <option value="swap">swap (replace concept)</option>
+        <option value="ablate">ablate (remove J-space)</option>
+      </select>
+      <label>layer <input id="iv-layer" type="number" value="57" style="width:40px"></label>
+      <label>token <input id="iv-token" placeholder="e.g. ant" style="width:80px"></label>
+      <label>target <input id="iv-target" placeholder="for swap" style="width:80px"></label>
+      <label>alpha <input id="iv-alpha" type="number" value="100" step="10" style="width:60px"></label>
+      <label><input id="iv-each" type="checkbox"> each step</label>
+      <button id="iv-btn">Generate with intervention</button>
+    </div>
+    <div id="gen-output"></div>
   </div>
 </div>
 <script>
@@ -194,6 +228,66 @@ function renderDetail() {
 }
 
 document.getElementById('run-btn').onclick = runSlice;
+
+// --- Generation + intervention ---
+async function runGenerate(withIntervention) {
+  const prompt = document.getElementById('prompt').value;
+  const maxTokens = parseInt(document.getElementById('gen-max').value) || 32;
+  const temp = parseFloat(document.getElementById('gen-temp').value) || 0;
+  const out = document.getElementById('gen-output');
+  out.innerHTML = '<div class="status loading">Generating...</div>';
+
+  let url, body;
+  if (withIntervention) {
+    const mode = document.getElementById('iv-mode').value;
+    if (mode === 'none') { out.innerHTML = '<div class="status">Select an intervention mode.</div>'; return; }
+    url = API + '/api/intervene';
+    body = {
+      prompt, max_tokens: maxTokens, temp,
+      layer: parseInt(document.getElementById('iv-layer').value),
+      mode,
+      token: document.getElementById('iv-token').value || null,
+      target: document.getElementById('iv-target').value || null,
+      alpha: parseFloat(document.getElementById('iv-alpha').value) || 1.0,
+      each_step: document.getElementById('iv-each').checked,
+    };
+  } else {
+    url = API + '/api/generate';
+    body = { prompt, max_tokens: maxTokens, temp };
+  }
+
+  try {
+    const r = await fetch(url, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (r.status !== 200) {
+      out.innerHTML = `<div class="status">Error: ${data.detail || JSON.stringify(data)}</div>`;
+      return;
+    }
+    if (withIntervention) {
+      out.innerHTML = '';
+      const iv = data.intervention;
+      const ivDesc = iv.mode === 'swap' ? `swap ${iv.token}→${iv.target} α=${iv.alpha}` :
+                    iv.mode === 'steer' ? `steer ${iv.token} α=${iv.alpha}` :
+                    iv.mode === 'ablate' ? `ablate top-16` : iv.mode;
+      out.innerHTML = `<div class="status">Intervention at L${iv.layer}: ${ivDesc}</div>`;
+      out.innerHTML += `<div class="gen-output base"><b>Baseline:</b> ${escapeHtml(data.baseline.text)}<br><span class="status">tokens: ${data.baseline.tokens.map(JSON.stringify).join(' ')}</span></div>`;
+      out.innerHTML += `<div class="gen-output intervened"><b>Intervened:</b> ${escapeHtml(data.intervened.text)}<br><span class="status">tokens: ${data.intervened.tokens.map(JSON.stringify).join(' ')}</span></div>`;
+    } else {
+      out.innerHTML = `<div class="gen-output base"><b>Generated:</b> ${escapeHtml(data.text)}<br><span class="status">tokens: ${data.tokens.map(JSON.stringify).join(' ')}</span></div>`;
+    }
+  } catch (e) {
+    out.innerHTML = `<div class="status">Request failed: ${e}</div>`;
+  }
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+document.getElementById('gen-btn').onclick = () => runGenerate(false);
+document.getElementById('iv-btn').onclick = () => runGenerate(true);
 loadLensInfo();
 </script>
 </body></html>

@@ -147,6 +147,109 @@ class MLXLensModel:
         """Apply the model's final pre-unembed RMSNorm."""
         return self._text_module.norm(residual)
 
+    def forward_from_layer(
+        self,
+        h: mx.array,
+        start_layer: int,
+    ) -> mx.array:
+        """Run layers start_layer..end + final norm, starting from h.
+
+        Used to resume a forward pass after an intervention at start_layer.
+        h: [batch, seq, d_model] (the residual after `start_layer - 1`,
+        i.e. entering `start_layer`). Returns final-norm residual.
+        """
+        from mlx_lm.models.base import create_attention_mask, create_ssm_mask
+        fa_mask = create_attention_mask(h, cache=None)
+        ssm_mask = create_ssm_mask(h, cache=None)
+        hidden = h
+        for i in range(start_layer, self.n_layers):
+            layer = self.layers[i]
+            mask = ssm_mask if layer.is_linear else fa_mask
+            hidden = layer(hidden, mask=mask, cache=None)
+        return self._text_module.norm(hidden)
+
+    def forward_with_intervention(
+        self,
+        input_ids: mx.array,
+        intervene_layer: int,
+        intervene_positions: list[int] | None,
+        patched_h_fn,
+    ) -> mx.array:
+        """Forward with an intervention at one layer, multiple positions.
+
+        Runs the forward up to `intervene_layer`, captures the residual,
+        calls `patched_h_fn(h)` for each position in `intervene_positions`
+        (or all positions if None), writes the patched residuals back,
+        then resumes the forward from `intervene_layer + 1`.
+
+        patched_h_fn: callable taking h [d_model] -> patched h [d_model].
+            Called once per position.
+
+        Returns the final-norm residual [batch, seq, d_model].
+        """
+        _, acts = self.forward(input_ids, capture_layers=[intervene_layer])
+        h = acts[intervene_layer]  # [batch, seq, d_model]
+        B, S, D = h.shape
+        positions = intervene_positions if intervene_positions is not None else list(range(S))
+        # Patch each requested position.
+        patched = []
+        for p in range(S):
+            if p in positions:
+                patched.append(patched_h_fn(h[0, p]))  # [d_model]
+            else:
+                patched.append(h[0, p])
+        new_h = mx.stack(patched, axis=0)[None]  # [1, S, D]
+        return self.forward_from_layer(new_h, intervene_layer + 1)
+
+    def generate(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int = 64,
+        temp: float = 0.0,
+        intervene_layer: int | None = None,
+        intervene_fn=None,
+        intervene_positions: list[int] | None = None,
+        intervene_each_step: bool = False,
+    ) -> tuple[str, list[int]]:
+        """Generate a continuation of `prompt`.
+
+        Greedy if temp == 0, else sample from softmax(1/temp).
+
+        If intervene_layer + intervene_fn are given, applies the intervention
+        at `intervene_positions` (default: all positions) of each forward
+        pass. If intervene_each_step is False, applies only on the first
+        (prefill) pass; if True, on every step (so the intervention persists).
+
+        Returns (decoded_text, token_ids).
+        """
+        input_ids = self.encode(prompt, max_length=512)
+        generated: list[int] = []
+
+        for step in range(max_tokens):
+            if intervene_layer is not None and intervene_fn is not None and (
+                step == 0 or intervene_each_step
+            ):
+                final = self.forward_with_intervention(
+                    input_ids, intervene_layer, intervene_positions, intervene_fn
+                )
+            else:
+                final, _ = self.forward(input_ids)
+            logits = self.unembed(final[:, -1, :])
+            lf = logits[0].astype(mx.float32)
+            if temp == 0:
+                next_tok = int(mx.argmax(lf).tolist())
+            else:
+                probs = mx.softmax(lf / temp)
+                next_tok = int(mx.random.categorical(probs).tolist())
+            generated.append(next_tok)
+            input_ids = mx.concatenate([input_ids, mx.array([[next_tok]])], axis=1)
+            if hasattr(self.tokenizer, "eos_token_id") and next_tok == self.tokenizer.eos_token_id:
+                break
+
+        text = self.tokenizer.decode(generated)
+        return text, generated
+
 
 def load(model_id: str = "mlx-community/Qwen3.6-27B-4bit") -> MLXLensModel:
     """Load the model via mlx_lm and wrap it as an MLXLensModel."""

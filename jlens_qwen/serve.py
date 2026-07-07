@@ -125,6 +125,85 @@ async def slice_endpoint(req: SliceRequest):
     return JSONResponse(slice_data)
 
 
+class GenerateRequest(BaseModel):
+    prompt: str
+    max_tokens: int = 32
+    temp: float = 0.0
+
+
+@app.post("/api/generate")
+async def generate_endpoint(req: GenerateRequest):
+    """Generate a continuation (no intervention)."""
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    text, toks = _model.generate(req.prompt, max_tokens=req.max_tokens, temp=req.temp)
+    return {"text": text, "token_ids": toks,
+            "tokens": [_model.tokenizer.decode([t]) for t in toks]}
+
+
+class InterveneRequest(BaseModel):
+    prompt: str
+    max_tokens: int = 32
+    temp: float = 0.0
+    layer: int
+    mode: str  # "steer" | "swap" | "ablate"
+    token: str | None = None       # for steer (the concept to inject)
+    target: str | None = None      # for swap (replace `token` with `target`)
+    alpha: float = 1.0
+    positions: list[int] | None = None  # default: all positions
+    each_step: bool = False
+
+
+@app.post("/api/intervene")
+async def intervene_endpoint(req: InterveneRequest):
+    """Generate with a J-space intervention."""
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    if _lens is None:
+        raise HTTPException(400, "no lens loaded; fit one first")
+    if req.layer not in _lens.jacobians:
+        raise HTTPException(400, f"layer {req.layer} not fitted (source_layers={_lens.source_layers})")
+
+    from .interventions import (
+        j_lens_vector_for_text, steer as steer_op, patch_swap, ablate_topk
+    )
+
+    # Build the intervention function.
+    if req.mode == "steer":
+        if not req.token:
+            raise HTTPException(400, "steer requires `token`")
+        v = j_lens_vector_for_text(_lens, _model, req.layer, req.token)
+        def fn(h):
+            return steer_op(h, v, req.alpha)
+    elif req.mode == "swap":
+        if not req.token or not req.target:
+            raise HTTPException(400, "swap requires `token` and `target`")
+        v_s = j_lens_vector_for_text(_lens, _model, req.layer, req.token)
+        v_t = j_lens_vector_for_text(_lens, _model, req.layer, req.target)
+        def fn(h):
+            return patch_swap(h, v_s, v_t, req.alpha)
+    elif req.mode == "ablate":
+        def fn(h):
+            return ablate_topk(h, _lens, _model, req.layer, k=16)
+    else:
+        raise HTTPException(400, f"unknown mode {req.mode!r}")
+
+    # Baseline
+    base_text, base_toks = _model.generate(req.prompt, max_tokens=req.max_tokens, temp=req.temp)
+    # With intervention
+    int_text, int_toks = _model.generate(
+        req.prompt, max_tokens=req.max_tokens, temp=req.temp,
+        intervene_layer=req.layer, intervene_fn=fn,
+        intervene_positions=req.positions, intervene_each_step=req.each_step,
+    )
+    return {
+        "baseline": {"text": base_text, "tokens": [_model.tokenizer.decode([t]) for t in base_toks]},
+        "intervened": {"text": int_text, "tokens": [_model.tokenizer.decode([t]) for t in int_toks]},
+        "intervention": {"layer": req.layer, "mode": req.mode, "token": req.token,
+                         "target": req.target, "alpha": req.alpha},
+    }
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = Path(__file__).parent.parent / "web" / "index.html"
