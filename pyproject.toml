@@ -15,7 +15,6 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic>=2.8",
     "huggingface-hub>=0.25",
-    "torch>=2.4",
 ]
 
 [build-system]

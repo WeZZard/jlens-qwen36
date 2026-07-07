@@ -28,9 +28,10 @@ from jlens_qwen.lens import JacobianLens
 # Globals (loaded once at startup).
 _model = None
 _lens = None
+_model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
 _lens_path = os.environ.get("JLENS_PATH", "data/lens/qwen36_27b.npz")
 
-app = FastAPI(title="J-Space Visualizer for Qwen3.6-27B")
+app = FastAPI(title="J-Space Visualizer")
 
 
 class SliceRequest(BaseModel):
@@ -42,8 +43,8 @@ class SliceRequest(BaseModel):
 @app.on_event("startup")
 async def load():
     global _model, _lens
-    print("Loading model...", flush=True)
-    _model = load_model()
+    print(f"Loading model {_model_id!r}...", flush=True)
+    _model = load_model(_model_id)
     print(f"  {_model}", flush=True)
     if os.path.exists(_lens_path):
         print(f"Loading lens from {_lens_path}...", flush=True)
@@ -51,6 +52,7 @@ async def load():
         print(f"  {_lens}", flush=True)
     else:
         print(f"  no lens at {_lens_path}; using logit lens (J=I)", flush=True)
+        print(f"  (fit one with: uv run python scripts/run_fit.py)", flush=True)
 
 
 @app.get("/api/lens")

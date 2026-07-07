@@ -26,16 +26,26 @@ from jlens_qwen.prompts import load_prompts
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--n-prompts", type=int, default=20)
-    parser.add_argument("--n-layers", type=int, default=25)
-    parser.add_argument("--max-seq-len", type=int, default=32)
+    parser = argparse.ArgumentParser(
+        description="Fit a Jacobian lens on an MLX Qwen3.5-architecture model."
+    )
+    parser.add_argument("--model-id", type=str, default="mlx-community/Qwen3.6-27B-4bit",
+                        help="HuggingFace repo or local path of the MLX model.")
+    parser.add_argument("--n-prompts", type=int, default=20,
+                        help="Number of prompts to average the Jacobian over.")
+    parser.add_argument("--n-layers", type=int, default=25,
+                        help="Number of source layers to fit J at (evenly spaced).")
+    parser.add_argument("--max-seq-len", type=int, default=32,
+                        help="Token length per fitting prompt (shorter = faster).")
     parser.add_argument("--layer-start", type=int, default=None,
                         help="Minimum source layer (chain starts here). "
-                             "Default: evenly spaced across full range.")
-    parser.add_argument("--output", type=str, default="data/lens/qwen36_27b.npz")
-    parser.add_argument("--checkpoint", type=str, default="data/lens/qwen36_27b.ckpt.npy")
-    parser.add_argument("--no-resume", action="store_true")
+                             "Default: evenly spaced across the full depth.")
+    parser.add_argument("--output", type=str, default="data/lens/lens.npz",
+                        help="Output path for the fitted lens (.npz).")
+    parser.add_argument("--checkpoint", type=str, default="data/lens/lens.ckpt.npy",
+                        help="Checkpoint path for resume (.npy).")
+    parser.add_argument("--no-resume", action="store_true",
+                        help="Start fresh, ignoring any existing checkpoint.")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -44,8 +54,8 @@ def main():
         stream=sys.stdout,
     )
 
-    print(f"Loading model...", flush=True)
-    model = load()
+    print(f"Loading model {args.model_id!r}...", flush=True)
+    model = load(args.model_id)
     print(f"  {model}", flush=True)
 
     print(f"Loading {args.n_prompts} prompts...", flush=True)
