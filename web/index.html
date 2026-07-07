@@ -19,9 +19,9 @@ header .meta { color: #666; font-size: 12px; margin-top: 2px; }
 #prompt-col .tok.selected { background: #cdf; }
 #grid-col { flex: 1; overflow: auto; padding: 4px; }
 #grid { border-collapse: collapse; }
-#grid th, #grid td { border: 1px solid #eee; padding: 2px 4px; font-family: monospace; font-size: 11px; }
-#grid th { background: #f7f7f7; position: sticky; top: 0; }
-#grid td { cursor: pointer; }
+#grid th, #grid td { border: 1px solid #eee; padding: 1px 3px; font-family: monospace; font-size: 10px; white-space: nowrap; }
+#grid th { background: #f7f7f7; position: sticky; top: 0; min-width: 44px; }
+#grid td { cursor: pointer; min-width: 44px; max-width: 80px; overflow: hidden; text-overflow: ellipsis; }
 #grid td .word { display: block; }
 #grid td .rank { color: #999; font-size: 9px; }
 #grid td:hover { background: #f0f0ff; }
