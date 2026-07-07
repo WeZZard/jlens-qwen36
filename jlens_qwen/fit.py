@@ -7,14 +7,23 @@ Strategy (fixes 1+2+7+11):
 - Fix 7 (32-token prompts): short sequences for ~4x faster GDN scan.
 - Fix 11 (25 evenly-spaced layers): fit a subset, interpolate the rest.
 
-Approximation: the chain uses the position-diagonal block of each M_l
-(d(h_{l+1}[s])/d(h_l[s]) averaged over valid s), ignoring cross-position
-terms. This is exact for the per-position readout's "self" contribution
-and matches the paper's per-position lens spirit.
+What M_l actually captures (per the Anthropic paper's definition):
+  M_l[i, j] = E_{prompt, s, t>=s} [ d(h_{l+1}[t, i]) / d(h_l[s, j]) ]
+i.e. the *future-summed* cross-position influence of position-s activity
+on all current-and-future outputs, averaged over valid source positions
+and prompts. The cotangent is hot at ALL valid output positions
+(`per_layer_jacobian:84-93`), so M_l is NOT the position-diagonal block —
+it includes the causal cross-position flow. This matches the paper's
+J-lens definition: the pattern that makes a word more likely "at some
+point in the future."
 
 Per-prompt cost: forward (1.6s) + 25 layers x (D VJPs through one layer).
 At ~0.8-2 min per M_l = ~25-50 min per prompt. For 10-20 prompts: a few
 hours. Resume via checkpoint.
+
+NOTE: this VJP-based fit is the slow path. See PERFORMANCE.md and the
+identity-basis analytic assembly in `analytic.py` for the ~30-60x faster
+route that makes full-depth 64-layer fits affordable locally.
 """
 
 from __future__ import annotations
