@@ -1,30 +1,61 @@
 # jlens-qwen36
 
-A **J-space / Jacobian-lens visualizer** for Qwen3.6-27B (4-bit) on Apple Silicon, ported to Apple MLX.
+A J-lens-style visualizer for inspecting token readouts across layers
+and positions in local Qwen3.6-27B (4-bit) on Apple Silicon / MLX.
 
-Implements the technique from Anthropic's [*Verbalizable Representations Form a Global Workspace in Language Models*](https://transformer-circuits.pub/2026/workspace/index.html). The J-lens reads out what a residual-stream activation at any layer is "disposed to make the model say" — surfacing the model's internal, unspoken concepts as a ranked list of vocabulary tokens.
+Inspired by Anthropic's [*Verbalizable Representations Form a Global
+Workspace in Language Models*](https://transformer-circuits.pub/2026/workspace/index.html),
+but **not a research-grade reproduction** of their paper.
+
+The goal is practical:
+
+> Can we build visual debuggers for hidden diagnostic signals inside
+> local LLMs?
 
 ![slice visualization](assets/screenshot.png)
 
-## Status — what this is and isn't
+## Demo examples
 
-**This is a working, end-to-portable implementation** of the J-lens
-technique for Qwen3.6-27B (4-bit) on Apple Silicon. It is **not a
-research-grade reproduction** of the Anthropic paper's results.
+The visualizer surfaces token readouts at each layer × position. On
+`Fact: The currency used in the country shaped like a boot is the`, the
+readouts evolve: `currency` → `Italian` (the boot-shaped country) →
+`euro` — the model internally resolves the country before the answer.
 
-### Two lens versions
+This is **not** proof that the model "knows" the answer in a
+mechanistic sense. It is an example of why J-lens-style readouts may be
+useful as a visual debugger for local LLMs.
 
-| Version | Prompts | Layers | Status | Where |
-|---------|---------|--------|--------|-------|
-| **v0.1-demo** (underfit) | 12 | 23 (L40–L62) | ✅ available now | [GitHub release](https://github.com/WeZZard/jlens-qwen36/releases/tag/v0.1-demo) |
-| **v0.2-fulldepth** (better) | 20 | 64 (L0–L62) | ⏳ fitting now, ETA ~12h | will be published as a release |
+## Status
 
-The **underfit v0.1-demo** lens is what you get from the pre-fitted
-download. It reproduces the core readout finding (internal concepts
-surfacing in the J-space) but has noise and weak interventions. The
-**full-depth v0.2** will cover all layers (including early/mid workspace
-range) with less noise, enabling the paper's workspace-level
-experiments.
+Research preview.
+
+The current public release is `v0.1-demo`:
+
+- Qwen3.6-27B 4-bit on Apple Silicon
+- 12-prompt fitted lens
+- 23 late layers (L40–L62)
+- Pre-fitted lens available as a [GitHub release](https://github.com/WeZZard/jlens-qwen36/releases/tag/v0.1-demo)
+- Useful for exploring J-lens-style readouts
+- Noisy, underfit, and not suitable for strong mechanistic claims
+
+**This is not evidence of consciousness.**
+**This is not proof that Qwen has a Claude-like global workspace.**
+**This is not yet a robust reproduction of the Anthropic paper.**
+
+It is a working visual tool for exploring whether internal diagnostic
+readouts can be surfaced in local models.
+
+### Lens versions
+
+| Version | Prompts | Layers | Status |
+|---------|---------|--------|--------|
+| **v0.1-demo** (underfit) | 12 | 23 (L40–L62) | ✅ available now |
+| **v0.2-fulldepth** (better) | 20 | 64 (L0–L62) | in progress; will be published once validated |
+
+The v0.1 demo qualitatively reproduces small J-lens-style readouts on
+selected prompts, but it should be treated as **hypothesis-generating**
+rather than a robust reproduction of the paper. The full-depth v0.2 is
+being fitted and will be published once validated.
 
 ### Comparison to the paper
 
@@ -39,14 +70,13 @@ experiments.
 **What works well:**
 - The slice viewer (position × layer grid) with click-to-pin and top-10 detail.
 - Baseline generation.
-- The J-lens readouts on factual prompts (currency→euro, Italy as
-  intermediate concept) — the core "internal concepts" finding.
+- J-lens-style readouts on factual prompts (currency→euro, Italy as
+  intermediate concept).
 
 **What's demo-quality:**
 - Readout noise in mid layers (needs more prompts).
-- Interventions (steer/swap/ablate) change the J-lens readout but barely
-  change the model's output (needs a better-fit lens or the analytic
-  attention branch — see `PERFORMANCE.md`).
+- Interventions (steer/swap/ablate) change the readout but barely
+  change the model's output (needs a better-fit lens).
 
 **What's not done:**
 - The paper's workspace-level experiments (census, whole-J-space ablation,
@@ -58,20 +88,26 @@ optimization path (analytic attention assembly → 100+ prompt fit).
 
 ## What it does
 
-Given a prompt, the visualizer shows a **position × layer grid** where each cell is the top J-lens token at that (position, layer). This lets you watch the model's internal concepts evolve across layers:
+Given a prompt, the visualizer shows a **position × layer grid** where
+each cell is the top J-lens token at that (position, layer). This lets
+you watch readouts evolve across layers:
 
 - **Early layers**: echo / task-frame tokens (e.g. "currency")
-- **Workspace layers**: intermediate concepts the model uses to reason (e.g. "Italy" for the boot-shaped country, before resolving to "euro")
-- **Motor layers** (last few): the output token
+- **Middle / workspace-like layers**: intermediate readouts (e.g. "Italy"
+  for the boot-shaped country, before resolving to "euro")
+- **Late / motor-like layers**: output-token-aligned readouts
 
 For example, on `Fact: The currency used in the country shaped like a boot is the`, you see `currency` → `Italian` (L52) → `euro` (L57+) → `euro` (model output).
 
 ## Requirements
 
 - **Apple Silicon Mac** (M1+/M-series) — MLX is Apple-only
-- **~20 GB free RAM** (the 4-bit model is ~15 GB resident + working memory)
 - **Python 3.12** (managed automatically by `uv`)
 - **~15 GB disk** for the model (auto-downloads from HuggingFace on first run)
+
+Memory:
+- Running the pre-fitted v0.1 demo: ~20 GB free RAM recommended.
+- Fitting a full-depth lens: 32 GB unified memory recommended; 64 GB tested.
 
 ## Quick start
 
@@ -102,10 +138,10 @@ uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
 **What you get:** the slice grid, generation, and interventions all
 work. Readouts are interpretable on factual prompts (currency→euro,
 Italy as intermediate concept). Mid-layer noise and weak interventions —
-see the Status section below for why.
+see the Status section above.
 
 **A full-depth version is coming.** A 20-prompt, all-64-layer lens is
-being fitted and will be published as `v0.2-fulldepth` when ready.
+being fitted and will be published as `v0.2-fulldepth` once validated.
 
 ### Option B: fit your own lens (hours)
 
@@ -113,8 +149,8 @@ being fitted and will be published as `v0.2-fulldepth` when ready.
 # Default VJP fit — 25 late layers (L40-L62), ~5-8h:
 uv run python scripts/run_fit.py --n-prompts 20 --n-layers 25 --layer-start 40
 
-# Hybrid analytic fit — full 64-layer depth, ~10-12h (recommended;
-# gives readouts at ALL layers including the workspace range):
+# Hybrid analytic fit — full 64-layer depth, ~1-2h (recommended;
+# gives readouts at ALL layers including the middle/workspace-like range):
 uv run python -c "
 from jlens_qwen.model import load
 from jlens_qwen.fit_analytic import fit_analytic
@@ -189,6 +225,7 @@ jlens_qwen/
   fit_analytic.py      # Hybrid fit: analytic MLP + closed-form norm + VJP attn
   analytic.py          # Closed-form RMSNorm Jacobian (12000x faster)
   analytic_layer.py    # Analytic MLP Jacobian via Hadamard trick (77x faster)
+  analytic_attn.py     # Analytic attention branch Jacobian (FA + GDN)
   probing.py           # Unbiased Rademacher probing (interim ~10x, high variance)
   interventions.py     # J-lens vectors, steer, swap, ablate_topk
   lens.py              # JacobianLens: save / load / apply / transport
@@ -198,10 +235,12 @@ web/
   index.html           # Self-contained slice-vis UI (no build step)
 scripts/
   run_fit.py           # CLI: fit a lens (VJP path)
-  workspace_range.py   # CLI: classify layers as echo/workspace/motor
+  workspace_range.py   # CLI: classify layers as echo/workspace-like/motor-like
   run_experiments.py   # Paper experiments (spider→ant, inject lightning, etc.)
+  verify_analytic_layer.py  # A/B test analytic vs VJP on real activations
+  measure_gbeta_gap.py # Measure the g/β decay-gate path gap
   smoke_model.py       # Test: model loads, VJP works
-.handoff/              # Prompt files for external agents (analytic attn, g/β gap)
+.handoff/              # Prompt files for external agents
 PERFORMANCE.md         # Consolidated optimization plan
 PERFORMANCE_REVIEW.md  # Fable 5's review of the plan
 data/lens/             # Fitted lenses + checkpoints (gitignored)
@@ -211,13 +250,12 @@ data/corpus/           # Cached prompts (gitignored)
 ## Performance
 
 On an M4 Pro / 64 GB:
-- **Default fit** (25 late layers × 20 prompts × 32-token, VJP path):
-  ~5-8 hours. Checkpoints every prompt, resumes on restart.
+- **Default VJP fit** (25 late layers × 20 prompts): ~5-8 hours.
 - **Hybrid analytic fit** (full 64 layers × 20 prompts, analytic MLP +
-  VJP attention): ~10-12 hours. Same checkpoint/resume. This is the path
-  to full-depth readouts (needed for workspace-level findings).
-- **Analytic attention branch** (in `.handoff/`, not yet implemented):
-  would make the full 64-layer fit take ~1-2 hours. See `PERFORMANCE.md`.
+  VJP attention): ~10-12 hours.
+- **Full analytic fit** (analytic MLP + analytic attention, full 64
+  layers × 20 prompts): ~1 hour. The analytic attention branch is
+  verified on real activations (10-17× speedup per layer).
 
 Memory: ~15 GB for the model + ~6.6 GB for the full-depth checkpoint +
 ~2 GB working = ~24 GB peak. Fits comfortably in 32 GB; tested on 64 GB.
@@ -244,8 +282,7 @@ Memory: ~15 GB for the model + ~6.6 GB for the full-depth checkpoint +
   This means the fitted J-lens slightly underestimates the influence of
   current activity on future outputs through the decay-gate path. The
   ops-based backward (`gdn_backward.py`) includes these paths. Run
-  `scripts/measure_gbeta_gap.py` (after writing it — see `.handoff/`) to
-  quantify the gap.
+  `scripts/measure_gbeta_gap.py` to quantify the gap.
 - **Single-token concepts** — like the reference, the J-lens only
   identifies concepts that correspond to single vocabulary tokens.
   Multi-token concepts need the paper's extension (§App-multi-token).

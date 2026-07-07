@@ -93,15 +93,18 @@ def _get_backward_kernel():
           state[i] = static_cast<float>(i_state[n_per_t * dk_idx + i]);
         }
 
-        // Phase 1: forward, storing per-t s_dec and delta.
-        float s_dec_store[MAX_T][n_per_t];
+        // Phase 1: forward, storing per-t s_pre (PRE-decay state) and delta.
+        // s_pre (not s_dec) is stored so dg = <ds_dec, s_pre> needs no
+        // division by g_t (which underflows for saturated gates -> 0/0).
+        // s_dec is reconstructed as s_pre * g_t where needed.
+        float s_pre_store[MAX_T][n_per_t];
         float delta_store[MAX_T];
 
         for (int t = 0; t < T; ++t) {
           float g_t = g_[hv_idx];
           for (int i = 0; i < n_per_t; ++i) {
+            s_pre_store[t][i] = state[i];
             state[i] *= g_t;
-            s_dec_store[t][i] = state[i];
           }
           float kv_mem_partial = 0.0f;
           for (int i = 0; i < n_per_t; ++i) {
@@ -133,11 +136,13 @@ def _get_backward_kernel():
         g_ -= Hv;
         beta_ -= Hv;
 
-        // Threadgroup shared memory for reducing the 4 dv threads' dq/dk partials.
-        // 32 dk * n_per_t * 4 dv = 32*6*4 = 768 floats. Metal threadgroup mem limit
-        // is ~32KB, so 768*4B = 3KB is fine.
+        // Threadgroup shared memory for reducing the 4 dv threads' dq/dk
+        // partials, plus per-dv dg/dbeta scalars.
+        // 32 dk * n_per_t * 4 dv = 32*6*4 = 768 floats x2 + 8 = ~6KB, fine.
         threadgroup float dq_shared[32 * 6 * 4];  // [dk_idx][i][tg_dv] -- flattened
         threadgroup float dk_shared[32 * 6 * 4];
+        threadgroup float dg_shared[4];
+        threadgroup float db_shared[4];
 
         for (int t = T - 1; t >= 0; --t) {
           float g_t = g_[hv_idx];
@@ -145,22 +150,25 @@ def _get_backward_kernel():
           float dy_val = dy_[dv_idx];
 
           float d_delta_partial = 0.0f;
+          float kv_mem_partial = 0.0f;
           float ds_post[n_per_t];
           for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
-            float s_post_val = s_dec_store[t][i] + k_[s_idx] * delta_store[t];
             ds_post[i] = dy_val * q_[s_idx] + s_bar[i];
             d_delta_partial += ds_post[i] * k_[s_idx];
+            kv_mem_partial += (s_pre_store[t][i] * g_t) * k_[s_idx];
           }
           float d_delta = simd_sum(d_delta_partial);
+          float kv_mem = simd_sum(kv_mem_partial);
           float d_kv_mem = -d_delta * beta_t;
 
           // Store this thread's dq, dk partials to shared memory.
           for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
-            float s_post_val = s_dec_store[t][i] + k_[s_idx] * delta_store[t];
+            float s_dec_val = s_pre_store[t][i] * g_t;
+            float s_post_val = s_dec_val + k_[s_idx] * delta_store[t];
             float dq_partial = dy_val * s_post_val;
-            float dk_partial = ds_post[i] * delta_store[t] + d_kv_mem * s_dec_store[t][i];
+            float dk_partial = ds_post[i] * delta_store[t] + d_kv_mem * s_dec_val;
             dq_shared[(dk_idx * n_per_t + i) * 4 + tg_dv] = dq_partial;
             dk_shared[(dk_idx * n_per_t + i) * 4 + tg_dv] = dk_partial;
           }
@@ -171,11 +179,20 @@ def _get_backward_kernel():
                 static_cast<OutT>(d_delta * beta_t);
           }
 
-          // s_bar = (ds_post + d_kv_mem * k) * g
+          // s_bar = (ds_post + d_kv_mem * k) * g, and the dg partial
+          // dg = sum_{dv,dk} ds_dec * s_pre (this thread: its dk slots, its dv).
+          float dg_partial = 0.0f;
           for (int i = 0; i < n_per_t; ++i) {
             auto s_idx = n_per_t * dk_idx + i;
             float ds_dec = ds_post[i] + d_kv_mem * k_[s_idx];
+            dg_partial += ds_dec * s_pre_store[t][i];
             s_bar[i] = ds_dec * g_t;
+          }
+          float dg_dv = simd_sum(dg_partial);  // summed over dk; one per dv
+          if (thread_index_in_simdgroup == 0) {
+            dg_shared[tg_dv] = dg_dv;
+            // dbeta = sum_dv d_delta * (v - kv_mem); d_delta already dk-summed.
+            db_shared[tg_dv] = d_delta * (static_cast<float>(v_[dv_idx]) - kv_mem);
           }
 
           // Reduce the 4 dv threads' partials and atomic-add to global (1/4 atomics).
@@ -188,13 +205,21 @@ def _get_backward_kernel():
                 dq_sum += dq_shared[(dk_idx * n_per_t + i) * 4 + d];
                 dk_sum += dk_shared[(dk_idx * n_per_t + i) * 4 + d];
               }
-              // Only atomic-add if there are multiple threadgroups along Dv
-              // (i.e. Dv > 4). For Dv=128, there are 32 threadgroups along Dv,
-              // so we still need atomics. But this is 4x fewer than before.
               auto dq_ptr = dq_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx;
               auto dk_ptr = dk_hv_buf + (b_idx * T * Hv * Dk) + (t * Hv * Dk) + (hv_idx * Dk) + s_idx;
               atomic_fetch_add_explicit((device atomic<float>*)dq_ptr, dq_sum, memory_order_relaxed);
               atomic_fetch_add_explicit((device atomic<float>*)dk_ptr, dk_sum, memory_order_relaxed);
+            }
+            if (dk_idx == 0) {
+              float dg_sum = 0.0f, db_sum = 0.0f;
+              for (int d = 0; d < 4; ++d) {
+                dg_sum += dg_shared[d];
+                db_sum += db_shared[d];
+              }
+              auto dg_ptr = dg_hv_buf + (b_idx * T * Hv) + (t * Hv) + hv_idx;
+              auto db_ptr = db_hv_buf + (b_idx * T * Hv) + (t * Hv) + hv_idx;
+              atomic_fetch_add_explicit((device atomic<float>*)dg_ptr, dg_sum, memory_order_relaxed);
+              atomic_fetch_add_explicit((device atomic<float>*)db_ptr, db_sum, memory_order_relaxed);
             }
           }
           threadgroup_barrier(mem_flags::mem_threadgroup);
@@ -208,9 +233,9 @@ def _get_backward_kernel():
         }
     """
     _BACKWARD_KERNEL = mx.fast.metal_kernel(
-        name="gdn_backward_v3",
+        name="gdn_backward_v4",
         input_names=["q", "k", "v", "dy", "g", "beta", "state_in", "T",
-                     "dq_hv_buf", "dk_hv_buf"],
+                     "dq_hv_buf", "dk_hv_buf", "dg_hv_buf", "db_hv_buf"],
         output_names=["dv_out"],
         source=source,
     )
@@ -221,12 +246,16 @@ def gdn_kernel_vjp(
     q: mx.array, k: mx.array, v: mx.array,
     g: mx.array, beta: mx.array, state: Optional[mx.array],
     dy: mx.array,
-) -> Tuple[mx.array, mx.array, mx.array]:
-    """Compute (dq, dk, dv) via the Metal backward kernel.
+    *,
+    return_gbeta: bool = False,
+) -> Tuple[mx.array, ...]:
+    """Compute (dq, dk, dv[, dg, dbeta]) via the Metal backward kernel.
 
     q, k: [B, T, Hk, Dk]. v: [B, T, Hv, Dv]. g: [B, T, Hv]. beta: [B, T, Hv].
     dy: [B, T, Hv, Dv].
-    Returns dq, dk: [B, T, Hk, Dk], dv: [B, T, Hv, Dv].
+    Returns dq, dk: [B, T, Hk, Dk], dv: [B, T, Hv, Dv], and with
+    return_gbeta=True also dg, dbeta: [B, T, Hv] (the decay/write-gate
+    gradients — verified against gdn_backward.gdn_vjp_batched).
     """
     B, T, Hk, Dk = q.shape
     Hv, Dv = v.shape[-2:]
@@ -234,15 +263,29 @@ def gdn_kernel_vjp(
     if state is None:
         state = mx.zeros((B, Hv, Dv, Dk), dtype=mx.float32)
 
-    # Pre-zero the dq_hv, dk_hv accumulation buffers (atomic adds accumulate into these).
+    # Pre-zero the accumulation buffers (atomic adds accumulate into these).
     dq_hv = mx.zeros((B, T, Hv, Dk), dtype=mx.float32)
     dk_hv = mx.zeros((B, T, Hv, Dk), dtype=mx.float32)
+    dg_hv = mx.zeros((B, T, Hv), dtype=mx.float32)
+    db_hv = mx.zeros((B, T, Hv), dtype=mx.float32)
 
     kernel = _get_backward_kernel()
     if kernel is None:
-        # CPU fallback (no Metal) -- use the ops backward.
-        dq_ops, dk_ops, dv = _ops_backward(q, k, v, g, beta, state, dy)
-        return dq_ops, dk_ops, dv
+        # CPU fallback (no Metal) -- ops backward; per-b batched BPTT when
+        # the gate gradients are requested.
+        if not return_gbeta:
+            return _ops_backward(q, k, v, g, beta, state, dy)
+        from .gdn_backward import gdn_vjp_batched
+        outs = [
+            gdn_vjp_batched(
+                q[b:b + 1], k[b:b + 1], v[b:b + 1],
+                g[b:b + 1], beta[b:b + 1], state[b:b + 1], dy[b:b + 1],
+            )
+            for b in range(B)
+        ]
+        return tuple(
+            mx.concatenate([o[i] for o in outs], axis=0) for i in range(5)
+        )
 
     # Cast inputs to what the kernel expects. Use fp32 for accuracy; the
     # kernel's internal state is fp32 anyway.
@@ -255,7 +298,8 @@ def gdn_kernel_vjp(
     dy_f = dy.astype(mx.float32)
 
     dv_out, = kernel(
-        inputs=[q_f, k_f, v_f, dy_f, g_f, beta_f, state_f, T, dq_hv, dk_hv],
+        inputs=[q_f, k_f, v_f, dy_f, g_f, beta_f, state_f, T,
+                dq_hv, dk_hv, dg_hv, db_hv],
         template=[("InT", mx.float32), ("OutT", mx.float32),
                   ("Dk", Dk), ("Dv", Dv), ("Hk", Hk), ("Hv", Hv)],
         grid=(32, Dv, B * Hv),
@@ -263,7 +307,7 @@ def gdn_kernel_vjp(
         output_shapes=[(B, T, Hv, Dv)],
         output_dtypes=[mx.float32],
     )
-    mx.eval(dv_out, dq_hv, dk_hv)
+    mx.eval(dv_out, dq_hv, dk_hv, dg_hv, db_hv)
 
     # Reduce dq_hv, dk_hv from Hv heads to Hk heads (sum over the rf repeats).
     if rf > 1:
@@ -277,4 +321,6 @@ def gdn_kernel_vjp(
     dq = dq.astype(q.dtype)
     dk = dk.astype(k.dtype)
     dv = dv_out.astype(v.dtype)
+    if return_gbeta:
+        return dq, dk, dv, dg_hv.astype(g.dtype), db_hv.astype(beta.dtype)
     return dq, dk, dv
