@@ -16,14 +16,21 @@ The goal is practical:
 
 ## Demo examples
 
-The visualizer surfaces token readouts at each layer × position. On
-`Fact: The currency used in the country shaped like a boot is the`, the
+**C++ bug detection.** Feed the model `void main(void) { return 1; }` and
+ask it to find issues. At layer 43, around the `return 1;` line, the
+J-lens readout surfaces `errors`, `problems`, `violations`, `mistakes`,
+`incorrect`, `wrong` — the model is privately detecting the bug before
+writing its answer.
+
+![C++ bug example](assets/screenshot_bug.png)
+
+This is **not** proof that the model "knows" the bug in a mechanistic
+sense. It is an example of why J-lens-style readouts may be useful as a
+visual debugger for local LLMs.
+
+**Factual recall.** On `Fact: The currency used in the country shaped like a boot is the`, the
 readouts evolve: `currency` → `Italian` (the boot-shaped country) →
 `euro` — the model internally resolves the country before the answer.
-
-This is **not** proof that the model "knows" the answer in a
-mechanistic sense. It is an example of why J-lens-style readouts may be
-useful as a visual debugger for local LLMs.
 
 ## Status
 

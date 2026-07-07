@@ -161,31 +161,68 @@ def test_gdn_branch_without_gbeta():
 
 def test_gdn_kernel_path_matches_ops():
     """The Metal-kernel fast path (cotangents folded into B) must match the
-    ops BPTT. Needs Dk % 32 == 0 and Dv % 4 == 0."""
+    ops BPTT — including the dg/dbeta gate gradients. Needs Dk % 32 == 0
+    and Dv % 4 == 0. Runs at small dims AND real Qwen3.6 head dims, with
+    saturated gates (g -> 0) to stress the s_pre-storage path."""
     if not mx.metal.is_available():
         print("Metal unavailable; skipping kernel-path test")
         return
     from jlens_qwen.custom_gdn_vjp import gdn_kernel_vjp
     from jlens_qwen.gdn_backward import gdn_vjp_batched
 
-    np.random.seed(4)
-    T, Hk, Dk, Hv, Dv, C = 6, 1, 32, 2, 8, 5
-    q = mx.array(np.random.randn(1, T, Hk, Dk).astype(np.float32))
-    k = mx.array(np.random.randn(1, T, Hk, Dk).astype(np.float32))
-    v = mx.array(np.random.randn(1, T, Hv, Dv).astype(np.float32))
-    g = mx.array(np.random.rand(1, T, Hv).astype(np.float32))
-    beta = mx.array(np.random.rand(1, T, Hv).astype(np.float32))
-    dy = mx.array(np.random.randn(C, T, Hv, Dv).astype(np.float32))
+    configs = [
+        ("small", 6, 1, 32, 2, 8, 5),
+        ("real-dims", 8, 16, 128, 48, 128, 3),
+    ]
+    for name_cfg, T, Hk, Dk, Hv, Dv, C in configs:
+        np.random.seed(4)
+        q = mx.array(np.random.randn(1, T, Hk, Dk).astype(np.float32))
+        k = mx.array(np.random.randn(1, T, Hk, Dk).astype(np.float32))
+        v = mx.array(np.random.randn(1, T, Hv, Dv).astype(np.float32))
+        # include saturated gates (g ~ 1e-14) alongside moderate ones
+        g = mx.array((np.random.rand(1, T, Hv) ** 8).astype(np.float32))
+        g = mx.where(mx.arange(Hv)[None, None, :] % 3 == 0, g * 1e-12, g)
+        beta = mx.array(np.random.rand(1, T, Hv).astype(np.float32))
+        dy = mx.array(np.random.randn(C, T, Hv, Dv).astype(np.float32))
 
-    dq_o, dk_o, dv_o, _, _ = gdn_vjp_batched(q, k, v, g, beta, None, dy)
-    tile = lambda t: mx.contiguous(mx.broadcast_to(t, (C,) + t.shape[1:]))
-    dq_k, dk_k, dv_k = gdn_kernel_vjp(
-        tile(q), tile(k), tile(v), tile(g), tile(beta), None, dy
+        dq_o, dk_o, dv_o, dg_o, db_o = gdn_vjp_batched(q, k, v, g, beta, None, dy)
+        tile = lambda t: mx.contiguous(mx.broadcast_to(t, (C,) + t.shape[1:]))
+        dq_k, dk_k, dv_k, dg_k, db_k = gdn_kernel_vjp(
+            tile(q), tile(k), tile(v), tile(g), tile(beta), None, dy,
+            return_gbeta=True,
+        )
+        for name, o, kk in [
+            ("dq", dq_o, dq_k), ("dk", dk_o, dk_k), ("dv", dv_o, dv_k),
+            ("dg", dg_o, dg_k), ("dbeta", db_o, db_k),
+        ]:
+            on, kn = np.array(o), np.array(kk)
+            scale = max(np.abs(on).max(), 1.0)
+            err = np.abs(on - kn).max() / scale
+            print(f"kernel-vs-ops [{name_cfg}] {name}: {err:.2e}")
+            assert err < 1e-4, f"kernel {name} mismatch ({name_cfg}): {err:.2e}"
+            assert np.isfinite(kn).all(), f"kernel {name} has non-finite values"
+
+
+def test_gdn_branch_kernel_path_with_gbeta():
+    """End-to-end: GDN branch via the Metal-kernel BPTT with g/beta included
+    must match the brute-force VJP. Uses kernel-compatible head dims."""
+    if not mx.metal.is_available():
+        print("Metal unavailable; skipping kernel branch test")
+        return
+    patch_gdn()
+    args = _args()
+    args.linear_key_head_dim = 32
+    args.linear_value_head_dim = 8
+    mx.random.seed(5)
+    layer = DecoderLayer(args, layer_idx=0)
+    assert layer.is_linear
+    x = _random_x(48, seed=6)
+    M = attn_branch_jacobian(
+        layer, x, skip_first=SKIP_FIRST, chunk=16,
+        include_gbeta=True, use_kernel=True,
     )
-    for name, o, kk in [("dq", dq_o, dq_k), ("dk", dk_o, dk_k), ("dv", dv_o, dv_k)]:
-        err = np.abs(np.array(o) - np.array(kk)).max()
-        print(f"kernel-vs-ops {name}: {err:.2e}")
-        assert err < 1e-4, f"kernel {name} mismatch: {err:.2e}"
+    M_ref = _brute_force_branch(layer, x)
+    _check("GDN branch (kernel path, with g/beta)", M, M_ref)
 
 
 def test_mlp_branch():
@@ -268,6 +305,7 @@ if __name__ == "__main__":
     test_gdn_branch_with_gbeta()
     test_gdn_branch_without_gbeta()
     test_gdn_kernel_path_matches_ops()
+    test_gdn_branch_kernel_path_with_gbeta()
     test_mlp_branch()
     test_full_layer_junction_error()
     print("ALL PASSED")

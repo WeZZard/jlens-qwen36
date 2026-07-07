@@ -54,14 +54,19 @@ def _gdn_custom_vjp(primals, cotangent, output):
     """Custom VJP: use our Metal backward kernel.
 
     primals: (q, k, v, g, beta, state). cotangent: dy (same shape as y).
-    Returns (dq, dk, dv, dg, dbeta, dstate) — only dq, dk, dv are nonzero.
+    Returns (dq, dk, dv, dg, dbeta, dstate). dg/dbeta are REAL gate
+    gradients (kernel v4, verified vs gdn_backward.gdn_vjp_batched) —
+    upstream autograd chains them through compute_g/sigmoid back to the
+    input, so per-layer VJPs now include the x->a/b->gate paths that were
+    previously zeroed (measured 4.9-7.5% of ||M||, see
+    scripts/measure_gbeta_gap.py). Only dstate stays zero (state is a
+    zeros constant in the lens fit).
     """
     q, k, v, g, beta, state = primals
     dy = cotangent
-    dq, dk, dv = gdn_kernel_vjp(q, k, v, g, beta, state, dy)
-    # Grads w.r.t. g, beta, state: zeros (not needed for the lens).
-    dg = mx.zeros_like(g)
-    dbeta = mx.zeros_like(beta)
+    dq, dk, dv, dg, dbeta = gdn_kernel_vjp(
+        q, k, v, g, beta, state, dy, return_gbeta=True
+    )
     if state is not None:
         dstate = mx.zeros_like(state)
     else:

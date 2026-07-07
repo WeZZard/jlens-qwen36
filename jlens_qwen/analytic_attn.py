@@ -262,10 +262,11 @@ def _gdn_branch(
     dg_da = -mx.exp(gdn.A_log.astype(mx.float32))[None] * g1[0] * sig_a  # [S, Hv]
     db_db = (beta1 * (1.0 - beta1))[0]  # [S, Hv]
 
+    # The Metal kernel now produces dg/dbeta too (verified vs the ops BPTT
+    # to ~3e-7 incl. saturated gates), so it serves both include_gbeta modes.
     if use_kernel == "auto":
         use_kernel = (
-            not include_gbeta
-            and mx.metal.is_available()
+            mx.metal.is_available()
             and Dk % 32 == 0
             and Dv % 4 == 0
         )
@@ -292,11 +293,15 @@ def _gdn_branch(
             tile = lambda t: mx.contiguous(
                 mx.broadcast_to(t, (C,) + t.shape[1:])
             )
-            dq, dk, dv = gdn_kernel_vjp(
+            out = gdn_kernel_vjp(
                 tile(q1), tile(k1), tile(v1), tile(g1), tile(beta1),
-                None, dy.astype(mx.float32),
+                None, dy.astype(mx.float32), return_gbeta=include_gbeta,
             )
-            dg = db = None
+            if include_gbeta:
+                dq, dk, dv, dg, db = out
+            else:
+                dq, dk, dv = out
+                dg = db = None
         else:
             dq, dk, dv, dg, db = gdn_vjp_batched(
                 q1, k1, v1, g1, beta1, None, dy.astype(mx.float32)

@@ -1,40 +1,24 @@
-2026-07-08 03:44:10,650 HTTP Request: GET https://huggingface.co/api/models/mlx-community/Qwen3.6-27B-4bit/revision/main "HTTP/1.1 200 OK"
-Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files: 100%|██████████| 14/14 [00:00<00:00, 67963.26it/s]
+2026-07-08 03:59:32,719 HTTP Request: GET https://huggingface.co/api/models/mlx-community/Qwen3.6-27B-4bit/revision/main "HTTP/1.1 200 OK"
+Fetching 14 files:   0%|          | 0/14 [00:00<?, ?it/s]Fetching 14 files: 100%|██████████| 14/14 [00:00<00:00, 46677.47it/s]
 Prompts: 20
 Source layers: 63 (0..62) — FULL DEPTH
-analytic_attn=True, include_gbeta=True (g/beta gap 4.9-7.5%), chain indexing FIXED
-Expected ~22 min/prompt, ~7h total
-2026-07-08 03:44:13,684 === prompt 1/20 ===
-2026-07-08 03:44:14,178   computing final norm Jacobian (J_64)...
-2026-07-08 03:44:14,197     0.0s
-2026-07-08 03:44:14,198   computing M_63 (layer 63 at its input acts[62])...
-2026-07-08 03:44:16,215     2.0s, ||M||=7.670e+01
-2026-07-08 03:44:16,318     J_62 ||.||=2.225e+01
-2026-07-08 03:44:16,323   computing M_62 (layer 62 at its input acts[61])...
-2026-07-08 03:45:27,771     71.4s, ||M||=7.508e+01
-2026-07-08 03:45:28,104     J_61 ||.||=2.358e+01
-2026-07-08 03:45:28,110   computing M_61 (layer 61 at its input acts[60])...
-2026-07-08 03:46:41,829     73.7s, ||M||=7.383e+01
-2026-07-08 03:46:41,933     J_60 ||.||=2.451e+01
-2026-07-08 03:46:41,935   computing M_60 (layer 60 at its input acts[59])...
-2026-07-08 03:47:56,026     73.9s, ||M||=7.409e+01
-2026-07-08 03:47:56,128     J_59 ||.||=2.558e+01
-2026-07-08 03:47:56,130   computing M_59 (layer 59 at its input acts[58])...
-2026-07-08 03:47:58,279     2.1s, ||M||=7.246e+01
-2026-07-08 03:47:58,365     J_58 ||.||=2.604e+01
-2026-07-08 03:47:58,367   computing M_58 (layer 58 at its input acts[57])...
-2026-07-08 03:49:04,193     65.8s, ||M||=7.209e+01
-2026-07-08 03:49:04,292     J_57 ||.||=2.626e+01
-2026-07-08 03:49:04,294   computing M_57 (layer 57 at its input acts[56])...
-2026-07-08 03:50:14,688     70.4s, ||M||=7.191e+01
-2026-07-08 03:50:14,820     J_56 ||.||=2.650e+01
-2026-07-08 03:50:14,822   computing M_56 (layer 56 at its input acts[55])...
-2026-07-08 03:51:34,246     79.4s, ||M||=7.180e+01
-2026-07-08 03:51:34,340     J_55 ||.||=2.690e+01
-2026-07-08 03:51:34,343   computing M_55 (layer 55 at its input acts[54])...
-2026-07-08 03:51:36,881     2.5s, ||M||=7.113e+01
-2026-07-08 03:51:36,967     J_54 ||.||=2.693e+01
-2026-07-08 03:51:36,969   computing M_54 (layer 54 at its input acts[53])...
-2026-07-08 03:52:48,072     71.1s, ||M||=7.075e+01
-2026-07-08 03:52:48,159     J_53 ||.||=2.697e+01
-2026-07-08 03:52:48,161   computing M_53 (layer 53 at its input acts[52])...
+analytic_attn=True, include_gbeta=True via Metal kernel v4 (dg/dbeta), chain indexing FIXED
+2026-07-08 03:59:35,918 === prompt 1/20 ===
+2026-07-08 03:59:36,427   computing final norm Jacobian (J_64)...
+2026-07-08 03:59:36,456     0.0s
+2026-07-08 03:59:36,456   computing M_63 (layer 63 at its input acts[62])...
+2026-07-08 03:59:39,535     3.1s, ||M||=7.670e+01
+2026-07-08 03:59:39,780     J_62 ||.||=2.225e+01
+2026-07-08 03:59:40,030   computing M_62 (layer 62 at its input acts[61])...
+2026-07-08 03:59:50,259     10.2s, ||M||=7.508e+01
+2026-07-08 03:59:50,360     J_61 ||.||=2.358e+01
+2026-07-08 03:59:50,362   computing M_61 (layer 61 at its input acts[60])...
+2026-07-08 03:59:58,722     8.4s, ||M||=7.383e+01
+2026-07-08 03:59:58,835     J_60 ||.||=2.451e+01
+2026-07-08 03:59:58,837   computing M_60 (layer 60 at its input acts[59])...
+2026-07-08 04:00:07,326     8.5s, ||M||=7.409e+01
+2026-07-08 04:00:07,425     J_59 ||.||=2.558e+01
+2026-07-08 04:00:07,427   computing M_59 (layer 59 at its input acts[58])...
+2026-07-08 04:00:09,824     2.4s, ||M||=7.246e+01
+2026-07-08 04:00:09,925     J_58 ||.||=2.604e+01
+2026-07-08 04:00:09,927   computing M_58 (layer 58 at its input acts[57])...
