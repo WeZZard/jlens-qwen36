@@ -208,11 +208,37 @@
   }
   #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; }
   #clear-btn:hover, #settings-btn:hover, #sessions-btn:hover { background: var(--surface); }
+  /* Bottom-left row: settings (active mode only) + the GitHub capsule.
+     Hiding settings in presentation mode slides the capsule into the
+     corner automatically. */
+  #corner-actions-left {
+    position: fixed; left: 16px; bottom: 16px; z-index: 10;
+    display: flex; gap: 14px;
+  }
   #settings-btn {
-    position: fixed; bottom: 16px; left: 16px; z-index: 10;
     width: 44px; padding: 0;
     border-radius: 50%; justify-content: center;
   }
+  #github-btn {
+    height: 44px; padding: 0 18px;
+    display: flex; align-items: center; gap: 8px;
+    border: 1px solid var(--border-2); border-radius: 22px;
+    background: #ffffff; color: var(--text);
+    text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    box-shadow: 0 6px 20px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
+    transition: background 0.12s, transform 0.1s;
+  }
+  #github-btn:hover { background: var(--surface); }
+  #github-btn:active { transform: scale(0.97); }
+  .github-mark { width: 18px; height: 18px; fill: currentColor; flex-shrink: 0; }
+  .github-stars-wrap {
+    display: flex; align-items: center; gap: 4px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .github-stars-wrap .star-icon { width: 14px; height: 14px; fill: #eac54f; }
+  .github-stars-wrap[hidden] { display: none; }
   #clear-btn:active, #settings-btn:active, #sessions-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
   #sessions-menu {
@@ -228,13 +254,17 @@
     overflow: hidden;
   }
   #sessions-menu.visible { display: flex; }
-  #sessions-menu .sessions-head {
+  /* Shared by the corner popover AND the centered presentation picker, so
+     the picker-to-popover morph carries identical content. */
+  #sessions-menu .sessions-head,
+  #session-picker-card .sessions-head {
     padding: 10px 14px;
     display: flex; align-items: center; justify-content: space-between;
     gap: 10px;
     font-size: 12px; font-weight: 700; color: var(--text-2);
     text-transform: uppercase; letter-spacing: 0.04em;
     border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
   }
   #sessions-list {
     overflow-y: auto;
@@ -749,6 +779,105 @@
   html.presentation #detail .markup-save {
     display: none !important;
   }
+
+  /* ----- Presentation entry: wide centered session picker ----- */
+  /* First screen of presentation mode. The corner Saved Sessions button
+     stays hidden until a session is chosen; picking one morphs this card
+     to the corner popover's geometry, then collapses it into the button
+     while the session content loads. */
+  #session-picker {
+    position: fixed; inset: 0; z-index: 40;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  html.picker-open #session-picker { display: flex; }
+  html.picker-open #sessions-btn,
+  html.picker-open #github-btn { display: none !important; }
+  /* GitHub repo line, bottom center of the first screen: icon · name ·
+     stars. Out of the flex flow, so the card's morph never moves it; it
+     fades away as the picker closes. */
+  #picker-github {
+    position: absolute; bottom: 28px; left: 50%;
+    transform: translateX(-50%);
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-2); text-decoration: none;
+    font-size: 13px; font-weight: 500;
+    transition: color 0.12s, opacity 240ms ease;
+  }
+  #picker-github:hover { color: var(--text); }
+  #picker-github .github-mark { width: 16px; height: 16px; }
+  #session-picker.closing #picker-github { opacity: 0; }
+  /* The card is a WIDER twin of #sessions-menu: identical head, item
+     markup, typography, and paddings — so the morph to the corner reads
+     as the same element travelling, its rows re-ellipsizing as the box
+     narrows, arriving pixel-identical to the popover. */
+  #session-picker-card {
+    width: min(720px, 92vw);
+    max-height: min(70vh, 640px);
+    display: flex; flex-direction: column;
+    background: #ffffff;
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
+    box-shadow: 0 24px 80px rgba(60,50,30,0.18), 0 6px 24px rgba(60,50,30,0.10);
+    overflow: hidden;
+  }
+  #session-picker-list { overflow-y: auto; padding: 6px; }
+  .picker-empty { padding: 26px 16px; color: var(--text-3); font-size: 13px; text-align: center; }
+  /* Download progress on the picked row (tracks the first chunk — the
+     part that blocks first paint). Other rows dim and lock while loading. */
+  .session-item { position: relative; }
+  .session-progress {
+    position: absolute; left: 10px; right: 10px; bottom: 3px;
+    height: 3px; border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+  }
+  .session-progress-fill {
+    height: 100%; width: 0%;
+    background: var(--highlight-orange);
+    border-radius: 2px;
+    transition: width 120ms linear;
+  }
+  .session-progress-fill.indeterminate {
+    width: 40%;
+    animation: session-progress-slide 900ms ease-in-out infinite;
+  }
+  @keyframes session-progress-slide {
+    from { margin-left: -40%; }
+    to { margin-left: 100%; }
+  }
+  #session-picker-list.picker-loading .session-item { pointer-events: none; }
+  #session-picker-list.picker-loading .session-item:not(.loading) { opacity: 0.5; }
+  #session-picker-list.picker-loading .session-item.loading { background: var(--highlight-orange-soft); }
+  /* Phase 1 — FLIP morph to the corner popover geometry (inline styles
+     drive the box; this class provides the transitions). The content
+     stays fully visible; the shadow settles to the popover's. */
+  #session-picker-card.morphing {
+    transition: left 460ms cubic-bezier(0.33, 0, 0.2, 1),
+                top 460ms cubic-bezier(0.33, 0, 0.2, 1),
+                width 460ms cubic-bezier(0.33, 0, 0.2, 1),
+                height 460ms cubic-bezier(0.33, 0, 0.2, 1),
+                box-shadow 460ms ease;
+    box-shadow: 0 12px 36px rgba(60,50,30,0.16), 0 3px 10px rgba(60,50,30,0.08);
+  }
+  /* Phase 2 — collapse from the popover position into the corner button. */
+  #session-picker-card.collapsing {
+    transform-origin: 100% 100%;
+    transform: translateY(44px) scale(0.05);
+    opacity: 0;
+    transition: transform 300ms cubic-bezier(0.55, 0, 0.85, 0.4),
+                opacity 260ms ease;
+  }
+  /* The corner buttons pop in as the collapse lands. */
+  #sessions-btn.pop-in,
+  #github-btn.pop-in {
+    animation: sessions-btn-pop 340ms cubic-bezier(0.2, 0.8, 0.3, 1.15) both;
+  }
+  @keyframes sessions-btn-pop {
+    from { opacity: 0; transform: translateY(10px) scale(0.85); }
+    to { opacity: 1; transform: none; }
+  }
 </style>
 </head><body>
 <div id="app">
@@ -780,10 +909,20 @@
     </div>
   </div>
 
-  <!-- ===== Clear + Settings buttons (fixed, bottom-right) ===== -->
+  <!-- ===== Bottom-left: settings + GitHub capsule ===== -->
+  <div id="corner-actions-left">
   <button id="settings-btn" title="Generation settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
+  <a id="github-btn" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
+    <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+    <span class="github-name">WeZZard/jlens-qwen36</span>
+    <span class="github-stars-wrap" hidden>
+      <svg class="star-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+      <span class="github-stars"></span>
+    </span>
+  </a>
+  </div>
   <div id="corner-actions">
     <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
     <button id="clear-btn" title="Clear conversation">Clear</button>
@@ -800,6 +939,22 @@
 
   <!-- ===== Markups: floating column, left edge ===== -->
   <div id="markups" aria-label="Saved markups"></div>
+
+  <!-- ===== Presentation entry: centered session picker ===== -->
+  <div id="session-picker" role="dialog" aria-label="Choose a saved session">
+    <div id="session-picker-card">
+      <div class="sessions-head"><span>Saved Sessions</span></div>
+      <div id="session-picker-list"></div>
+    </div>
+    <a id="picker-github" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
+      <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
+      <span class="github-name">WeZZard/jlens-qwen36</span>
+      <span class="github-stars-wrap" hidden>
+        <svg class="star-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
+        <span class="github-stars"></span>
+      </span>
+    </a>
+  </div>
 
   <!-- ===== Settings modal (centered, dimmed backdrop) ===== -->
   <div id="settings-backdrop">
@@ -979,59 +1134,7 @@ function restoreConversation(saved) {
   state.gridTokenStrs = [];
   state.gridTokenMsgs = [];
   for (const snap of state.snapshots) {
-    state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
-    const m = state.messages[snap.msg_idx];
-    if (!m) continue;
-    m.role = snap.role;
-    if (snap.token_idx === -1) {
-      m.prefillSnapshotId = snap.snapshot_id;
-      if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
-        const strs = snap.token_strs || [];
-        if (strs.length) {
-          m.tokens = strs.map((str, i) => ({
-            id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
-          }));
-          m.content = strs.join('');
-        }
-        strs.forEach((str, i) => {
-          const globalPos = snap.prefill_pos + i;
-          while (state.gridRows.length <= globalPos) {
-            state.gridRows.push(null);
-            state.gridTokenStrs.push('');
-            state.gridTokenMsgs.push(null);
-          }
-          state.gridTokenStrs[globalPos] = str;
-          state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
-          state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
-        });
-      }
-      if (snap.grid && snap.grid.positions) {
-        snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
-      }
-    } else {
-      const globalPos = snap.pos;
-      const tokStr = snap.token;
-      while (state.gridRows.length <= globalPos) {
-        state.gridRows.push(null);
-        state.gridTokenStrs.push('');
-        state.gridTokenMsgs.push(null);
-      }
-      state.gridTokenStrs[globalPos] = tokStr;
-      state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
-      const m2 = state.messages[snap.msg_idx];
-      if (m2) {
-        while (m2.tokens.length <= snap.token_idx) {
-          m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
-        }
-        m2.tokens[snap.token_idx] = {
-          id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
-        };
-        m2.content = m2.tokens.map(t => t.text).join('');
-      }
-      if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
-        writeGridRow(globalPos, snap.grid.cells, 0);
-      }
-    }
+    _applyRestoredSnapshot(snap);
   }
   // Initial view for a restored session: first token, last layer, chat
   // at the first user message.
@@ -1039,6 +1142,65 @@ function restoreConversation(saved) {
   pendingChatTop = true;
   updateAutoFollowUI();
   return true;
+}
+
+// Index one restored snapshot into grid/message state. Shared by the full
+// restore above and the progressive chunk loader (which appends chunks of
+// snapshots to an already-restored conversation).
+function _applyRestoredSnapshot(snap) {
+  state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+  const m = state.messages[snap.msg_idx];
+  if (!m) return;
+  m.role = snap.role;
+  if (snap.token_idx === -1) {
+    m.prefillSnapshotId = snap.snapshot_id;
+    if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
+      const strs = snap.token_strs || [];
+      if (strs.length) {
+        m.tokens = strs.map((str, i) => ({
+          id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
+        }));
+        m.content = strs.join('');
+      }
+      strs.forEach((str, i) => {
+        const globalPos = snap.prefill_pos + i;
+        while (state.gridRows.length <= globalPos) {
+          state.gridRows.push(null);
+          state.gridTokenStrs.push('');
+          state.gridTokenMsgs.push(null);
+        }
+        state.gridTokenStrs[globalPos] = str;
+        state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
+        state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+      });
+    }
+    if (snap.grid && snap.grid.positions) {
+      snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
+    }
+  } else {
+    const globalPos = snap.pos;
+    const tokStr = snap.token;
+    while (state.gridRows.length <= globalPos) {
+      state.gridRows.push(null);
+      state.gridTokenStrs.push('');
+      state.gridTokenMsgs.push(null);
+    }
+    state.gridTokenStrs[globalPos] = tokStr;
+    state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
+    const m2 = state.messages[snap.msg_idx];
+    if (m2) {
+      while (m2.tokens.length <= snap.token_idx) {
+        m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
+      }
+      m2.tokens[snap.token_idx] = {
+        id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
+      };
+      m2.content = m2.tokens.map(t => t.text).join('');
+    }
+    if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
+      writeGridRow(globalPos, snap.grid.cells, 0);
+    }
+  }
 }
 
 // A complete conversation has contiguous per-token snapshots starting at
@@ -1083,9 +1245,7 @@ function loadSavedState() {
       let bestId = null;
       for (const id of candidates) {
         try {
-          const r = await fetch(API + '/api/sessions/' + encodeURIComponent(id));
-          if (!r.ok) continue;
-          const full = await r.json();
+          const full = await apiGetSession(id);
           const sameConversation = full.preview === saved.preview &&
             (full.messages || []).length === (saved.messages || []).length;
           if (sameConversation &&
@@ -1196,14 +1356,180 @@ function cancelSettings() {
   closeSettingsModal();
 }
 
-// ----- Lens + model info -----
-async function loadInfo() {
-  const [lm, l] = await Promise.all([
+// ----- Data-source bridge -----
+// Active mode reads the live API. Presentation mode NEVER touches a
+// server: it reads the static layout produced by scripts/export_static.py
+// (meta.json, sessions/index.json manifest, sessions/<id>.gz payloads),
+// so a presentation build deploys to any static host (Cloudflare Pages).
+// Read-only is enforced by construction — there is no API to call.
+
+// Sessions are exported gzipped (Cloudflare Pages caps files at 25 MiB;
+// raw sessions run far larger). Sniff the gzip magic bytes instead of
+// trusting extensions/headers: hosts that transparently set
+// Content-Encoding deliver plain bytes, hosts that serve .gz raw deliver
+// compressed ones — both parse correctly this way.
+async function parseMaybeGzippedBytes(bytes) {
+  if (bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
+    const stream = new Response(bytes).body.pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(await new Response(stream).text());
+  }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+async function fetchMaybeGzippedJson(url, onProgress = null) {
+  const resp = await fetch(url);
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText} for ${url}`);
+  if (!onProgress || !resp.body) {
+    return parseMaybeGzippedBytes(new Uint8Array(await resp.arrayBuffer()));
+  }
+  // Progress-aware read (drives the picker's download bar).
+  const total = +resp.headers.get('content-length') || 0;
+  const reader = resp.body.getReader();
+  const parts = [];
+  let received = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value);
+    received += value.length;
+    onProgress(received, total);
+  }
+  const bytes = new Uint8Array(received);
+  let off = 0;
+  for (const p of parts) { bytes.set(p, off); off += p.length; }
+  return parseMaybeGzippedBytes(bytes);
+}
+
+// Sessions are exported in CHUNKS (sessions/<id>.<k>.gz): chunk 0 is the
+// conversation envelope plus the first snapshots — enough to render —
+// and the rest stream in behind it.
+function fetchSessionChunk(sessionId, k, onProgress = null) {
+  return fetchMaybeGzippedJson(
+    'sessions/' + encodeURIComponent(sessionId) + '.' + k + '.gz', onProgress);
+}
+
+async function apiGetMeta() {
+  if (isPresentation()) {
+    // Baked into the page by the exporter — no round trip.
+    if (window.JLENS_META) return window.JLENS_META;
+    return fetchMaybeGzippedJson('meta.json');
+  }
+  const [model, lens] = await Promise.all([
     fetch(API + '/api/model').then(r => r.json()),
     fetch(API + '/api/lens').then(r => r.json()),
   ]);
-  state.modelId = lm.model_id || 'unknown model';
-  state.lensInfo = l;
+  return { model, lens };
+}
+
+async function apiGetSessionList() {
+  let sessions;
+  if (isPresentation()) {
+    // Baked into the page by the exporter — the first screen renders with
+    // the HTML itself, no manifest round trip ("Loading sessions…" never
+    // appears on slow links).
+    sessions = Array.isArray(window.JLENS_SESSIONS)
+      ? window.JLENS_SESSIONS
+      : (await fetchMaybeGzippedJson('sessions/index.json')).sessions || [];
+  } else {
+    const resp = await fetch(API + '/api/sessions');
+    if (!resp.ok) throw new Error(await resp.text());
+    sessions = (await resp.json()).sessions || [];
+  }
+  // The rolling autosave is a recovery backup, not a saved session: it is
+  // overwritten by every stream and excluded from exports. Never list it
+  // (it stays fetchable by id for trimmed-cache recovery).
+  return sessions.filter(s => s.id !== 'autosave-latest.json');
+}
+
+async function apiGetSession(sessionId) {
+  if (isPresentation()) {
+    // Assemble ALL chunks into the complete session (used by paths that
+    // need the whole thing at once, e.g. trimmed-cache recovery).
+    const first = await fetchSessionChunk(sessionId, 0);
+    const totalChunks = (first.chunking && first.chunking.chunks) || 1;
+    for (let k = 1; k < totalChunks; k++) {
+      const chunk = await fetchSessionChunk(sessionId, k);
+      first.snapshots.push(...(chunk.snapshots || []));
+    }
+    return first;
+  }
+  const resp = await fetch(API + '/api/sessions/' + encodeURIComponent(sessionId));
+  if (!resp.ok) throw new Error(await resp.text());
+  return resp.json();
+}
+
+// Progressive session load (presentation): restore + render as soon as
+// chunk 0 arrives, then stream the remaining chunks into state in the
+// background, extending the grid in place without moving the view. A new
+// load supersedes any in-flight one via the generation counter.
+let _sessionLoadGen = 0;
+async function loadSessionProgressive(sessionId, { onProgress } = {}) {
+  const gen = ++_sessionLoadGen;
+  const first = await fetchSessionChunk(sessionId, 0, onProgress || null);
+  if (gen !== _sessionLoadGen) return false;
+  if (!restoreConversation(first)) return false;
+  state.sourceSessionId = sessionId;
+  saveState();
+  renderAll();
+  const totalChunks = (first.chunking && first.chunking.chunks) || 1;
+  if (totalChunks > 1) _streamRemainingChunks(sessionId, totalChunks, gen);
+  return true;
+}
+
+async function _streamRemainingChunks(sessionId, totalChunks, gen) {
+  for (let k = 1; k < totalChunks; k++) {
+    let chunk = null;
+    for (let attempt = 0; attempt < 2 && !chunk; attempt++) {
+      try {
+        chunk = await fetchSessionChunk(sessionId, k);
+      } catch (e) {
+        if (attempt === 1) {
+          console.warn(`session chunk ${k}/${totalChunks - 1} failed; stopping background load:`, e);
+          return;
+        }
+      }
+    }
+    if (gen !== _sessionLoadGen) return;  // superseded by another load
+    const snaps = chunk.snapshots || [];
+    for (const snap of snaps) {
+      state.snapshots.push(snap);
+      _applyRestoredSnapshot(snap);
+    }
+    scheduleSaveState();
+    // Extend in place: no view movement, no follow-mode.
+    renderMarkups();
+    renderChat();
+    renderGrid({ keepScroll: true });
+  }
+  flushSaveState();
+}
+
+// ----- GitHub repo capsule: live star count -----
+// Anonymous GitHub API call; on failure (offline, rate limit, private
+// repo) the star section simply stays hidden — icon + name still show.
+const GITHUB_REPO = 'WeZZard/jlens-qwen36';
+async function loadGithubStars() {
+  try {
+    const resp = await fetch('https://api.github.com/repos/' + GITHUB_REPO);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const n = data.stargazers_count;
+    if (!Number.isFinite(n)) return;
+    const text = n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k' : String(n);
+    document.querySelectorAll('.github-stars').forEach(el => { el.textContent = text; });
+    document.querySelectorAll('.github-stars-wrap').forEach(el => { el.hidden = false; });
+  } catch (e) {}
+}
+
+// ----- Lens + model info -----
+async function loadInfo() {
+  try {
+    const meta = await apiGetMeta();
+    state.modelId = (meta.model && meta.model.model_id) || 'unknown model';
+    state.lensInfo = meta.lens || null;
+  } catch (e) {
+    console.warn('loadInfo failed:', e);
+  }
 }
 
 // ----- Overlay-aware scroll padding -----
@@ -2416,7 +2742,7 @@ function renderDetail() {
 function appendDetailSignature(col) {
   const sig = document.createElement('div');
   sig.className = 'signature';
-  sig.innerHTML = 'Designed by <a href="https://wezzard.com" target="_blank" rel="noopener">WeZZard</a>';
+  sig.innerHTML = 'Designed by <a href="https://github.com/WeZZard" target="_blank" rel="noopener">WeZZard</a>';
   col.appendChild(sig);
 }
 
@@ -2820,14 +3146,155 @@ function renderSessionsList(sessions) {
   });
 }
 
+// ----- Presentation entry: centered session picker -----
+// The first screen of a presentation deployment is ALWAYS this wide,
+// centered chooser (entry clears any cached conversation). Picking a
+// session fetches it while the card morphs to the corner popover's
+// geometry and collapses into the Saved Sessions button, which pops in.
+async function openSessionPicker() {
+  document.documentElement.classList.add('picker-open');
+  const list = $('session-picker-list');
+  list.innerHTML = '<div class="picker-empty">Loading sessions…</div>';
+  try {
+    const sessions = await apiGetSessionList();
+    list.innerHTML = '';
+    if (!sessions.length) {
+      list.innerHTML = '<div class="picker-empty">No saved sessions.</div>';
+      return;
+    }
+    // Identical markup to the corner popover's items (renderSessionsList),
+    // so the morph carries the exact same content, typography, and spacing.
+    sessions.forEach((session) => {
+      const item = document.createElement('div');
+      item.className = 'session-item';
+      item.role = 'button';
+      item.tabIndex = 0;
+      item.innerHTML = `
+        <div class="session-main">
+          <div class="session-preview">${escapeHtml(session.preview || 'Untitled session')}</div>
+          <div class="session-meta">${escapeHtml(sessionMetaText(session))}</div>
+        </div>
+      `;
+      item.onclick = () => pickSessionFromPicker(session.id, item);
+      item.onkeydown = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          pickSessionFromPicker(session.id, item);
+        }
+      };
+      list.appendChild(item);
+    });
+  } catch (e) {
+    list.innerHTML = '<div class="picker-empty">Could not load sessions.</div>';
+    console.error('session picker failed:', e);
+  }
+}
+
+let _pickerBusy = false;
+function pickSessionFromPicker(sessionId, itemEl) {
+  if (_pickerBusy) return;
+  _pickerBusy = true;
+  const card = $('session-picker-card');
+  const list = $('session-picker-list');
+  // Download progress on the picked row: the bar tracks chunk 0 — the
+  // part that blocks first paint. Remaining chunks stream in behind the
+  // rendered app.
+  list.classList.add('picker-loading');
+  let fill = null;
+  if (itemEl) {
+    itemEl.classList.add('loading');
+    const bar = document.createElement('div');
+    bar.className = 'session-progress';
+    bar.innerHTML = '<div class="session-progress-fill"></div>';
+    itemEl.appendChild(bar);
+    fill = bar.firstElementChild;
+  }
+  const onProgress = (loaded, total) => {
+    if (!fill) return;
+    if (total > 0) {
+      fill.style.width = Math.min(100, Math.round((loaded / total) * 100)) + '%';
+    } else {
+      fill.classList.add('indeterminate');
+    }
+  };
+  (async () => {
+    let restored = false;
+    try {
+      // Restore + render BEFORE the close animation: chunk 0 is small, so
+      // the one-time restore block happens while the progress bar is full,
+      // and the morph then plays over live content with a free main thread.
+      restored = await loadSessionProgressive(sessionId, { onProgress });
+    } catch (e) {
+      console.error('session picker load failed:', e);
+    }
+    if (!restored) {
+      // Let the presenter retry instead of stranding them on a blank app.
+      list.classList.remove('picker-loading');
+      if (itemEl) {
+        itemEl.classList.remove('loading');
+        const bar = itemEl.querySelector('.session-progress');
+        if (bar) bar.remove();
+      }
+      _pickerBusy = false;
+      return;
+    }
+    _animatePickerAway(card);
+  })();
+}
+
+function _animatePickerAway(card) {
+  const btn = $('sessions-btn');
+  const finish = () => {
+    document.documentElement.classList.remove('picker-open');
+    $('session-picker').classList.remove('closing');
+    $('session-picker-list').classList.remove('picker-loading');
+    card.classList.remove('morphing', 'collapsing');
+    card.removeAttribute('style');
+    _pickerBusy = false;
+    [btn, $('github-btn')].forEach((b) => {
+      b.classList.add('pop-in');
+      setTimeout(() => b.classList.remove('pop-in'), 420);
+    });
+  };
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    finish();
+    return;
+  }
+  // Fade the bottom-center GitHub line out with the picker (it is
+  // absolutely positioned, so the card's morph cannot move it).
+  $('session-picker').classList.add('closing');
+  // Phase 1 (FLIP): pin the card at its centered rect, then transition the
+  // box to where the corner sessions popover lives (right 16, bottom 72).
+  const rect = card.getBoundingClientRect();
+  card.style.position = 'fixed';
+  card.style.left = rect.left + 'px';
+  card.style.top = rect.top + 'px';
+  card.style.width = rect.width + 'px';
+  card.style.height = rect.height + 'px';
+  card.style.margin = '0';
+  card.classList.add('morphing');
+  const targetW = Math.min(360, window.innerWidth - 32);
+  const targetH = Math.min(rect.height, 460);
+  const targetL = window.innerWidth - 16 - targetW;
+  const targetT = window.innerHeight - 72 - targetH;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    card.style.left = targetL + 'px';
+    card.style.top = targetT + 'px';
+    card.style.width = targetW + 'px';
+    card.style.height = targetH + 'px';
+    // Phase 2: collapse from the popover position into the corner button.
+    setTimeout(() => {
+      card.classList.add('collapsing');
+      setTimeout(finish, 310);
+    }, 480);
+  }));
+}
+
 async function refreshSessions() {
   const list = $('sessions-list');
   list.innerHTML = '<div id="sessions-empty">Loading sessions...</div>';
   try {
-    const resp = await fetch(API + '/api/sessions');
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await resp.json();
-    renderSessionsList(data.sessions || []);
+    renderSessionsList(await apiGetSessionList());
   } catch (e) {
     list.innerHTML = '<div id="sessions-empty">Could not load sessions.</div>';
     console.error('load sessions failed:', e);
@@ -2878,9 +3345,12 @@ async function saveCurrentSession() {
 async function loadSession(sessionId) {
   if (state.streaming) return;
   try {
-    const resp = await fetch(API + '/api/sessions/' + encodeURIComponent(sessionId));
-    if (!resp.ok) throw new Error(await resp.text());
-    const data = await resp.json();
+    if (isPresentation()) {
+      // Chunked + progressive: first chunk renders, the rest stream in.
+      if (await loadSessionProgressive(sessionId)) closeSessionsMenu();
+      return;
+    }
+    const data = await apiGetSession(sessionId);
     if (restoreConversation(data)) {
       // This session file IS the durable full copy of the conversation —
       // remember it so trimmed localStorage restores can recover from it.
@@ -2993,8 +3463,17 @@ function escapeAttr(s) {
 }
 
 loadInfo();
+loadGithubStars();
 loadSettings();
-loadSavedState();
-renderAll();
+if (isPresentation()) {
+  // Presentation always enters on the session picker: clear any cached
+  // conversation so the chooser is the first screen every time.
+  clearState();
+  renderAll();
+  openSessionPicker();
+} else {
+  loadSavedState();
+  renderAll();
+}
 </script>
 </body></html>

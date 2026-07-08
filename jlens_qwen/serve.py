@@ -446,6 +446,11 @@ async def list_sessions():
     _sessions_dir.mkdir(parents=True, exist_ok=True)
     sessions = []
     for path in sorted(_sessions_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        # The rolling autosave is a recovery backup (overwritten by every
+        # stream), not a saved session — it stays fetchable by id for the
+        # client's trimmed-cache recovery but is never listed.
+        if path.name == "autosave-latest.json":
+            continue
         try:
             data = json.loads(path.read_text())
         except Exception:
