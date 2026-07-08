@@ -47,37 +47,23 @@
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
 
-  /* ===== Top: timeline (paper backdrop, dissolves into content) ===== */
-  #timeline-col {
-    position: relative; z-index: 3;
-    height: 148px; flex-shrink: 0;
-    display: flex; flex-direction: column;
-    background-color: var(--paper-bg);
-    background-image: var(--paper-texture);
-    background-repeat: repeat;
-    border-bottom: none;
-    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
-    mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
-  }
-
   /* ===== Middle: two independently-scrollable columns ===== */
   #split { flex: 1; display: flex; overflow: hidden; min-height: 0; }
   #grid-col {
     position: relative;
-    width: 56%; min-width: 420px;
+    flex: 1; min-width: 420px;
     display: flex; flex-direction: column; overflow: hidden;
     background: transparent;
     border-right: 1px solid var(--border);
   }
   #chat-col {
-    flex: 1; min-width: 320px;
+    width: 450px; min-width: 360px; flex-shrink: 0;
     display: flex; flex-direction: column;
     background: transparent;
     overflow: hidden;
   }
 
   /* ----- Chat (right column) ----- */
-  /* (the #chat-header title has been removed; the Clear button is relocated to bottom-right) */
   #chat-log {
     flex: 1; overflow-y: auto; padding: 20px 16px 140px;
     display: flex; flex-direction: column; gap: 14px;
@@ -105,43 +91,54 @@
   .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); }
   .msg .bubble .placeholder { color: var(--text-3); font-style: italic; }
 
-  /* ===== Bottom: floating message input (fixed, frosted) ===== */
+  /* ===== Bottom: floating message input (fixed, solid white) ===== */
   #chat-input {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: 16px; z-index: 10;
-    width: min(720px, 92vw);
-    display: flex; flex-direction: column; gap: 6px;
-    padding: 10px 14px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
+    width: min(640px, 92vw);
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 12px 16px 10px;
+    background: #ffffff;
+    border: 1px solid var(--border-2);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
   }
-  /* auto-follow row sits on top of the input box */
-  #auto-follow-wrap {
-    display: flex; align-items: center; gap: 4px;
-    padding: 0 4px;
-    font-size: 12px; color: var(--text-2);
-    white-space: nowrap;
-    align-self: flex-start;
-  }
-  #auto-follow-wrap input { margin: 0; cursor: pointer; }
-  /* input row holds the textarea + resume + send buttons, frosted together */
+  /* input row holds the textarea; Send button removed (Enter to send) */
   #chat-input-row {
     display: flex; gap: 8px; align-items: flex-end;
-    background: rgba(253,246,227,0.72);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
-    border: 1px solid var(--border-2);
-    border-radius: 22px;
-    box-shadow: var(--shadow-md);
-    padding: 8px 10px;
   }
-  /* resume button (inside the input row when visible) */
+  #chat-textarea {
+    flex: 1; min-height: 44px; max-height: 120px;
+    font: inherit; font-size: 14px; padding: 10px 12px;
+    border: none; border-radius: 10px;
+    background: transparent; color: var(--text);
+    resize: none; outline: none;
+    /* Prevent the browser from treating this as a password/autofill field. */
+    -webkit-text-security: none;
+    autocomplete: off;
+  }
+  /* auto-follow + resume row sits at the bottom of the box — fixed height so
+     showing/hiding the resume button doesn't change the box height. */
+  #auto-follow-wrap {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 2px;
+    font-size: 12px; color: var(--text-2);
+    white-space: nowrap;
+    height: 22px;
+  }
+  #auto-follow-wrap input { margin: 0; cursor: pointer; }
+  /* resume button: small, tint color, same font size as auto-follow, only when unchecked */
   #resume-btn {
-    padding: 4px 12px; font-size: 12px; font-weight: 500;
-    border: 1px solid var(--accent); background: var(--accent); color: white;
-    border-radius: 12px; cursor: pointer; flex-shrink: 0; height: 44px;
+    margin-left: auto;
+    font-size: 12px; font-weight: 500;
+    padding: 0 10px;
+    border: 1px solid var(--accent); background: transparent; color: var(--accent);
+    border-radius: 10px; cursor: pointer; height: 20px;
+    line-height: 18px;
+    display: inline-flex; align-items: center;
   }
+  #resume-btn:hover { background: var(--accent-soft); }
+  #resume-btn:active { transform: scale(0.97); }
   /* clear + settings buttons — fixed to the bottom-right, matching send-btn style */
   #clear-btn, #settings-btn {
     position: fixed; bottom: 16px; z-index: 10;
@@ -152,8 +149,8 @@
   }
   #clear-btn { right: 16px; background: var(--accent); color: white; }
   #clear-btn:hover { background: #94560f; }
-  #settings-btn { right: 112px; background: var(--surface); color: var(--text-2); border: 1px solid var(--border-2); }
-  #settings-btn:hover { background: var(--surface-2); color: var(--text); }
+  #settings-btn { right: 112px; background: var(--accent); color: white; border: none; }
+  #settings-btn:hover { background: #94560f; }
   #clear-btn:active, #settings-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
 
@@ -200,77 +197,71 @@
   #settings-popup .actions button.ok { background: var(--accent); color: white; border-color: var(--accent); }
   #settings-popup .actions button.ok:hover { background: #94560f; }
   #settings-popup .actions button.cancel:hover { background: var(--border); }
-  #chat-textarea {
-    flex: 1; min-height: 44px; max-height: 120px;
-    font: inherit; font-size: 14px; padding: 10px 14px;
-    border: none; border-radius: 22px;
-    background: transparent; color: var(--text);
-    resize: none; outline: none;
-    transition: box-shadow 0.12s;
-  }
-  #chat-textarea:focus { box-shadow: 0 0 0 3px var(--accent-soft); }
-  #send-btn {
-    height: 44px; padding: 0 18px; border: none; border-radius: 22px;
-    background: var(--accent); color: white; font-size: 14px; font-weight: 500;
-    cursor: pointer; display: flex; align-items: center; gap: 6px;
-    box-shadow: var(--shadow-sm); transition: background 0.12s, transform 0.1s;
-  }
-  #send-btn:hover { background: #94560f; }
-  #send-btn:active { transform: scale(0.97); }
-  #send-btn:disabled { background: var(--text-3); cursor: not-allowed; }
 
-  /* ----- Grid (J-lens output) ----- */
-  /* (the #grid-header panel has been removed) */
-  #grid-body { flex: 1; overflow: auto; padding: 8px 8px 280px 0; background: transparent; }
-  /* (the #grid-header panel has been removed; the grid body now fills the column) */
-  #grid { border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
-  #grid th, #grid td { padding: 4px 8px; white-space: nowrap; }
+  /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
+  /* No top padding so the sticky layer-header aligns with the very top of the
+     grid column. Bottom padding reserves space for the detail card. */
+  #grid-body { flex: 1; overflow: auto; padding: 0 0 8px 8px; background: transparent; }
+  #grid { border-collapse: separate; border-spacing: 3px 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  #grid th, #grid td { padding: 8px 6px; white-space: nowrap; }
+  /* Top header: layer labels (sticky top, aligned to the very top) */
   #grid th {
-    background: rgba(253,246,227,0.85); backdrop-filter: blur(8px); color: var(--text-2); font-weight: 600;
+    background: rgba(253,246,227,0.92); backdrop-filter: blur(8px); color: var(--text-2); font-weight: 600;
     position: sticky; top: 0; z-index: 2;
     border-bottom: 1px solid var(--border-2);
     min-width: 52px; text-align: center;
+    height: 32px;
   }
-  #grid th.label {
-    min-width: 140px; text-align: left; position: sticky; left: 0; z-index: 3;
-    border-right: 1px solid var(--border);
+  /* Right header: position label column header (sticky right + sticky top corner) */
+  #grid th.pos-header {
+    position: sticky; right: 0; top: 0; z-index: 4;
+    min-width: 140px; text-align: right;
+    border-left: 1px solid var(--border);
+    background: rgba(253,246,227,0.92);
   }
-  #grid td.label {
+  /* Right body cells: position label (sticky right) — token text + ordinal right-aligned */
+  #grid td.pos-label {
     font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 500;
     color: var(--text); background: rgba(253,246,227,0.85);
-    position: sticky; left: 0; z-index: 1;
-    border-right: 1px solid var(--border);
-    max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+    position: sticky; right: 0; z-index: 1;
+    border-left: 1px solid var(--border);
+    text-align: right; padding: 4px 12px;
+    min-width: 140px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  #grid td.label.gen { color: var(--accent); border-left: 3px solid var(--accent); }
+  #grid td.pos-label .tok-text { color: var(--text); }
+  #grid td.pos-label .ord { color: var(--text-3); font-size: 10px; margin-left: 4px; }
+  #grid td.pos-label.gen .tok-text { color: var(--accent); font-weight: 600; }
+  #grid td.pos-label.gen { border-right: 3px solid var(--accent); }
+  /* Data cells (layer × position) — show only token text, no ID. Taller cells
+     with a thin white gap between them (via border-spacing on the table). */
   #grid td.cell {
-    cursor: pointer; border-radius: 4px; text-align: center;
+    cursor: pointer; border-radius: 6px; text-align: center;
     color: var(--text); transition: background 0.12s;
+    min-width: 52px; height: 36px;
+    background: rgba(255,255,255,0.55);
   }
   #grid td.cell .word { display: block; font-weight: 500; }
-  #grid td.cell .rank { color: var(--text-3); font-size: 9px; }
-  #grid td.cell:hover { background: var(--accent-soft); }
-  #grid td.cell.selected { background: var(--accent-soft); color: var(--text); box-shadow: inset 0 0 0 2px var(--selected); }
-  #grid td.cell.selected .rank { color: var(--text-3); }
-  #grid td.cell.selected-row { background: var(--selected-soft); }
-  #grid tr.gen-row td.cell { background: var(--gen-row); }
-  #grid tr.gen-row td.cell.selected-row { background: var(--accent-soft); }
+  #grid td.cell:hover { background: rgba(0,113,227,0.12); }
+  #grid td.cell.selected { color: var(--text); box-shadow: inset 0 0 0 2px #0071e3; }
+  #grid td.cell.selected-row { }
+  #grid td.cell.gen-row { background: var(--gen-row); }
+  #grid td.cell.gen-row.selected-row { }
 
-  /* ----- Detail panel (floating overlay, only when a cell is selected) ----- */
+  /* ----- Detail panel (floating, centered, stacked above the input box) ----- */
+  /* Width matches the input box. Sits just above it. */
   #detail {
-    position: absolute;
-    left: 50%; bottom: 16px;
+    position: fixed;
+    left: 50%; bottom: 120px;
     transform: translateX(-50%);
-    width: min(560px, 92%);
-    background: rgba(253,246,227,0.88);
-    backdrop-filter: blur(14px) saturate(140%);
-    -webkit-backdrop-filter: blur(14px) saturate(140%);
+    width: min(640px, 92vw);
+    background: #ffffff;
     border: 1px solid var(--border-2);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow-md);
+    border-radius: 16px;
+    box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
     padding: 14px 18px;
     max-height: 40vh; overflow-y: auto;
-    z-index: 5;
+    z-index: 9;
     display: none;
   }
   #detail.visible { display: block; }
@@ -280,10 +271,11 @@
   #detail .ctx b { color: var(--text); font-family: ui-monospace, Menlo, monospace; }
   #detail .readout { display: flex; flex-direction: column; gap: 4px; }
   #detail .readout .row { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  #detail .readout .row .idx { color: var(--text-3); width: 18px; text-align: right; }
-  #detail .readout .row .tok { font-weight: 500; min-width: 80px; }
-  #detail .readout .row .id { color: var(--text-3); font-size: 11px; }
-  #detail .readout .row .bar { flex: 1; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  #detail .readout .row .idx { color: var(--text-3); width: 18px; text-align: right; flex-shrink: 0; }
+  #detail .readout .row .tok { font-weight: 500; width: 100px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
+  #detail .readout .row .id { color: var(--text-3); font-size: 11px; width: 60px; flex-shrink: 0; }
+  /* Fixed-width bar pushed to the right edge of the card. */
+  #detail .readout .row .bar { width: 180px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0; margin-left: auto; }
   #detail .readout .row .bar > div { height: 100%; background: var(--accent); border-radius: 3px; }
   #detail .readout .row.top1 .tok { color: var(--accent); font-weight: 600; }
   #detail .readout .row.top1 .bar > div { background: var(--accent); }
@@ -294,58 +286,12 @@
   }
   #detail .close:hover { color: var(--text); background: var(--border); }
 
-  /* ===== Timeline (now at top; #timeline-col styled in the top section) ===== */
-  /* (the timeline title and the auto-follow/resume controls have been moved out) */
-  #timeline-status { position: absolute; left: 16px; top: 8px; font-size: 12px; color: var(--text-3); z-index: 1; }
-
-  #timeline { flex: 1; overflow-x: auto; overflow-y: hidden; padding: 24px 14px 10px; white-space: nowrap; }
-  .tl-group {
-    display: inline-flex; flex-direction: column; vertical-align: top;
-    margin-right: 10px; padding: 6px 8px;
-    border: 1px solid var(--border); border-radius: var(--radius-sm);
-    background: var(--surface-2);
-  }
-  .tl-group.user-group { background: var(--accent-soft); border-color: rgba(0,113,227,0.15); }
-  .tl-preview {
-    font-size: 11px; color: var(--text-3); padding: 0 2px 6px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    pointer-events: none; max-width: 100%; font-family: -apple-system, sans-serif;
-  }
-  .tl-blocks { display: inline-flex; align-items: center; gap: 4px; }
-  .tl-block {
-    display: inline-flex; align-items: center; justify-content: center;
-    min-height: 32px; padding: 0 8px;
-    border: 1px solid var(--token-block-border); border-radius: var(--radius-xs);
-    background: var(--token-block); cursor: pointer;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px;
-    color: var(--text); min-width: 32px; max-width: 120px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
-    user-select: none;
-  }
-  .tl-block:hover { background: var(--accent-soft); border-color: var(--accent); }
-  .tl-block.selected { background: var(--selected); color: white; border-color: var(--selected); box-shadow: 0 0 0 2px var(--accent-soft); }
-  .tl-block.prefill {
-    background: var(--prefill); border-color: var(--prefill-border);
-    color: #5b3da8; font-weight: 600; font-family: -apple-system, sans-serif;
-    font-size: 11px; min-width: 40px;
-  }
-  .tl-block.prefill:hover { background: #ddd5f0; }
-  .tl-block.prefill.selected { background: #7b5cc7; color: white; border-color: #7b5cc7; }
-  .tl-block.frontier { box-shadow: 0 0 0 2px var(--frontier); }
-
   .status { color: var(--text-3); font-size: 13px; }
   .loading { color: var(--accent); }
   .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
 </style>
 </head><body>
 <div id="app">
-  <!-- ===== TOP: timeline (paper backdrop, dissolves into content) ===== -->
-  <div id="timeline-col">
-    <span id="timeline-status" class="status"></span>
-    <div id="timeline"></div>
-  </div>
-
   <!-- ===== MIDDLE: two independently-scrollable columns ===== -->
   <div id="split">
     <!-- ===== LEFT: J-lens grid ===== -->
@@ -360,17 +306,16 @@
     </div>
   </div>
 
-  <!-- ===== BOTTOM: floating message input (fixed, frosted) ===== -->
+  <!-- ===== BOTTOM: floating message input (fixed, solid white) ===== -->
   <div id="chat-input">
+    <div id="chat-input-row">
+      <textarea id="chat-textarea" name="chat-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Message the model…" rows="1"></textarea>
+    </div>
     <span id="auto-follow-wrap">
       <input id="auto-follow-chk" type="checkbox" checked>
       <label for="auto-follow-chk">Auto-follow</label>
-    </span>
-    <div id="chat-input-row">
-      <textarea id="chat-textarea" placeholder="Message the model…" rows="1"></textarea>
       <button id="resume-btn" style="display:none">▶ Resume</button>
-      <button id="send-btn">Send</button>
-    </div>
+    </span>
   </div>
 
   <!-- ===== Clear + Settings buttons (fixed, bottom-right) ===== -->
@@ -692,17 +637,19 @@ function renderGrid() {
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
   const table = document.createElement('table');
   table.id = 'grid';
+
+  // Header row: layer labels (sticky top). The position label column is on the right.
   const thead = document.createElement('thead');
   const hrow = document.createElement('tr');
-  const hlabel = document.createElement('th');
-  hlabel.className = 'label';
-  hlabel.textContent = 'position';
-  hrow.appendChild(hlabel);
   state.layers.forEach(l => {
     const th = document.createElement('th');
     th.textContent = 'L' + l;
     hrow.appendChild(th);
   });
+  const posHeader = document.createElement('th');
+  posHeader.className = 'pos-header';
+  posHeader.textContent = 'token · #';
+  hrow.appendChild(posHeader);
   thead.appendChild(hrow);
   table.appendChild(thead);
 
@@ -710,35 +657,22 @@ function renderGrid() {
   for (let pos = 0; pos < visibleN; pos++) {
     const tr = document.createElement('tr');
     const tokStr = state.gridTokenStrs[pos] || '·';
-    const label = document.createElement('td');
-    label.className = 'label';
-    label.textContent = `${pos} · ${tokStr}`;
-    label.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
     const meta = state.gridTokenMsgs[pos];
-    if (meta && meta.isGen) {
-      label.classList.add('gen');
-      tr.classList.add('gen-row');
-    }
-    tr.appendChild(label);
+    const isGen = meta && meta.isGen;
+    // Data cells: one per layer
     state.layers.forEach(layer => {
       const td = document.createElement('td');
       td.className = 'cell';
       const cell = state.gridRows[pos] && state.gridRows[pos][layer];
       if (cell) {
         const top1 = cell.top_tokens[0] || '·';
-        const id0 = cell.top_ids[0] != null ? cell.top_ids[0] : '';
         const word = document.createElement('span');
         word.className = 'word';
         word.textContent = top1;
-        const rank = document.createElement('span');
-        rank.className = 'rank';
-        rank.textContent = id0;
         td.appendChild(word);
-        td.appendChild(rank);
-        // Heatmap tint
         const t = cellIntensity(cell);
-        if (t !== null && state.selectedCell && !(state.selectedCell.pos === pos && state.selectedCell.layer === layer)) {
-          td.style.background = `rgba(0,113,227,${0.04 + t * 0.14})`;
+        if (t !== null && state.selectedCell) {
+          td.style.background = `rgba(0,113,227,${0.06 + t * 0.18})`;
         }
         td.dataset.pos = pos;
         td.dataset.layer = layer;
@@ -748,29 +682,40 @@ function renderGrid() {
         if (state.selectedCell && state.selectedCell.pos === pos) {
           td.classList.add('selected-row');
         }
+        if (isGen) td.classList.add('gen-row');
         td.onclick = () => selectCell(pos, layer);
       } else {
         td.textContent = '';
       }
       tr.appendChild(td);
     });
+    // Right: position label (sticky right) — token text + ordinal, right-aligned
+    const pl = document.createElement('td');
+    pl.className = 'pos-label';
+    if (isGen) pl.classList.add('gen');
+    pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span> <span class="ord">#${pos}</span>`;
+    pl.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
+    tr.appendChild(pl);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
   body.innerHTML = '';
   body.appendChild(table);
-  if (state.selectedSnapshotId === null) {
+  if (state.selectedCell) {
+    // Center the selected cell within the grid body's scroll viewport.
+    // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
+    requestAnimationFrame(() => {
+      const sel = body.querySelector('td.cell.selected');
+      if (sel) {
+        const bodyRect = body.getBoundingClientRect();
+        const cellRect = sel.getBoundingClientRect();
+        const offset = cellRect.top - bodyRect.top + body.scrollTop;
+        const target = offset - body.clientHeight / 2 + cellRect.height / 2;
+        body.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+      }
+    });
+  } else if (state.selectedSnapshotId === null) {
     body.scrollTop = body.scrollHeight;
-  } else if (state.selectedCell) {
-    // Center the selected row in the grid body so the floating detail panel
-    // (which hovers at the bottom-center) doesn't overlap it. The grid body
-    // has extra bottom padding so a row near the bottom can be scrolled up
-    // to roughly the vertical center of the J-lens content area.
-    const sel = body.querySelector('td.cell.selected');
-    if (sel) {
-      const row = sel.closest('tr');
-      if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
   }
 }
 
@@ -826,53 +771,8 @@ function renderDetail() {
 }
 
 // ----- Timeline rendering -----
-function renderTimeline() {
-  const tl = $('timeline');
-  if (state.messages.length === 0) {
-    tl.innerHTML = '';
-    return;
-  }
-  tl.innerHTML = '';
-  state.messages.forEach((m, mi) => {
-    const group = document.createElement('div');
-    group.className = 'tl-group' + (m.role === 'user' ? ' user-group' : '');
-    const preview = document.createElement('div');
-    preview.className = 'tl-preview';
-    const previewText = (m.content || '').replace(/\s+/g, ' ').trim();
-    preview.textContent = previewText ? previewText.slice(0, 100) : '(empty)';
-    group.appendChild(preview);
-    const blocks = document.createElement('div');
-    blocks.className = 'tl-blocks';
-    const prefill = document.createElement('div');
-    prefill.className = 'tl-block prefill';
-    prefill.textContent = '◉ pre';
-    prefill.title = 'prefill — state before this message contributes tokens';
-    prefill.dataset.msgIdx = mi;
-    prefill.dataset.tokenIdx = -1;
-    if (isBlockSelected(mi, -1)) prefill.classList.add('selected');
-    if (isFrontier(mi, -1)) prefill.classList.add('frontier');
-    prefill.onclick = () => selectBlock(mi, -1);
-    blocks.appendChild(prefill);
-    // Per-token blocks for both user and assistant messages. User tokens
-    // all share the prefill snapshot (one forward over the whole message);
-    // assistant tokens each have their own generation snapshot.
-    m.tokens.forEach((t, ti) => {
-      const b = document.createElement('div');
-      b.className = 'tl-block';
-      b.textContent = t.text || '·';
-      b.title = `token ${ti}: ${JSON.stringify(t.text)} (pos ${t.globalPos})`;
-      b.dataset.msgIdx = mi;
-      b.dataset.tokenIdx = ti;
-      if (isBlockSelected(mi, ti)) b.classList.add('selected');
-      if (isFrontier(mi, ti)) b.classList.add('frontier');
-      b.onclick = () => selectBlock(mi, ti);
-      blocks.appendChild(b);
-    });
-    group.appendChild(blocks);
-    tl.appendChild(group);
-  });
-  if (state.selectedSnapshotId === null) tl.scrollLeft = tl.scrollWidth;
-}
+// Timeline removed — the J-lens grid IS the timeline now.
+function renderTimeline() {}
 
 function isBlockSelected(msgIdx, tokenIdx) {
   if (state.selectedSnapshotId === null) return false;
@@ -1035,9 +935,6 @@ async function sendMessage() {
   };
   ta.value = '';
   ta.style.height = 'auto';
-  $('timeline-status').textContent = 'streaming…';
-  $('timeline-status').className = 'loading';
-  $('send-btn').disabled = true;
 
   try {
     const resp = await fetch(API + '/api/chat_stream', {
@@ -1046,8 +943,7 @@ async function sendMessage() {
     });
     if (!resp.ok) {
       const txt = await resp.text();
-      $('timeline-status').textContent = 'error: ' + txt.slice(0,200);
-      $('timeline-status').className = 'status';
+      console.error('stream error:', txt.slice(0,200));
       state.streaming = false;
       updateAutoFollowUI();
       renderAll();
@@ -1069,15 +965,11 @@ async function sendMessage() {
     }
     if (buffer.trim()) handleSSEFrame(buffer);
   } catch (e) {
-    $('timeline-status').textContent = 'request failed: ' + e;
-    $('timeline-status').className = 'status';
+    console.error('request failed:', e);
   } finally {
     state.streaming = false;
     updateAutoFollowUI();
     renderAll();
-    $('timeline-status').textContent = 'done';
-    $('timeline-status').className = 'status';
-    $('send-btn').disabled = false;
   }
 }
 
@@ -1093,12 +985,8 @@ function handleSSEFrame(frame) {
   let obj;
   try { obj = JSON.parse(data); } catch (e) { return; }
   if (event === 'snapshot') ingestSnapshot(obj);
-  else if (event === 'done') $('timeline-status').textContent = `done · ${obj.n_tokens} tokens`;
-  else if (event === 'error') {
-    $('timeline-status').textContent = 'error: ' + (obj.error || '').slice(0,200);
-    $('timeline-status').className = 'status';
-    console.error('stream error', obj);
-  }
+  else if (event === 'done') console.log('done ·', obj.n_tokens, 'tokens');
+  else if (event === 'error') console.error('stream error', obj);
 }
 
 // ----- Resume control -----
@@ -1126,7 +1014,6 @@ $('chat-textarea').addEventListener('input', () => {
 $('chat-textarea').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
-$('send-btn').onclick = sendMessage;
 
 // ----- Clear conversation -----
 $('clear-btn').onclick = () => {
@@ -1135,7 +1022,6 @@ $('clear-btn').onclick = () => {
   if (!confirm('Clear the conversation? This cannot be undone.')) return;
   clearState();
   renderAll();
-  $('timeline-status').textContent = '';
 };
 
 // ----- Settings modal -----
