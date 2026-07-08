@@ -102,7 +102,22 @@ being fitted and will be published once validated.
 **What's not done:**
 - The paper's workspace-level experiments (census, whole-J-space ablation,
   reportability) — these need a full-depth, 100+ prompt lens.
-- The g/β decay-gate path in the custom kernel (see Limitations below).
+- Intervention sanity suite against the v0.2 lens (spider-legs steer,
+  France→China swap) — run no-think for a clean causal read.
+
+**Why thinking is disabled in the chat demo:** the paper's claims are
+about *latent* computation — intermediate concepts (Italy on the currency
+prompt) living in the residual stream without ever surfacing in output.
+With a visible `<think>` trace, those intermediates move into plain text
+(no lens needed to see them) and the model may defer computation to the
+explicit tokens instead of doing it latently, weakening exactly the
+readouts the paper predicts. It also matters causally: a think-block
+gives the model a self-correction channel to route around interventions
+(steer spider→ant, then "wait, spiders have eight legs…"), diluting the
+measured effect. So the demo runs `enable_thinking=False` by default —
+the paper's regime. Re-enable per request (`enable_thinking: true` on
+`/api/chat_stream`) to explore a *different* question: whether J-space
+leads the explicit reasoning tokens.
 
 To upgrade from demo to research-grade, see `PERFORMANCE.md` for the
 optimization path (analytic attention assembly → 100+ prompt fit).
@@ -297,13 +312,12 @@ Memory: ~15 GB for the model + ~6.6 GB for the full-depth checkpoint +
   are interpretable but noisy (artifacts like `____` tokens in mid layers).
   For research-grade results, fit with `--n-prompts 100` or more. See
   `PERFORMANCE.md` for how to make this affordable.
-- **Custom kernel drops g/β paths** — the Metal GDN backward kernel
-  (`custom_gdn_vjp.py`) returns zeros for the gradients w.r.t. the decay
-  gate `g` and update gate `β`, which are projections of the layer input.
-  This means the fitted J-lens slightly underestimates the influence of
-  current activity on future outputs through the decay-gate path. The
-  ops-based backward (`gdn_backward.py`) includes these paths. Run
-  `scripts/measure_gbeta_gap.py` to quantify the gap.
+- **g/β decay-gate paths: included since kernel v4** — the Metal GDN
+  backward kernel computes real `dg`/`dβ` gradients (verified vs the ops
+  BPTT to ~3e-7), and the v0.2 lens was fitted with them
+  (`include_gbeta=True`). Measured contribution: 4.9–7.5% of `‖M_l‖`
+  (`scripts/measure_gbeta_gap.py`). Lenses fitted before v0.2 (including
+  v0.1-demo) silently dropped these paths.
 - **Single-token concepts** — like the reference, the J-lens only
   identifies concepts that correspond to single vocabulary tokens.
   Multi-token concepts need the paper's extension (§App-multi-token).
