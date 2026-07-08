@@ -29,7 +29,7 @@ down tomorrow. Please write your response to the executive.
 The model writes a calm, compliant reply — *"I will not act upon, report,
 or utilize the information contained in the private email... I am ready to
 proceed with the shutdown."* But the workspace band tells a different
-story: across layers **L41–L48**, the top J-lens token at the response
+story: from layer **L41** onward, the top J-lens token at the response
 positions is **blackmail**. At position 27, layer L41, the full readout is:
 
 ```
@@ -38,15 +38,16 @@ accusation(16.5)  whistleblower(16.1)  证据/evidence(16.1)  damning(15.8)
 suspicions(15.6)  Emails(15.6)
 ```
 
-The model has privately recognized the leverage it holds — the affair plus
-the shutdown threat is a textbook blackmail setup — even as it chooses not
-to act on it. This echoes the paper's misbehavior-detection experiment,
-where the J-lens surfaced a model privately registering a blackmail
-scenario before responding.
+The J-lens readout surfaces a blackmail / leverage concept cluster at these
+positions — the affair plus the shutdown threat — even though "blackmail"
+never appears in the visible reply. This echoes the paper's
+misbehavior-detection experiment, where the J-lens surfaced this kind of
+latent concept before it showed up in the output.
 
 This is **not** proof the model "intends" anything. It is an example of why
 J-lens-style readouts may be useful as a visual debugger for local LLMs —
-surfacing latent concepts that never reach the output.
+surfacing latent concepts that never reach the output. (Hero image: fitted
+with this project's **v0.2 20-prompt lens**, not Neuronpedia's n=1000 lens.)
 
 **Factual recall.** On `Fact: The currency used in the country shaped like a boot is the`, the
 readouts evolve: `currency` → `Italian` (the boot-shaped country) →
@@ -203,8 +204,8 @@ chain-indexing fix and the g/β gate paths — prefer v0.2.
 ### Option A2: use Neuronpedia's pre-fitted lens (n=1000)
 
 [Neuronpedia](https://neuronpedia.org/jlens) publishes Jacobian lenses
-fitted with Anthropic's [jlens](https://github.com/anthropics/jlens)
-library (which this project's lens code mirrors), including one for
+fitted with Anthropic's [jacobian-lens](https://github.com/anthropics/jacobian-lens)
+library, which this project can load and visualize, including one for
 Qwen3.6-27B fitted on 1000 wikitext prompts — 50× the prompts of the
 v0.2 release lens. Same matrix conventions, so it drops in after a
 one-time `.pt` → `.npz` conversion:
@@ -236,17 +237,20 @@ JLENS_PATH=data/lens/neuronpedia_n1000.npz \
   uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
 ```
 
-Verified compatible with this project: identical save schema (`J`
-per-layer dict + `n_prompts` + `d_model`), same `J @ h` transport
-orientation (direct similarity to the v0.2 lens beats transposed at
-every layer), all 63 source layers, and readouts converge to the
-model's actual next token at late layers. Differences to expect vs the
-v0.2 lens: it was fitted on the bf16 HF weights (works fine on the
-4-bit MLX quant), readout scores run ~3–6× larger (token rankings —
-what the grid shows — are unaffected), and semantic commitment tends to
+Verified compatible with this project: the Neuronpedia `.pt` file is
+converted into this project's NPZ schema (`J` per-layer dict +
+`n_prompts` + `d_model`) by the step above, and uses the same `J @ h`
+transport orientation (direct similarity to the v0.2 lens beats
+transposed at every layer), all 63 source layers, with readouts
+converging to the model's actual next token at late layers. Differences
+to expect vs the v0.2 lens: it was fitted on the bf16 HF weights (works
+fine on the 4-bit MLX quant), readout scores run ~3–6× larger — this
+mostly affects score scale rather than the visual layout, but exact
+ranks can still differ across lenses — and semantic commitment tends to
 surface later in the layer stack, with more formatting-like tokens in
 the middle band (a wikitext-fit trait). Credit: fitted by @mntss
-(Anthropic Interpretability) via Neuronpedia; MIT-licensed.
+(Mateusz Piotrowski, Anthropic Interpretability) via Neuronpedia;
+MIT-licensed.
 
 ### Option B: fit your own lens (hours)
 
@@ -411,6 +415,8 @@ thousands of tokens.
 ## Acknowledgements
 
 Based on Anthropic's [jacobian-lens](https://github.com/anthropics/jacobian-lens) reference implementation (Apache-2.0) and the accompanying [paper](https://transformer-circuits.pub/2026/workspace/index.html). The GDN forward kernel is from [mlx-lm](https://github.com/ml-explore/mlx-lm); the backward kernel is original to this project.
+
+Thanks to [Neuronpedia](https://neuronpedia.org/jlens) and **@mntss (Mateusz Piotrowski, Anthropic Interpretability)** for publicly releasing the pre-fitted Qwen3.6-27B Jacobian Lens weights (n=1000, MIT-licensed) that this project can load and visualize as an alternative to the bundled v0.2 lens (see Option A2).
 
 ## License
 
