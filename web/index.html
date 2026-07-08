@@ -150,8 +150,8 @@
   }
   #stop-btn:hover { background: #e87900; border-color: #e87900; }
   #stop-btn:active { transform: scale(0.96); }
-  /* clear + settings buttons — fixed to the bottom-right, matching send-btn style */
-  #clear-btn, #settings-btn {
+  /* clear + settings + session buttons — fixed controls, matching send-btn style */
+  #clear-btn, #settings-btn, #sessions-btn {
     position: fixed; bottom: 16px; z-index: 10;
     height: 44px; border: 1px solid var(--border-2); border-radius: 22px;
     font-size: 14px; font-weight: 500; cursor: pointer;
@@ -161,13 +161,69 @@
     transition: background 0.12s, transform 0.1s;
   }
   #clear-btn { right: 16px; padding: 0 18px; justify-content: center; }
-  #clear-btn:hover, #settings-btn:hover { background: var(--surface); }
+  #sessions-btn { right: 94px; padding: 0 18px; justify-content: center; }
+  #clear-btn:hover, #settings-btn:hover, #sessions-btn:hover { background: var(--surface); }
   #settings-btn {
     left: 16px; width: 44px; padding: 0;
     border-radius: 50%; justify-content: center;
   }
-  #clear-btn:active, #settings-btn:active { transform: scale(0.97); }
+  #clear-btn:active, #settings-btn:active, #sessions-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
+  #sessions-menu {
+    position: fixed; right: 16px; bottom: 72px; z-index: 20;
+    width: min(360px, calc(100vw - 32px));
+    max-height: min(460px, calc(100vh - 104px));
+    display: none; flex-direction: column;
+    background: #ffffff;
+    border: 1px solid var(--border-2);
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
+    box-shadow: 0 12px 36px rgba(60,50,30,0.16), 0 3px 10px rgba(60,50,30,0.08);
+    overflow: hidden;
+  }
+  #sessions-menu.visible { display: flex; }
+  #sessions-menu .sessions-head {
+    padding: 12px 14px;
+    font-size: 12px; font-weight: 700; color: var(--text-2);
+    text-transform: uppercase; letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+  #sessions-list {
+    overflow-y: auto;
+    padding: 6px;
+  }
+  .session-item {
+    width: 100%; border: 0; background: transparent; color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 9px 10px; cursor: pointer;
+    text-align: left;
+  }
+  .session-item:hover { background: var(--highlight-orange-soft); }
+  .session-preview {
+    font-size: 13px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .session-meta {
+    margin-top: 3px;
+    font-size: 11px; color: var(--text-3);
+  }
+  #sessions-empty {
+    padding: 18px 12px; color: var(--text-3); font-size: 13px; text-align: center;
+  }
+  #save-current-session {
+    margin: 8px;
+    border: 1px solid var(--highlight-orange);
+    border-radius: var(--radius-sm);
+    background: var(--highlight-orange);
+    color: #ffffff;
+    height: 38px;
+    font: inherit; font-weight: 600;
+    cursor: pointer;
+  }
+  #save-current-session:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
 
   /* settings modal (centered, with dimming backdrop) */
   #settings-backdrop {
@@ -207,8 +263,45 @@
   #settings-popup .field input[type="number"]:focus { border-color: var(--highlight-orange); box-shadow: 0 0 0 2px var(--highlight-orange-soft); }
   #settings-popup .field input[type="range"] {
     width: 100%;
+    --range-progress: 0%;
+    height: 18px;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
     accent-color: var(--highlight-orange);
     cursor: pointer;
+  }
+  #settings-popup .field input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(to right, var(--highlight-orange) 0 var(--range-progress), #e7e3d8 var(--range-progress) 100%);
+  }
+  #settings-popup .field input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px; height: 20px;
+    margin-top: -7px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--highlight-orange);
+    box-shadow: 0 2px 6px rgba(60,50,30,0.16);
+  }
+  #settings-popup .field input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 999px;
+    background: #e7e3d8;
+  }
+  #settings-popup .field input[type="range"]::-moz-range-progress {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--highlight-orange);
+  }
+  #settings-popup .field input[type="range"]::-moz-range-thumb {
+    width: 20px; height: 20px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--highlight-orange);
+    box-shadow: 0 2px 6px rgba(60,50,30,0.16);
   }
   #settings-popup .field .hint { font-size: 11px; color: var(--text-3); margin-top: 3px; }
   #settings-popup .actions {
@@ -243,20 +336,19 @@
   #grid { border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
   #grid th, #grid td { padding: 8px 6px; white-space: nowrap; }
   .band-floating-label {
-    position: fixed; top: 3px; left: 50%;
+    position: fixed; top: 0; left: 50%;
     transform: translateX(-50%);
-    z-index: 8; pointer-events: none;
+    z-index: 2; pointer-events: none;
     padding: 3px 10px;
     border-radius: 999px;
-    background: rgba(255,255,246,0.82);
+    background: transparent;
     color: var(--text-2);
     font-size: 10px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.05em;
     opacity: 0;
     white-space: nowrap;
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+    transition: opacity 120ms ease, color 120ms ease;
+    will-change: opacity;
   }
   /* Top header: layer labels (sticky top, aligned to the very top) */
   #grid th {
@@ -270,17 +362,17 @@
     top: 0; height: 28px; padding: 0;
     line-height: 28px;
     border-radius: 0;
-    z-index: 3;
+    z-index: 4;
   }
-  #grid th.layer-header { top: 28px; }
+  #grid th.layer-header { top: 28px; z-index: 6; }
   #grid th.pos-band-guide {
-    position: sticky; right: 0; top: 0; z-index: 5;
+    position: sticky; right: 0; top: 0; z-index: 7;
     min-width: 140px; height: 28px; padding: 0;
     background: var(--visible-band-edge-color);
   }
   /* Right header: position label column header (sticky right + sticky top corner) */
   #grid th.pos-header {
-    position: sticky; right: 0; top: 28px; z-index: 4;
+    position: sticky; right: 0; top: 28px; z-index: 8;
     min-width: 140px; text-align: right;
     border-left: none;
     background: var(--visible-band-edge-color);
@@ -455,7 +547,15 @@
   <button id="settings-btn" title="Generation settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
+  <button id="sessions-btn" title="Saved sessions">Save Sessions</button>
   <button id="clear-btn" title="Clear conversation">Clear</button>
+  <div id="sessions-menu" aria-live="polite">
+    <div class="sessions-head">Saved Sessions</div>
+    <div id="sessions-list">
+      <div id="sessions-empty">No saved sessions yet.</div>
+    </div>
+    <button id="save-current-session">Save current session</button>
+  </div>
 
   <!-- ===== Settings modal (centered, dimmed backdrop) ===== -->
   <div id="settings-backdrop">
@@ -516,30 +616,41 @@ let chatDetailClearanceApplied = false;
 let detailCloseTimer = null;
 let focusSelectionOnRender = false;
 
-function saveState() {
-  try {
-    // Persist only the serializable parts: messages (role + token text +
-    // globalPos), snapshots (the raw server payloads so we can rebuild
-    // everything on load), and layers. Maps are rebuilt on load.
-    const persistable = {
-      messages: state.messages.map(m => ({
-        role: m.role,
-        content: m.content,
-        tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
-        prefillSnapshotId: m.prefillSnapshotId,
-      })),
-      snapshots: state.snapshots,
-      layers: state.layers,
-    };
-    // Stay under the localStorage quota (~5MB): drop the oldest snapshots
-    // rather than silently persisting nothing at all.
+function firstUserMessagePreview() {
+  const first = state.messages.find(m => m.role === 'user' && (m.content || '').trim());
+  return first ? first.content.replace(/\s+/g, ' ').trim().slice(0, 160) : 'Untitled session';
+}
+
+function serializableConversation({ trimForLocalStorage = false } = {}) {
+  const persistable = {
+    schema: 1,
+    preview: firstUserMessagePreview(),
+    settings: { ...state.settings },
+    messages: state.messages.map(m => ({
+      role: m.role,
+      content: m.content,
+      tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
+      prefillSnapshotId: m.prefillSnapshotId,
+    })),
+    snapshots: state.snapshots,
+    layers: state.layers,
+  };
+  if (trimForLocalStorage) {
     let json = JSON.stringify(persistable);
     while (json.length > 4_200_000 && persistable.snapshots.length > 8) {
       persistable.snapshots = persistable.snapshots.slice(
         Math.ceil(persistable.snapshots.length / 4));
       json = JSON.stringify(persistable);
     }
-    localStorage.setItem(STORAGE_KEY, json);
+  }
+  return persistable;
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(
+      serializableConversation({ trimForLocalStorage: true })
+    ));
   } catch (e) {
     console.warn('saveState failed (likely quota):', e);
   }
@@ -559,85 +670,94 @@ function flushSaveState() {
 }
 window.addEventListener('beforeunload', flushSaveState);
 
+function restoreConversation(saved) {
+  if (!saved || !saved.messages || saved.messages.length === 0) return false;
+  state.messages = saved.messages.map(m => ({
+    role: m.role,
+    content: m.content,
+    tokens: (m.tokens || []).map(t => ({
+      id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
+    })),
+    prefillSnapshotId: m.prefillSnapshotId || null,
+  }));
+  state.snapshots = saved.snapshots || [];
+  state.layers = saved.layers || [];
+  if (saved.settings) {
+    state.settings = { ...state.settings, ...saved.settings };
+    syncSettingsInputs();
+    saveSettings();
+  }
+  state.selectedSnapshotId = null;
+  state.selectedCell = null;
+  state.selectedToken = null;
+  state.snapshotByMsgToken = new Map();
+  state.gridRows = [];
+  state.gridTokenStrs = [];
+  state.gridTokenMsgs = [];
+  for (const snap of state.snapshots) {
+    state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+    const m = state.messages[snap.msg_idx];
+    if (!m) continue;
+    m.role = snap.role;
+    if (snap.token_idx === -1) {
+      m.prefillSnapshotId = snap.snapshot_id;
+      if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
+        const strs = snap.token_strs || [];
+        if (strs.length) {
+          m.tokens = strs.map((str, i) => ({
+            id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
+          }));
+          m.content = strs.join('');
+        }
+        strs.forEach((str, i) => {
+          const globalPos = snap.prefill_pos + i;
+          while (state.gridRows.length <= globalPos) {
+            state.gridRows.push(null);
+            state.gridTokenStrs.push('');
+            state.gridTokenMsgs.push(null);
+          }
+          state.gridTokenStrs[globalPos] = str;
+          state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
+          state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+        });
+      }
+      if (snap.grid && snap.grid.positions) {
+        snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
+      }
+    } else {
+      const globalPos = snap.pos;
+      const tokStr = snap.token;
+      while (state.gridRows.length <= globalPos) {
+        state.gridRows.push(null);
+        state.gridTokenStrs.push('');
+        state.gridTokenMsgs.push(null);
+      }
+      state.gridTokenStrs[globalPos] = tokStr;
+      state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
+      const m2 = state.messages[snap.msg_idx];
+      if (m2) {
+        while (m2.tokens.length <= snap.token_idx) {
+          m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
+        }
+        m2.tokens[snap.token_idx] = {
+          id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
+        };
+        m2.content = m2.tokens.map(t => t.text).join('');
+      }
+      if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
+        writeGridRow(globalPos, snap.grid.cells, 0);
+      }
+    }
+  }
+  updateAutoFollowUI();
+  return true;
+}
+
 function loadSavedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    const saved = JSON.parse(raw);
-    if (!saved || !saved.messages || saved.messages.length === 0) return;
-    // Rebuild state from the saved conversation.
-    state.messages = saved.messages.map(m => ({
-      role: m.role,
-      content: m.content,
-      tokens: (m.tokens || []).map(t => ({
-        id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
-      })),
-      prefillSnapshotId: m.prefillSnapshotId || null,
-    }));
-    state.snapshots = saved.snapshots || [];
-    state.layers = saved.layers || [];
-    // Rebuild the snapshotByMsgToken map and grid from snapshots.
-    state.snapshotByMsgToken = new Map();
-    state.gridRows = [];
-    state.gridTokenStrs = [];
-    state.gridTokenMsgs = [];
-    for (const snap of state.snapshots) {
-      state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
-      const m = state.messages[snap.msg_idx];
-      if (!m) continue;
-      m.role = snap.role;
-      if (snap.token_idx === -1) {
-        m.prefillSnapshotId = snap.snapshot_id;
-        // Rebuild tokens + grid rows from the prefill snapshot.
-        if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
-          const strs = snap.token_strs || [];
-          if (strs.length) {
-            m.tokens = strs.map((str, i) => ({
-              id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
-            }));
-            m.content = strs.join('');
-          }
-          strs.forEach((str, i) => {
-            const globalPos = snap.prefill_pos + i;
-            while (state.gridRows.length <= globalPos) {
-              state.gridRows.push(null);
-              state.gridTokenStrs.push('');
-              state.gridTokenMsgs.push(null);
-            }
-            state.gridTokenStrs[globalPos] = str;
-            state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
-            state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
-          });
-        }
-        if (snap.grid && snap.grid.positions) {
-          snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
-        }
-      } else {
-        // Token snapshot (assistant generated token).
-        const globalPos = snap.pos;
-        const tokStr = snap.token;
-        while (state.gridRows.length <= globalPos) {
-          state.gridRows.push(null);
-          state.gridTokenStrs.push('');
-          state.gridTokenMsgs.push(null);
-        }
-        state.gridTokenStrs[globalPos] = tokStr;
-        state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
-        const m2 = state.messages[snap.msg_idx];
-        if (m2) {
-          while (m2.tokens.length <= snap.token_idx) {
-            m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
-          }
-          m2.tokens[snap.token_idx] = {
-            id: snap.token_id, text: tokStr, globalPos, snapshotId: snap.snapshot_id,
-          };
-          m2.content = m2.tokens.map(t => t.text).join('');
-        }
-        if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
-          writeGridRow(globalPos, snap.grid.cells, 0);
-        }
-      }
-    }
+    restoreConversation(JSON.parse(raw));
   } catch (e) {
     console.warn('loadSavedState failed:', e);
   }
@@ -677,6 +797,14 @@ function saveSettings() {
   } catch (e) {}
 }
 
+function updateRangeProgress(input) {
+  const min = parseFloat(input.min) || 0;
+  const max = parseFloat(input.max) || 1;
+  const value = parseFloat(input.value) || 0;
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0;
+  input.style.setProperty('--range-progress', Math.max(0, Math.min(100, pct)) + '%');
+}
+
 function syncSettingsInputs() {
   $('set-max-tokens').value = state.settings.maxTokens;
   const tempInput = $('set-temp');
@@ -685,6 +813,7 @@ function syncSettingsInputs() {
   const temp = Math.max(tempMin, Math.min(tempMax, Number(state.settings.temp) || 0));
   state.settings.temp = temp;
   tempInput.value = temp;
+  updateRangeProgress(tempInput);
   $('set-temp-value').textContent = temp.toFixed(1);
   $('set-top-n').value = state.settings.topN;
 }
@@ -1165,6 +1294,20 @@ function updateGridBandChrome() {
 
   if (labels.length === 0) return;
   const centerX = window.innerWidth / 2;
+  const guide = document.querySelector('#grid th.band-guide-cell');
+  const layerHeader = document.querySelector('#grid th.layer-header');
+  const posBand = document.querySelector('#grid th.pos-band-guide');
+  const posHeader = document.querySelector('#grid th.pos-header');
+  const guideRect = guide ? guide.getBoundingClientRect() : null;
+  const layerHeaderRect = layerHeader ? layerHeader.getBoundingClientRect() : null;
+  const stickyRightRects = [posBand, posHeader]
+    .filter(Boolean)
+    .map(el => el.getBoundingClientRect());
+  const stickyRightLeft = stickyRightRects.length
+    ? Math.min(...stickyRightRects.map(rect => rect.left))
+    : bodyRect.right;
+  const dataLeft = bodyRect.left + (parseFloat(bodyStyle.paddingLeft) || 0);
+  const dataRight = Math.min(bodyRect.right, stickyRightLeft - 8);
   labels.forEach((label) => {
     const band = LAYER_BANDS.find(item => item.id === label.dataset.band);
     const bounds = band ? renderedCoreBoundsForBand(band) : null;
@@ -1172,12 +1315,24 @@ function updateGridBandChrome() {
       label.style.opacity = '0';
       return;
     }
-    const labelX = Math.max(bounds.startX, Math.min(bounds.endX, centerX));
-    const bandVisible = bounds.endX >= bodyRect.left && bounds.startX <= bodyRect.right;
-    const labelVisible = bandVisible && labelX >= bodyRect.left - 80 && labelX <= bodyRect.right + 80;
+    const labelWidth = label.offsetWidth || 180;
+    const labelHalf = labelWidth / 2;
+    const visibleLeft = Math.max(bounds.startX, dataLeft);
+    const visibleRight = Math.min(bounds.endX, dataRight);
+    const visibleWidth = Math.max(0, visibleRight - visibleLeft);
+    const hasLabelRoom = visibleWidth >= labelWidth + 16;
+    const labelX = hasLabelRoom
+      ? Math.max(visibleLeft + labelHalf, Math.min(visibleRight - labelHalf, centerX))
+      : (visibleLeft + visibleRight) / 2;
+    const labelHeight = label.offsetHeight || 20;
+    const labelTop = guideRect ? guideRect.bottom - labelHeight - 2 : 3;
+    const overlap = layerHeaderRect ? Math.max(0, labelTop + labelHeight - layerHeaderRect.top) : 0;
+    const collisionFade = overlap <= 0 ? 1 : Math.max(0, 1 - overlap / Math.max(8, labelHeight * 0.7));
     label.style.left = labelX + 'px';
-    label.style.background = layerLabelBackground(band);
-    label.style.opacity = labelVisible ? '1' : '0';
+    label.style.top = labelTop + 'px';
+    label.style.opacity = hasLabelRoom
+      ? String(collisionFade)
+      : '0';
   });
 }
 
@@ -1231,7 +1386,27 @@ function buildGridRowTr(pos, selectedTokenKey, activePos) {
   return tr;
 }
 
-function renderGrid({ focusSelection = false } = {}) {
+// Rows outside the visible window are NOT kept in the DOM: a full table at
+// chat lengths (4000+ rows x 65 cells ~ 148,000px tall) exceeds browser
+// rasterization limits — regions scrolled back into view can stay blank
+// forever — and costs O(rows) per rebuild. We render ~2xGRID_ROW_BUFFER
+// rows around the viewport, with spacer rows preserving scroll geometry;
+// the scroll handler re-renders when the viewport nears a window edge.
+const GRID_ROW_BUFFER = 30;
+
+function _gridSpacerRow(heightPx, nCols) {
+  const tr = document.createElement('tr');
+  tr.className = 'grid-spacer';
+  const td = document.createElement('td');
+  td.colSpan = nCols;
+  td.style.padding = '0';
+  td.style.border = 'none';
+  td.style.height = `${heightPx}px`;
+  tr.appendChild(td);
+  return tr;
+}
+
+function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   const body = $('grid-body');
   if (state.gridRows.length === 0 || state.layers.length === 0) {
     body.innerHTML = '';
@@ -1241,26 +1416,22 @@ function renderGrid({ focusSelection = false } = {}) {
   }
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
 
-  // Fast path while streaming with nothing selected: the only change is
-  // new rows at the bottom, so append them instead of rebuilding the whole
-  // table (which is O(rows x 65 cells) per token and grows without bound).
-  const existing = document.getElementById('grid');
-  if (existing && state.streaming && !focusSelection &&
-      state.selectedSnapshotId === null && !state.selectedCell &&
-      +existing.dataset.layerCount === state.layers.length &&
-      +existing.dataset.rowCount <= visibleN) {
-    const from = +existing.dataset.rowCount;
-    if (from < visibleN) {
-      const tbody = existing.tBodies[0];
-      for (let pos = from; pos < visibleN; pos++) {
-        tbody.appendChild(buildGridRowTr(pos, null, null));
-      }
-      existing.dataset.rowCount = visibleN;
-    }
-    body.scrollTop = body.scrollHeight;
-    updateGridHeaderShadows();
-    return;
+  // Decide the scroll target FIRST so the rendered window covers it.
+  const rowH = state.gridRowH || 36;
+  const focusPosEarly = selectedPosition();
+  const focusPos = focusSelection
+    ? (state.selectedCell ? state.selectedCell.pos : focusPosEarly)
+    : null;
+  let target = body.scrollTop;
+  if (focusPos !== null && focusPos !== undefined) {
+    target = Math.max(0, focusPos * rowH - body.clientHeight / 2);
+  } else if (!keepScroll && state.selectedSnapshotId === null) {
+    // Follow mode: keep the newest rows in view.
+    target = Math.max(0, visibleN * rowH - (body.clientHeight || 600));
   }
+  const visCount = Math.ceil((body.clientHeight || 600) / rowH);
+  const w0 = Math.max(0, Math.floor(target / rowH) - GRID_ROW_BUFFER);
+  const w1 = Math.min(visibleN, Math.floor(target / rowH) + visCount + GRID_ROW_BUFFER);
 
   const table = document.createElement('table');
   table.id = 'grid';
@@ -1300,17 +1471,35 @@ function renderGrid({ focusSelection = false } = {}) {
 
   const selectedTokenKey = selectedCellTokenKey();
   const activePos = selectedPosition();
+  const nCols = state.layers.length + 1;
   const tbody = document.createElement('tbody');
-  for (let pos = 0; pos < visibleN; pos++) {
+  if (w0 > 0) tbody.appendChild(_gridSpacerRow(w0 * rowH, nCols));
+  for (let pos = w0; pos < w1; pos++) {
     tbody.appendChild(buildGridRowTr(pos, selectedTokenKey, activePos));
   }
+  if (w1 < visibleN) tbody.appendChild(_gridSpacerRow((visibleN - w1) * rowH, nCols));
   table.appendChild(tbody);
-  table.dataset.rowCount = visibleN;
+  table.dataset.w0 = w0;
+  table.dataset.w1 = w1;
+  table.dataset.n = visibleN;
   table.dataset.layerCount = state.layers.length;
   body.innerHTML = '';
   body.appendChild(table);
+
+  // Calibrate the row height from a real rendered row (used for spacer
+  // geometry and window placement on subsequent renders).
+  const realRow = tbody.querySelector('tr:not(.grid-spacer)');
+  if (realRow) {
+    const h = realRow.getBoundingClientRect().height;
+    if (h > 4 && Math.abs(h - rowH) > 0.5) state.gridRowH = h;
+  }
+
   updateGridHeaderShadows();
   if (focusSelection && (state.selectedCell || activePos !== null)) {
+    // Jump near the target first (the window is built around it); the
+    // rAF smooth-scroll below only does the fine centering. Without this,
+    // a far selection would smooth-scroll across thousands of rows.
+    body.scrollTop = target;
     // Center the selected cell, or the token header when no layer cell is selected.
     // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
     requestAnimationFrame(() => {
@@ -1322,10 +1511,31 @@ function renderGrid({ focusSelection = false } = {}) {
         requestAnimationFrame(updateGridHeaderShadows);
       }
     });
-  } else if (state.selectedSnapshotId === null) {
+  } else if (!keepScroll && state.selectedSnapshotId === null) {
     body.scrollTop = body.scrollHeight;
     updateGridHeaderShadows();
   }
+}
+
+// Re-render the window when the viewport nears its edge (rAF-throttled).
+let _gridScrollRaf = null;
+function onGridBodyScroll() {
+  if (_gridScrollRaf !== null) return;
+  _gridScrollRaf = requestAnimationFrame(() => {
+    _gridScrollRaf = null;
+    updateGridHeaderShadows();
+    const t = document.getElementById('grid');
+    if (!t || t.dataset.w0 === undefined) return;
+    const body = $('grid-body');
+    const rowH = state.gridRowH || 36;
+    const w0 = +t.dataset.w0, w1 = +t.dataset.w1, n = +t.dataset.n;
+    const first = Math.floor(body.scrollTop / rowH);
+    const last = Math.ceil((body.scrollTop + body.clientHeight) / rowH);
+    if ((first < w0 + GRID_ROW_BUFFER / 2 && w0 > 0) ||
+        (last > w1 - GRID_ROW_BUFFER / 2 && w1 < n)) {
+      renderGrid({ keepScroll: true });
+    }
+  });
 }
 
 function renderDetail() {
@@ -1702,6 +1912,106 @@ function stopStreaming() {
 // ----- Stream/view controls -----
 $('stop-btn').onclick = () => stopStreaming();
 
+// ----- Saved sessions -----
+function sessionMetaText(session) {
+  const bits = [];
+  if (session.message_count != null) bits.push(`${session.message_count} messages`);
+  if (session.snapshot_count != null) bits.push(`${session.snapshot_count} snapshots`);
+  if (session.staged) bits.push('staged');
+  return bits.join(' · ');
+}
+
+function renderSessionsList(sessions) {
+  const list = $('sessions-list');
+  list.innerHTML = '';
+  if (!sessions || sessions.length === 0) {
+    const empty = document.createElement('div');
+    empty.id = 'sessions-empty';
+    empty.textContent = 'No saved sessions yet.';
+    list.appendChild(empty);
+    return;
+  }
+  sessions.forEach((session) => {
+    const btn = document.createElement('button');
+    btn.className = 'session-item';
+    btn.type = 'button';
+    btn.innerHTML = `
+      <div class="session-preview">${escapeHtml(session.preview || 'Untitled session')}</div>
+      <div class="session-meta">${escapeHtml(sessionMetaText(session))}</div>
+    `;
+    btn.onclick = () => loadSession(session.id);
+    list.appendChild(btn);
+  });
+}
+
+async function refreshSessions() {
+  const list = $('sessions-list');
+  list.innerHTML = '<div id="sessions-empty">Loading sessions...</div>';
+  try {
+    const resp = await fetch(API + '/api/sessions');
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    renderSessionsList(data.sessions || []);
+  } catch (e) {
+    list.innerHTML = '<div id="sessions-empty">Could not load sessions.</div>';
+    console.error('load sessions failed:', e);
+  }
+}
+
+async function toggleSessionsMenu() {
+  const menu = $('sessions-menu');
+  const visible = menu.classList.toggle('visible');
+  if (visible) await refreshSessions();
+}
+
+function closeSessionsMenu() {
+  $('sessions-menu').classList.remove('visible');
+}
+
+async function saveCurrentSession() {
+  if (state.messages.length === 0 || state.streaming) return;
+  const btn = $('save-current-session');
+  const oldText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    flushSaveState();
+    const resp = await fetch(API + '/api/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(serializableConversation()),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const saved = await resp.json();
+    btn.textContent = saved.staged ? 'Saved and staged' : 'Saved';
+    await refreshSessions();
+  } catch (e) {
+    btn.textContent = 'Save failed';
+    console.error('save session failed:', e);
+  } finally {
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = oldText;
+    }, 1200);
+  }
+}
+
+async function loadSession(sessionId) {
+  if (state.streaming) return;
+  try {
+    const resp = await fetch(API + '/api/sessions/' + encodeURIComponent(sessionId));
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    if (restoreConversation(data)) {
+      saveState();
+      renderAll();
+      closeSessionsMenu();
+    }
+  } catch (e) {
+    console.error('load session failed:', e);
+  }
+}
+
 // ----- Textarea auto-grow + Enter to send -----
 $('chat-textarea').addEventListener('input', () => {
   const ta = $('chat-textarea');
@@ -1714,12 +2024,26 @@ window.addEventListener('resize', () => {
   updateGridHeaderShadows();
   if (state.selectedCell) renderGrid();
 });
-$('grid-body').addEventListener('scroll', updateGridHeaderShadows, { passive: true });
+$('grid-body').addEventListener('scroll', onGridBodyScroll, { passive: true });
 $('chat-textarea').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
 // ----- Clear conversation -----
+$('sessions-btn').onclick = (e) => {
+  e.stopPropagation();
+  toggleSessionsMenu();
+};
+$('save-current-session').onclick = (e) => {
+  e.stopPropagation();
+  saveCurrentSession();
+};
+document.addEventListener('click', (e) => {
+  const menu = $('sessions-menu');
+  if (!menu.classList.contains('visible')) return;
+  if (menu.contains(e.target) || $('sessions-btn').contains(e.target)) return;
+  closeSessionsMenu();
+});
 $('clear-btn').onclick = () => {
   if (state.streaming) return;  // don't clear mid-stream
   if (state.messages.length === 0) return;
@@ -1737,7 +2061,9 @@ $('settings-backdrop').addEventListener('click', (e) => {
   if (e.target === $('settings-backdrop')) cancelSettings();
 });
 $('set-temp').addEventListener('input', () => {
-  $('set-temp-value').textContent = Number($('set-temp').value).toFixed(1);
+  const temp = $('set-temp');
+  updateRangeProgress(temp);
+  $('set-temp-value').textContent = Number(temp.value).toFixed(1);
 });
 // Enter inside number fields commits; Escape cancels.
 ['set-max-tokens', 'set-top-n'].forEach((id) => {
@@ -1748,6 +2074,7 @@ $('set-temp').addEventListener('input', () => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('settings-backdrop').classList.contains('visible')) cancelSettings();
+  if (e.key === 'Escape' && $('sessions-menu').classList.contains('visible')) closeSessionsMenu();
 });
 
 function escapeHtml(s) {
