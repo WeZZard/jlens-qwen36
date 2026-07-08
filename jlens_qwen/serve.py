@@ -33,6 +33,10 @@ _lens = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
 _lens_path = os.environ.get("JLENS_PATH", "data/lens/qwen36_27b.npz")
 
+# Pause/resume control for the active generation stream.
+# The generation loop checks this event before each token.
+_pause_events: dict[str, asyncio.Event] = {}
+
 app = FastAPI(title="J-Space Visualizer")
 
 
@@ -93,18 +97,24 @@ def _readout_at_positions(
                      "top_scores": [[float]*n]*len(positions)}}.
     """
     out: dict[int, dict] = {}
+    pos_idx = mx.array(positions)
     for layer in layers:
-        h = acts[layer][0].astype(mx.float32)  # [seq_len, D]
+        # Slice to the requested positions BEFORE transport/unembed: the
+        # readout only needs |positions| rows, not the whole sequence
+        # ([P, D] @ [D, D] + [P, vocab] instead of [S, ...] — S can be
+        # hundreds of positions in a chat).
+        h = acts[layer][0][pos_idx].astype(mx.float32)  # [P, D]
         if _lens is not None and layer in _lens.jacobians:
             h = _lens.transport(h, layer)
-        logits = _model.unembed(_model.final_norm(h))  # [seq_len, vocab]
+        logits = _model.unembed(_model.final_norm(h))  # [P, vocab]
         lf = logits.astype(mx.float32)
         top_ids, top_tokens, top_scores = [], [], []
-        for pos in positions:
-            v = lf[pos]
-            sorted_idx = mx.argsort(v)
-            top = [int(t) for t in sorted_idx[-top_n:][::-1].tolist()]
-            scores = [float(mx.take(v, t).tolist()) for t in top]
+        for i in range(len(positions)):
+            v = lf[i]
+            top_mx = mx.argsort(v)[-top_n:][::-1]
+            vals_mx = v[top_mx]
+            top = [int(t) for t in top_mx.tolist()]
+            scores = [float(s) for s in vals_mx.tolist()]
             top_ids.append(top)
             top_scores.append(scores)
             top_tokens.append([_model.tokenizer.decode([t]) for t in top])
@@ -265,6 +275,32 @@ def _sse(event: str, data: dict) -> bytes:
     return f"event: {event}\n".encode() + b"data: " + json.dumps(data).encode() + b"\n\n"
 
 
+class ChatControlRequest(BaseModel):
+    stream_id: str
+    action: str  # "pause" | "resume"
+
+
+@app.post("/api/chat_control")
+async def chat_control(req: ChatControlRequest):
+    """Pause or resume a generation stream.
+
+    When paused, the server stops generating new tokens (the generation loop
+    blocks on an asyncio.Event). When resumed, generation continues from where
+    it left off. The stream_id is returned in the initial `event: stream_start`
+    frame of the chat_stream response.
+    """
+    if req.stream_id not in _pause_events:
+        raise HTTPException(404, f"stream {req.stream_id} not found")
+    ev = _pause_events[req.stream_id]
+    if req.action == "pause":
+        ev.clear()
+    elif req.action == "resume":
+        ev.set()
+    else:
+        raise HTTPException(400, f"unknown action {req.action!r}")
+    return {"stream_id": req.stream_id, "action": req.action, "paused": not ev.is_set()}
+
+
 @app.post("/api/chat_stream")
 async def chat_stream(req: ChatStreamRequest):
     """Stream J-lens snapshots as the assistant generates tokens.
@@ -282,15 +318,26 @@ async def chat_stream(req: ChatStreamRequest):
         raise HTTPException(503, "model not loaded")
 
     import asyncio
+    import uuid
 
     layers = _record_layers()
     top_n = req.top_n
     temp = req.temp
     max_tokens = req.max_tokens
 
+    # Create a unique stream_id and a pause event for this stream.
+    stream_id = str(uuid.uuid4())[:8]
+    pause_event = asyncio.Event()
+    pause_event.set()  # start unpaused (generating)
+    _pause_events[stream_id] = pause_event
+
     async def gen():
         snapshot_id = 0
         token_strs_global: list[str] = []
+
+        # Emit the stream_start event so the client knows the stream_id for
+        # pause/resume control.
+        yield _sse("stream_start", {"stream_id": stream_id})
 
         try:
             # Build an effective message list: the client sends user messages
@@ -464,6 +511,9 @@ async def chat_stream(req: ChatStreamRequest):
                 eos_id = getattr(tok, "eos_token_id", None)
                 eos_hit = eos_id is not None and next_tok == eos_id
                 while not eos_hit and n_gen < max_tokens:
+                    # Block here if the client has paused generation.
+                    await pause_event.wait()
+
                     input_ids = mx.concatenate([input_ids, mx.array([[next_tok]])], axis=1)
                     new_pos = global_pos
                     final, acts = _model.forward(input_ids, capture_layers=layers)
@@ -505,6 +555,9 @@ async def chat_stream(req: ChatStreamRequest):
             tb = traceback.format_exc()
             print(f"[chat_stream] error after snapshot {snapshot_id}: {e}\n{tb}", flush=True)
             yield _sse("error", {"snapshot_id": snapshot_id, "error": str(e), "traceback": tb})
+        finally:
+            # Clean up the pause event when the stream ends.
+            _pause_events.pop(stream_id, None)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

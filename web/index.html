@@ -5,7 +5,7 @@
 <title>J-Space Visualizer — Qwen3.6-27B</title>
 <style>
   :root {
-    --paper-bg: #fdf6e3;
+    --paper-bg: #fffff6;
     --paper-texture: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.55  0 0 0 0 0.5  0 0 0 0 0.4  0 0 0 0.08 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
     --surface: #fffef8;
     --surface-2: #f7f1df;
@@ -16,13 +16,16 @@
     --border-2: rgba(60,50,30,0.16);
     --accent: #b06a1a;
     --accent-soft: #f3e6cf;
-    --user-bubble: #b06a1a;
-    --user-bubble-text: #fffef8;
-    --asst-bubble: #f1ead4;
+    --highlight-orange: #ff8a00;
+    --highlight-orange-soft: rgba(255,138,0,0.16);
+    --user-bubble: #fff9ea;
+    --user-bubble-text: #3a3525;
+    --asst-bubble: #fff9ea;
     --asst-bubble-text: #3a3525;
+    --block-bg: #f1ead4;
     --prefill: #e8e3f5;
     --prefill-border: #b8a8e0;
-    --token-block: #fffef8;
+    --token-block: #f1ead4;
     --token-block-border: #cfc6ad;
     --gen-row: rgba(176,106,26,0.05);
     --selected: #b06a1a;
@@ -33,6 +36,10 @@
     --radius: 12px;
     --radius-sm: 8px;
     --radius-xs: 6px;
+    --radius-lg: 24px;
+    --grid-bottom-clearance: 120px;
+    --chat-bottom-clearance: 120px;
+    --detail-clearance-gap: 16px;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -41,20 +48,20 @@
     font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
     color: var(--text);
     background-color: var(--paper-bg);
-    background-image: var(--paper-texture);
-    background-repeat: repeat;
+    background-image: none;
     -webkit-font-smoothing: antialiased;
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
 
   /* ===== Middle: two independently-scrollable columns ===== */
+  /* #split fills the full viewport. Fixed controls sit on top; each scroll
+     area gets runtime padding for the currently visible bottom stack. */
   #split { flex: 1; display: flex; overflow: hidden; min-height: 0; }
   #grid-col {
     position: relative;
     flex: 1; min-width: 420px;
     display: flex; flex-direction: column; overflow: hidden;
     background: transparent;
-    border-right: 1px solid var(--border);
   }
   #chat-col {
     width: 450px; min-width: 360px; flex-shrink: 0;
@@ -65,7 +72,8 @@
 
   /* ----- Chat (right column) ----- */
   #chat-log {
-    flex: 1; overflow-y: auto; padding: 20px 16px 140px;
+    flex: 1; overflow-y: auto; padding: 20px 16px var(--chat-bottom-clearance);
+    scroll-padding-bottom: var(--chat-bottom-clearance);
     display: flex; flex-direction: column; gap: 14px;
   }
   .msg { display: flex; flex-direction: column; gap: 6px; max-width: 88%; }
@@ -73,22 +81,22 @@
   .msg.assistant { align-self: flex-start; align-items: flex-start; }
   .msg .role { font-size: 11px; color: var(--text-3); padding: 0 4px; }
   .msg .bubble {
-    padding: 10px 14px; border-radius: 16px;
+    padding: 10px 14px; border-radius: var(--radius-lg);
+    corner-shape: squircle;
     font-size: 14px; line-height: 1.5; word-break: break-word;
     white-space: pre-wrap;
-    box-shadow: var(--shadow-sm);
+    box-shadow: none;
   }
-  .msg.user .bubble { background: var(--user-bubble); color: var(--user-bubble-text); border-bottom-right-radius: 4px; }
-  .msg.assistant .bubble { background: var(--asst-bubble); color: var(--asst-bubble-text); border-bottom-left-radius: 4px; }
+  .msg.user .bubble { background: var(--user-bubble); color: var(--user-bubble-text); }
+  .msg.assistant .bubble { background: var(--asst-bubble); color: var(--asst-bubble-text); }
   .msg .bubble .tok {
     padding: 1px 1px; border-radius: 3px; cursor: pointer;
+    font-weight: 400;
     transition: background 0.12s;
   }
   .msg .bubble .tok:hover { background: rgba(0,0,0,0.08); }
-  .msg.user .bubble .tok:hover { background: rgba(255,255,255,0.18); }
-  .msg .bubble .tok.selected { background: var(--selected-soft); box-shadow: 0 0 0 1px var(--selected); }
-  .msg.user .bubble .tok.selected { background: rgba(255,255,255,0.25); box-shadow: 0 0 0 1px #fff; }
-  .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); }
+  .msg .bubble .tok.selected { background: var(--highlight-orange-soft); box-shadow: 0 0 0 1px var(--highlight-orange); font-weight: 700; }
+  .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); font-weight: 700; }
   .msg .bubble .placeholder { color: var(--text-3); font-style: italic; }
 
   /* ===== Bottom: floating message input (fixed, solid white) ===== */
@@ -100,7 +108,8 @@
     padding: 12px 16px 10px;
     background: #ffffff;
     border: 1px solid var(--border-2);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
     box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
   }
   /* input row holds the textarea; Send button removed (Enter to send) */
@@ -142,15 +151,19 @@
   /* clear + settings buttons — fixed to the bottom-right, matching send-btn style */
   #clear-btn, #settings-btn {
     position: fixed; bottom: 16px; z-index: 10;
-    height: 44px; padding: 0 18px; border: none; border-radius: 22px;
+    height: 44px; border: 1px solid var(--border-2); border-radius: 22px;
     font-size: 14px; font-weight: 500; cursor: pointer;
     display: flex; align-items: center; gap: 6px;
-    box-shadow: var(--shadow-sm); transition: background 0.12s, transform 0.1s;
+    background: #ffffff; color: var(--text);
+    box-shadow: 0 6px 20px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
+    transition: background 0.12s, transform 0.1s;
   }
-  #clear-btn { right: 16px; background: var(--accent); color: white; }
-  #clear-btn:hover { background: #94560f; }
-  #settings-btn { right: 112px; background: var(--accent); color: white; border: none; }
-  #settings-btn:hover { background: #94560f; }
+  #clear-btn { right: 16px; padding: 0 18px; justify-content: center; }
+  #clear-btn:hover, #settings-btn:hover { background: var(--surface); }
+  #settings-btn {
+    left: 16px; width: 44px; padding: 0;
+    border-radius: 50%; justify-content: center;
+  }
   #clear-btn:active, #settings-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
 
@@ -200,15 +213,27 @@
 
   /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
   /* No top padding so the sticky layer-header aligns with the very top of the
-     grid column. Bottom padding reserves space for the detail card. */
-  #grid-body { flex: 1; overflow: auto; padding: 0 0 8px 8px; background: transparent; }
-  #grid { border-collapse: separate; border-spacing: 3px 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+     grid column. Bottom padding is updated from the actual fixed overlays. */
+  #grid-body {
+    flex: 1; overflow: auto;
+    padding: 0 0 var(--grid-bottom-clearance) 8px;
+    scroll-padding-bottom: var(--grid-bottom-clearance);
+    background: transparent;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  #grid-body::-webkit-scrollbar { display: none; }
+  html.recovering-clearance #chat-log,
+  html.recovering-clearance #grid-body {
+    transition: padding-bottom 220ms ease;
+  }
+  #grid { border-collapse: separate; border-spacing: 2px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
   #grid th, #grid td { padding: 8px 6px; white-space: nowrap; }
   /* Top header: layer labels (sticky top, aligned to the very top) */
   #grid th {
-    background: rgba(253,246,227,0.92); backdrop-filter: blur(8px); color: var(--text-2); font-weight: 600;
+    background: var(--paper-bg); color: var(--text-2); font-weight: 600;
     position: sticky; top: 0; z-index: 2;
-    border-bottom: 1px solid var(--border-2);
+    border-bottom: none;
     min-width: 52px; text-align: center;
     height: 32px;
   }
@@ -216,36 +241,53 @@
   #grid th.pos-header {
     position: sticky; right: 0; top: 0; z-index: 4;
     min-width: 140px; text-align: right;
-    border-left: 1px solid var(--border);
-    background: rgba(253,246,227,0.92);
+    border-left: none;
+    background: var(--paper-bg);
   }
   /* Right body cells: position label (sticky right) — token text + ordinal right-aligned */
   #grid td.pos-label {
-    font-family: -apple-system, sans-serif; font-size: 12px; font-weight: 500;
-    color: var(--text); background: rgba(253,246,227,0.85);
+    font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 400;
+    color: var(--text); background: var(--paper-bg);
     position: sticky; right: 0; z-index: 1;
-    border-left: 1px solid var(--border);
+    border-left: none;
     text-align: right; padding: 4px 12px;
     min-width: 140px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
   #grid td.pos-label .tok-text { color: var(--text); }
-  #grid td.pos-label .ord { color: var(--text-3); font-size: 10px; margin-left: 4px; }
+  #grid td.pos-label.clickable-token { cursor: pointer; }
+  #grid td.pos-label.clickable-token:hover .tok-text {
+    color: var(--highlight-orange);
+    text-decoration: underline;
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 4px;
+  }
   #grid td.pos-label.gen .tok-text { color: var(--accent); font-weight: 600; }
-  #grid td.pos-label.gen { border-right: 3px solid var(--accent); }
+  #grid td.pos-label.selected-token .tok-text {
+    color: var(--highlight-orange);
+    font-weight: 700;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+  }
+  #grid td.pos-label.gen { }
   /* Data cells (layer × position) — show only token text, no ID. Taller cells
      with a thin white gap between them (via border-spacing on the table). */
   #grid td.cell {
-    cursor: pointer; border-radius: 6px; text-align: center;
-    color: var(--text); transition: background 0.12s;
+    border-radius: 6px; text-align: center;
+    color: var(--text); background: transparent;
+    transition: box-shadow 0.12s, color 0.12s, filter 0.12s;
     min-width: 52px; height: 36px;
-    background: rgba(255,255,255,0.55);
   }
-  #grid td.cell .word { display: block; font-weight: 500; }
-  #grid td.cell:hover { background: rgba(0,113,227,0.12); }
-  #grid td.cell.selected { color: var(--text); box-shadow: inset 0 0 0 2px #0071e3; }
+  #grid td.cell .word { display: block; font-weight: 400; }
+  #grid td.cell.selectable { cursor: pointer; }
+  #grid td.cell.selectable:hover { filter: saturate(1.2) brightness(0.98); }
+  #grid td.cell.selected { box-shadow: inset 0 0 0 2px var(--highlight-orange), 0 0 0 1px rgba(255,138,0,0.18); }
+  #grid td.cell.selected .word { color: var(--highlight-orange); font-weight: 700; }
+  #grid td.cell.matching-token { box-shadow: inset 0 0 0 1.5px rgba(255,138,0,0.42), 0 0 0 1px rgba(255,138,0,0.10); }
+  #grid td.cell.matching-token .word { color: var(--highlight-orange); font-weight: 700; }
   #grid td.cell.selected-row { }
-  #grid td.cell.gen-row { background: var(--gen-row); }
+  #grid td.cell.gen-row { }
   #grid td.cell.gen-row.selected-row { }
 
   /* ----- Detail panel (floating, centered, stacked above the input box) ----- */
@@ -253,22 +295,43 @@
   #detail {
     position: fixed;
     left: 50%; bottom: 120px;
-    transform: translateX(-50%);
+    transform: translateX(-50%) translateY(0);
     width: min(640px, 92vw);
     background: #ffffff;
     border: 1px solid var(--border-2);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
+    corner-shape: squircle;
     box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
     padding: 14px 18px;
     max-height: 40vh; overflow-y: auto;
     z-index: 9;
     display: none;
+    opacity: 0;
+    transition: opacity 180ms ease, transform 180ms ease;
   }
-  #detail.visible { display: block; }
+  #detail.visible {
+    display: block;
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    animation: detail-enter 180ms ease both;
+  }
+  #detail.closing {
+    display: block;
+    pointer-events: none;
+    animation: detail-exit 180ms ease both;
+  }
+  @keyframes detail-enter {
+    from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
+  @keyframes detail-exit {
+    from { opacity: 1; transform: translateX(-50%) translateY(0); }
+    to { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  }
   #detail h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
   #detail .empty { color: var(--text-3); font-size: 13px; padding: 8px 0; }
   #detail .ctx { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
-  #detail .ctx b { color: var(--text); font-family: ui-monospace, Menlo, monospace; }
+  #detail .ctx b { color: var(--highlight-orange); font-family: ui-monospace, Menlo, monospace; }
   #detail .readout { display: flex; flex-direction: column; gap: 4px; }
   #detail .readout .row { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
   #detail .readout .row .idx { color: var(--text-3); width: 18px; text-align: right; flex-shrink: 0; }
@@ -276,9 +339,9 @@
   #detail .readout .row .id { color: var(--text-3); font-size: 11px; width: 60px; flex-shrink: 0; }
   /* Fixed-width bar pushed to the right edge of the card. */
   #detail .readout .row .bar { width: 180px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0; margin-left: auto; }
-  #detail .readout .row .bar > div { height: 100%; background: var(--accent); border-radius: 3px; }
-  #detail .readout .row.top1 .tok { color: var(--accent); font-weight: 600; }
-  #detail .readout .row.top1 .bar > div { background: var(--accent); }
+  #detail .readout .row .bar > div { height: 100%; background: var(--highlight-orange); border-radius: 3px; }
+  #detail .readout .row.top1 .tok { color: var(--highlight-orange); font-weight: 600; }
+  #detail .readout .row.top1 .bar > div { background: var(--highlight-orange); }
   #detail .close {
     position: absolute; top: 8px; right: 10px;
     border: none; background: transparent; color: var(--text-3);
@@ -367,7 +430,9 @@ let state = {
   layers: [],
   selectedSnapshotId: null,
   selectedCell: null,
+  selectedToken: null,
   streaming: false,
+  streamId: null,       // server stream_id for pause/resume control
   snapshotByMsgToken: new Map(),
   // Generation settings (configurable via the settings popup).
   settings: { maxTokens: 262144, temp: 0.0, topN: 10 },
@@ -376,6 +441,8 @@ let state = {
 const STORAGE_KEY = 'jlens-conversation-v1';
 const SETTINGS_KEY = 'jlens-settings-v1';
 const MODEL_MAX_CONTEXT = 262144;  // Qwen3.6-27B max_position_embeddings
+let chatDetailClearanceApplied = false;
+let detailCloseTimer = null;
 
 function saveState() {
   try {
@@ -491,6 +558,7 @@ function clearState() {
   state.layers = [];
   state.selectedSnapshotId = null;
   state.selectedCell = null;
+  state.selectedToken = null;
   state.snapshotByMsgToken = new Map();
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 }
@@ -559,11 +627,178 @@ async function loadInfo() {
   state.lensInfo = l;
 }
 
-// ----- Chat rendering -----
-function renderChat() {
+// ----- Overlay-aware scroll padding -----
+function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail' } = {}) {
+  let blockerTop = window.innerHeight;
+  let detailVisible = false;
+  let blockerVisible = false;
+  ['chat-input', 'detail', 'settings-btn', 'clear-btn'].forEach((id) => {
+    if (id === 'detail' && ignoreDetail) return;
+    const el = $(id);
+    if (!el) return;
+    if (id === 'detail' && el.classList.contains('closing')) return;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return;
+    if (id === 'detail') detailVisible = true;
+    const rect = el.getBoundingClientRect();
+    const top = id === 'detail' ? (detailStableRect()?.top ?? rect.top) : rect.top;
+    const bottom = id === 'detail' ? (detailStableRect()?.bottom ?? rect.bottom) : rect.bottom;
+    const overlapsY = bottom > 0 && top < window.innerHeight;
+    if (overlapsY) {
+      blockerVisible = true;
+      blockerTop = Math.min(blockerTop, top);
+    }
+  });
+  const shouldApplyGap = gapMode === 'always' ? blockerVisible : detailVisible;
+  const overlayGap = shouldApplyGap
+    ? parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--detail-clearance-gap')) || 0
+    : 0;
+  return Math.max(0, Math.ceil(window.innerHeight - blockerTop + overlayGap));
+}
+
+function updateScrollClearance(opts = {}) {
+  const root = document.documentElement;
+  const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always' });
+  const chatClearance = bottomStackClearance(opts);
+  root.style.setProperty('--grid-bottom-clearance', gridClearance + 'px');
+  root.style.setProperty('--chat-bottom-clearance', chatClearance + 'px');
+}
+
+function gridBottomClearance() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--grid-bottom-clearance');
+  return parseFloat(raw) || 0;
+}
+
+function chatBottomClearance() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--chat-bottom-clearance');
+  return parseFloat(raw) || 0;
+}
+
+function detailClearanceGap() {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--detail-clearance-gap');
+  return parseFloat(raw) || 0;
+}
+
+function detailStableRect() {
+  const detail = $('detail');
+  if (!detail || getComputedStyle(detail).display === 'none') return null;
+  const rect = detail.getBoundingClientRect();
+  const bottom = parseFloat(getComputedStyle(detail).bottom) || 0;
+  const top = window.innerHeight - bottom - rect.height;
+  return { top, bottom: top + rect.height, height: rect.height };
+}
+
+function resolveChatDetailCollision() {
   const log = $('chat-log');
+  const detail = $('detail');
+  if (!log || !detail || getComputedStyle(detail).display === 'none') return false;
+  const detailRect = detailStableRect();
+  if (!detailRect) return false;
+  const safeTop = detailRect.top - detailClearanceGap();
+  let overlap = 0;
+  log.querySelectorAll('.msg .bubble').forEach((bubble) => {
+    const rect = bubble.getBoundingClientRect();
+    const visibleY = rect.bottom > 0 && rect.top < window.innerHeight;
+    const collidesY = rect.bottom > safeTop && rect.top < detailRect.bottom;
+    if (visibleY && collidesY) overlap = Math.max(overlap, rect.bottom - safeTop);
+  });
+  if (overlap <= 0) return false;
+  const maxScroll = Math.max(0, log.scrollHeight - log.clientHeight);
+  const target = Math.min(maxScroll, log.scrollTop + Math.ceil(overlap));
+  if (target <= log.scrollTop) return false;
+  log.scrollTo({ top: target, behavior: 'smooth' });
+  return true;
+}
+
+function selectedChatTokenEl() {
+  if (!state.selectedToken) return null;
+  return document.querySelector(
+    `.msg .tok[data-msg-idx="${state.selectedToken.msgIdx}"][data-token-idx="${state.selectedToken.tokenIdx}"]`
+  );
+}
+
+function focusRectForInline(el) {
+  const rects = Array.from(el.getClientRects()).filter(r => r.width > 0 && r.height > 0);
+  if (rects.length === 0) return el.getBoundingClientRect();
+  return rects.reduce((best, rect) =>
+    rect.width * rect.height > best.width * best.height ? rect : best
+  );
+}
+
+function clampScrollTarget(scroller, target) {
+  const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+  return Math.max(0, Math.min(maxScroll, target));
+}
+
+function focusTargetForAvailableArea(scroller, itemRect, bottomClearance) {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const offset = itemRect.top - scrollerRect.top + scroller.scrollTop;
+  const usableHeight = Math.max(itemRect.height, scroller.clientHeight - bottomClearance);
+  const target = offset - usableHeight / 2 + itemRect.height / 2;
+  return clampScrollTarget(scroller, target);
+}
+
+function focusTargetForViewportCenter(scroller, itemRect) {
+  const scrollerRect = scroller.getBoundingClientRect();
+  const offset = itemRect.top - scrollerRect.top + scroller.scrollTop;
+  const viewportCenterInScroller = window.innerHeight / 2 - scrollerRect.top;
+  const target = offset - viewportCenterInScroller + itemRect.height / 2;
+  return clampScrollTarget(scroller, target);
+}
+
+function focusSelectedChatToken() {
+  const log = $('chat-log');
+  const tok = selectedChatTokenEl();
+  if (!log || !tok) return false;
+  const tokRect = focusRectForInline(tok);
+  const target = focusTargetForAvailableArea(log, tokRect, chatBottomClearance());
+  log.scrollTo({ top: target, behavior: 'smooth' });
+  return true;
+}
+
+function dismissDetailCard() {
+  const detail = $('detail');
+  if (detailCloseTimer) {
+    clearTimeout(detailCloseTimer);
+    detailCloseTimer = null;
+  }
+  if (!detail || (!detail.classList.contains('visible') && getComputedStyle(detail).display === 'none')) {
+    return;
+  }
+  detail.classList.remove('visible');
+  detail.classList.add('closing');
+  chatDetailClearanceApplied = false;
+  document.documentElement.classList.add('recovering-clearance');
+  document.documentElement.offsetHeight;
+  updateScrollClearance({ ignoreDetail: true });
+  detailCloseTimer = setTimeout(() => {
+    detail.classList.remove('closing');
+    detail.innerHTML = '';
+    detailCloseTimer = null;
+    document.documentElement.classList.remove('recovering-clearance');
+    updateScrollClearance();
+  }, 220);
+}
+
+function closeDetailCard() {
+  state.selectedCell = null;
+  state.selectedToken = null;
+  dismissDetailCard();
+  updateAutoFollowUI();
+  renderChat({ scrollToBottom: state.selectedSnapshotId === null });
+  renderGrid();
+  renderTimeline();
+}
+
+// ----- Chat rendering -----
+function renderChat({ scrollToBottom = false } = {}) {
+  const log = $('chat-log');
+  const previousScrollTop = log.scrollTop;
   log.innerHTML = '';
-  if (state.messages.length === 0) return;
+  if (state.messages.length === 0) {
+    log.scrollTop = 0;
+    return;
+  }
   state.messages.forEach((m, mi) => {
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + m.role;
@@ -585,7 +820,9 @@ function renderChat() {
         span.title = `msg ${mi} tok ${ti} pos ${t.globalPos}`;
         span.dataset.msgIdx = mi;
         span.dataset.tokenIdx = ti;
-        if (state.selectedSnapshotId !== null) {
+        if (isSelectedChatToken(mi, ti)) {
+          span.classList.add('selected');
+        } else if (state.selectedSnapshotId !== null) {
           const snap = state.snapshots.find(s => s.snapshot_id === state.selectedSnapshotId);
           if (snap && snap.msg_idx === mi && snap.token_idx === ti) {
             span.classList.add('selected');
@@ -602,7 +839,7 @@ function renderChat() {
     wrap.appendChild(bubble);
     log.appendChild(wrap);
   });
-  log.scrollTop = log.scrollHeight;
+  log.scrollTop = scrollToBottom ? log.scrollHeight : previousScrollTop;
 }
 
 // ----- Grid rendering -----
@@ -628,10 +865,68 @@ function cellIntensity(cell) {
   return t;
 }
 
+function cellBlueBackground(cell) {
+  const t = cellIntensity(cell);
+  const alpha = t == null ? 0.10 : 0.10 + t * 0.22;
+  return `rgba(36,135,222,${alpha.toFixed(3)})`;
+}
+
+function normalizeTokenText(s) {
+  const text = (s || '').trim();
+  if (!text || text === '·') return '';
+  return text.toLocaleLowerCase();
+}
+
+function selectedCellTokenKey() {
+  if (!state.selectedCell) return '';
+  const { pos, layer } = state.selectedCell;
+  const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+  return normalizeTokenText(cell && cell.top_tokens && cell.top_tokens[0]);
+}
+
+function selectedPosition() {
+  if (state.selectedToken && state.selectedToken.pos >= 0) return state.selectedToken.pos;
+  if (state.selectedCell) return state.selectedCell.pos;
+  return null;
+}
+
+function tokenRefForPosition(pos) {
+  const meta = state.gridTokenMsgs[pos];
+  if (!meta) return null;
+  const msg = state.messages[meta.msgIdx];
+  if (!msg) return null;
+  const tokenIdx = msg.tokens.findIndex(t => t.globalPos === pos);
+  if (tokenIdx < 0) return null;
+  return { msgIdx: meta.msgIdx, tokenIdx, pos };
+}
+
+function defaultLayerForPosition(pos) {
+  if (state.selectedCell && state.selectedCell.pos === pos && state.gridRows[pos]?.[state.selectedCell.layer]) {
+    return state.selectedCell.layer;
+  }
+  return state.layers.find(layer => state.gridRows[pos]?.[layer] != null);
+}
+
+function isSelectedChatToken(msgIdx, tokenIdx) {
+  return !!state.selectedToken &&
+    state.selectedToken.msgIdx === msgIdx &&
+    state.selectedToken.tokenIdx === tokenIdx;
+}
+
+function updateGridHeaderShadows() {
+  const body = $('grid-body');
+  if (!body) return;
+  const maxScrollTop = Math.max(0, body.scrollHeight - body.clientHeight);
+  const maxScrollLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+  body.classList.toggle('scrolled-y', maxScrollTop > 1 && body.scrollTop > 1);
+  body.classList.toggle('covering-x', maxScrollLeft > 1 && body.scrollLeft < maxScrollLeft - 1);
+}
+
 function renderGrid() {
   const body = $('grid-body');
   if (state.gridRows.length === 0 || state.layers.length === 0) {
     body.innerHTML = '';
+    body.classList.remove('scrolled-y', 'covering-x');
     return;
   }
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
@@ -648,11 +943,13 @@ function renderGrid() {
   });
   const posHeader = document.createElement('th');
   posHeader.className = 'pos-header';
-  posHeader.textContent = 'token · #';
+  posHeader.textContent = 'token';
   hrow.appendChild(posHeader);
   thead.appendChild(hrow);
   table.appendChild(thead);
 
+  const selectedTokenKey = selectedCellTokenKey();
+  const activePos = selectedPosition();
   const tbody = document.createElement('tbody');
   for (let pos = 0; pos < visibleN; pos++) {
     const tr = document.createElement('tr');
@@ -670,14 +967,14 @@ function renderGrid() {
         word.className = 'word';
         word.textContent = top1;
         td.appendChild(word);
-        const t = cellIntensity(cell);
-        if (t !== null && state.selectedCell) {
-          td.style.background = `rgba(0,113,227,${0.06 + t * 0.18})`;
-        }
+        td.classList.add('selectable');
+        td.style.background = cellBlueBackground(cell);
         td.dataset.pos = pos;
         td.dataset.layer = layer;
         if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
           td.classList.add('selected');
+        } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
+          td.classList.add('matching-token');
         }
         if (state.selectedCell && state.selectedCell.pos === pos) {
           td.classList.add('selected-row');
@@ -693,39 +990,52 @@ function renderGrid() {
     const pl = document.createElement('td');
     pl.className = 'pos-label';
     if (isGen) pl.classList.add('gen');
-    pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span> <span class="ord">#${pos}</span>`;
+    if (activePos === pos) pl.classList.add('selected-token');
+    pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span>`;
     pl.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
+    if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) {
+      pl.classList.add('clickable-token');
+      pl.onclick = () => selectTokenHeader(pos);
+    }
     tr.appendChild(pl);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);
   body.innerHTML = '';
   body.appendChild(table);
-  if (state.selectedCell) {
-    // Center the selected cell within the grid body's scroll viewport.
+  updateGridHeaderShadows();
+  if (state.selectedCell || activePos !== null) {
+    // Center the selected cell, or the token header when no layer cell is selected.
     // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
     requestAnimationFrame(() => {
-      const sel = body.querySelector('td.cell.selected');
+      const sel = body.querySelector('td.cell.selected') || body.querySelector('td.pos-label.selected-token');
       if (sel) {
-        const bodyRect = body.getBoundingClientRect();
-        const cellRect = sel.getBoundingClientRect();
-        const offset = cellRect.top - bodyRect.top + body.scrollTop;
-        const target = offset - body.clientHeight / 2 + cellRect.height / 2;
-        body.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
+        const targetRect = sel.getBoundingClientRect();
+        const target = focusTargetForViewportCenter(body, targetRect);
+        body.scrollTo({ top: target, behavior: 'smooth' });
+        requestAnimationFrame(updateGridHeaderShadows);
       }
     });
   } else if (state.selectedSnapshotId === null) {
     body.scrollTop = body.scrollHeight;
+    updateGridHeaderShadows();
   }
 }
 
 function renderDetail() {
   const col = $('detail');
   if (!state.selectedCell) {
+    if (col.classList.contains('closing')) return;
     col.classList.remove('visible');
     col.innerHTML = '';
     return;
   }
+  if (detailCloseTimer) {
+    clearTimeout(detailCloseTimer);
+    detailCloseTimer = null;
+  }
+  document.documentElement.classList.remove('recovering-clearance');
+  col.classList.remove('closing');
   const { pos, layer } = state.selectedCell;
   const tokStr = state.gridTokenStrs[pos] || '·';
   col.innerHTML = '';
@@ -734,7 +1044,7 @@ function renderDetail() {
   close.className = 'close';
   close.innerHTML = '&times;';
   close.title = 'Close detail';
-  close.onclick = () => { state.selectedCell = null; renderGrid(); renderDetail(); };
+  close.onclick = () => closeDetailCard();
   col.appendChild(close);
   const h3 = document.createElement('h3');
   h3.textContent = 'Detail';
@@ -794,17 +1104,47 @@ function isFrontier(msgIdx, tokenIdx) {
 
 // ----- Selection logic -----
 function selectBlock(msgIdx, tokenIdx) {
-  const snapId = state.snapshotByMsgToken.get(`${msgIdx}:${tokenIdx}`);
-  if (snapId == null) return;
-  state.selectedSnapshotId = snapId;
-  state.selectedCell = null;
+  const token = state.messages[msgIdx]?.tokens[tokenIdx];
+  if (!token) return;
+  state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
+  const layer = token.globalPos >= 0 ? defaultLayerForPosition(token.globalPos) : null;
+  state.selectedCell = layer == null ? null : { pos: token.globalPos, layer };
+  state.selectedSnapshotId = -1; // pinned inspection mode
   updateAutoFollowUI();
+  sendControl('pause');
   renderAll();
 }
-function selectTokenInChat(msgIdx, tokenIdx) { selectBlock(msgIdx, tokenIdx); }
+function selectTokenInChat(msgIdx, tokenIdx) {
+  const token = state.messages[msgIdx]?.tokens[tokenIdx];
+  if (!token) return;
+  const hadCellSelection = !!state.selectedCell;
+  state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
+  state.selectedCell = null;
+  state.selectedSnapshotId = -1; // pinned inspection mode without selecting a J-lens block
+  if (hadCellSelection) dismissDetailCard();
+  updateAutoFollowUI();
+  sendControl('pause');
+  renderAll();
+}
+function selectTokenHeader(pos) {
+  const ref = tokenRefForPosition(pos);
+  if (!ref) return;
+  const hadCellSelection = !!state.selectedCell;
+  state.selectedToken = ref;
+  state.selectedCell = null;
+  state.selectedSnapshotId = -1; // pinned token focus without selecting a J-lens block
+  if (hadCellSelection) dismissDetailCard();
+  updateAutoFollowUI();
+  sendControl('pause');
+  renderAll();
+}
 function selectCell(pos, layer) {
   state.selectedCell = { pos, layer };
-  renderGrid(); renderDetail();
+  state.selectedToken = tokenRefForPosition(pos);
+  state.selectedSnapshotId = -1; // mark as pinned (not null = not auto-following)
+  updateAutoFollowUI();
+  sendControl('pause');
+  renderAll();
 }
 function updateAutoFollowUI() {
   const resumeBtn = $('resume-btn');
@@ -822,7 +1162,22 @@ function updateAutoFollowUI() {
     chk.checked = false;
   }
 }
-function renderAll() { renderChat(); renderGrid(); renderDetail(); renderTimeline(); }
+function renderAll() {
+  const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
+  renderDetail();
+  updateScrollClearance();
+  renderChat({ scrollToBottom: state.selectedSnapshotId === null });
+  if (state.selectedToken) {
+    requestAnimationFrame(() => {
+      focusSelectedChatToken();
+    });
+  } else if (shouldResolveChatDetailCollision) {
+    requestAnimationFrame(() => resolveChatDetailCollision());
+  }
+  chatDetailClearanceApplied = !!state.selectedCell;
+  renderGrid();
+  renderTimeline();
+}
 
 // ----- Ingest a snapshot -----
 function ingestSnapshot(snap) {
@@ -968,6 +1323,7 @@ async function sendMessage() {
     console.error('request failed:', e);
   } finally {
     state.streaming = false;
+    state.streamId = null;
     updateAutoFollowUI();
     renderAll();
   }
@@ -984,22 +1340,47 @@ function handleSSEFrame(frame) {
   if (!data) return;
   let obj;
   try { obj = JSON.parse(data); } catch (e) { return; }
-  if (event === 'snapshot') ingestSnapshot(obj);
-  else if (event === 'done') console.log('done ·', obj.n_tokens, 'tokens');
-  else if (event === 'error') console.error('stream error', obj);
+  if (event === 'stream_start') {
+    state.streamId = obj.stream_id;
+  } else if (event === 'snapshot') {
+    ingestSnapshot(obj);
+  } else if (event === 'done') {
+    console.log('done ·', obj.n_tokens, 'tokens');
+  } else if (event === 'error') {
+    console.error('stream error', obj);
+  }
+}
+
+// ----- Server-side pause/resume control -----
+async function sendControl(action) {
+  if (!state.streamId) return;
+  try {
+    await fetch(API + '/api/chat_control', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stream_id: state.streamId, action }),
+    });
+  } catch (e) { console.warn('chat_control failed:', e); }
 }
 
 // ----- Resume control -----
 $('resume-btn').onclick = () => {
   state.selectedSnapshotId = null;
+  state.selectedCell = null;
+  state.selectedToken = null;
   updateAutoFollowUI();
+  sendControl('resume');
   renderAll();
 };
 $('auto-follow-chk').onchange = () => {
   if ($('auto-follow-chk').checked) {
     state.selectedSnapshotId = null;
+    state.selectedCell = null;
+    state.selectedToken = null;
+    sendControl('resume');
   } else if (state.snapshots.length) {
     state.selectedSnapshotId = state.snapshots[state.snapshots.length - 1].snapshot_id;
+    sendControl('pause');
   }
   updateAutoFollowUI();
   renderAll();
@@ -1010,7 +1391,14 @@ $('chat-textarea').addEventListener('input', () => {
   const ta = $('chat-textarea');
   ta.style.height = 'auto';
   ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+  updateScrollClearance();
 });
+window.addEventListener('resize', () => {
+  updateScrollClearance();
+  updateGridHeaderShadows();
+  if (state.selectedCell) renderGrid();
+});
+$('grid-body').addEventListener('scroll', updateGridHeaderShadows, { passive: true });
 $('chat-textarea').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });

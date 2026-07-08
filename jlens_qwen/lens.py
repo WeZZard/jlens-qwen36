@@ -30,6 +30,12 @@ class JacobianLens:
         self.source_layers = sorted(self.jacobians)
         self.n_prompts = n_prompts
         self.d_model = d_model
+        # Per-layer J as fp16 mx arrays, built lazily on first transport.
+        # fp16 matches the on-disk precision (save() writes fp16), and
+        # memoizing avoids re-uploading the 105MB fp32 numpy matrix on
+        # EVERY transport call (~6.6GB of host->GPU churn per generated
+        # token when reading out all 63 layers).
+        self._mx_jacobians: dict[int, mx.array] = {}
 
     def __repr__(self) -> str:
         return (
@@ -70,9 +76,14 @@ class JacobianLens:
         """
         if layer not in self.jacobians:
             raise KeyError(f"layer {layer} not in source_layers {self.source_layers}")
-        J = mx.array(self.jacobians[layer])  # [D, D]
-        # residual @ J.T  -> [..., D]
-        return mx.matmul(residual, J.T)
+        J = self._mx_jacobians.get(layer)
+        if J is None:
+            J = mx.array(self.jacobians[layer].astype(np.float16))  # [D, D]
+            mx.eval(J)
+            self._mx_jacobians[layer] = J
+        # residual @ J.T -> [..., D]; fp16 matmul (the lens has fp16
+        # information content anyway), fp32 result for downstream readout.
+        return mx.matmul(residual.astype(mx.float16), J.T).astype(mx.float32)
 
     def apply(
         self,
