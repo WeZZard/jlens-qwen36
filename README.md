@@ -105,8 +105,9 @@ the paper's regime. Re-enable per request (`enable_thinking: true` on
 `/api/chat_stream`) to explore a *different* question: whether J-space
 leads the explicit reasoning tokens.
 
-To upgrade from demo to research-grade, see `PERFORMANCE.md` for the
-optimization path (analytic attention assembly → 100+ prompt fit).
+The analytic fitting pipeline (see [`docs/perf/`](docs/perf/)) fits a
+full-depth 20-prompt lens in ~2.75 h on an M4 Pro; the remaining step to
+research-grade is simply more prompts (100+).
 
 ## What it does
 
@@ -301,8 +302,9 @@ The Jacobian lens (J-lens) at layer ℓ is a matrix `J_ℓ ∈ R^{d_model × d_m
 - **Lens quality depends on prompt count** — the paper uses 1000 prompts
   (~100 is "usable"). The default 20-prompt fit is demo-quality: readouts
   are interpretable but noisy (artifacts like `____` tokens in mid layers).
-  For research-grade results, fit with `--n-prompts 100` or more. See
-  `PERFORMANCE.md` for how to make this affordable.
+  For research-grade results, fit with `--n-prompts 100` or more —
+  affordable thanks to the analytic fit pipeline documented in
+  [`docs/perf/`](docs/perf/).
 - **g/β decay-gate paths: included since kernel v4** — the Metal GDN
   backward kernel computes real `dg`/`dβ` gradients (verified vs the ops
   BPTT to ~3e-7), and the v0.2 lens was fitted with them
@@ -315,7 +317,8 @@ The Jacobian lens (J-lens) at layer ℓ is a matrix `J_ℓ ∈ R^{d_model × d_m
 - **Interventions are subtle with a 20-prompt lens** — the J-lens vectors
   `v_t = J_ℓᵀ @ W_U[t]` are small with a noisy lens, so steering barely
   changes the output. With a 100+ prompt lens or the analytic attention
-  branch (see `PERFORMANCE.md`), interventions become reliable.
+  branch (see [`docs/perf/fit-04.md`](docs/perf/fit-04.md)), interventions
+  become reliable.
 
 ## Acknowledgements
 
