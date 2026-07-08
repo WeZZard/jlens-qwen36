@@ -41,6 +41,7 @@
     --chat-bottom-clearance: 120px;
     --detail-bottom: 100px;
     --detail-clearance-gap: 16px;
+    --visible-band-edge-color: var(--paper-bg);
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
@@ -123,10 +124,13 @@
     border: none; border-radius: 10px;
     background: transparent; color: var(--text);
     resize: none; outline: none;
+    overflow: hidden;
+    scrollbar-width: none;
     /* Prevent the browser from treating this as a password/autofill field. */
     -webkit-text-security: none;
     autocomplete: off;
   }
+  #chat-textarea::-webkit-scrollbar { display: none; }
   #stop-btn {
     width: 36px; height: 36px; flex-shrink: 0;
     border: 1px solid var(--highlight-orange);
@@ -189,12 +193,23 @@
   #settings-popup .field label {
     display: block; font-size: 12px; color: var(--text-2); margin-bottom: 4px;
   }
-  #settings-popup .field input {
+  #settings-popup .field label .value {
+    float: right;
+    color: var(--highlight-orange);
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+  #settings-popup .field input[type="number"] {
     width: 100%; font: inherit; font-size: 13px; padding: 6px 10px;
     border: 1px solid var(--border-2); border-radius: var(--radius-xs);
     background: var(--surface); color: var(--text); outline: none;
   }
-  #settings-popup .field input:focus { border-color: var(--highlight-orange); box-shadow: 0 0 0 2px var(--highlight-orange-soft); }
+  #settings-popup .field input[type="number"]:focus { border-color: var(--highlight-orange); box-shadow: 0 0 0 2px var(--highlight-orange-soft); }
+  #settings-popup .field input[type="range"] {
+    width: 100%;
+    accent-color: var(--highlight-orange);
+    cursor: pointer;
+  }
   #settings-popup .field .hint { font-size: 11px; color: var(--text-3); margin-top: 3px; }
   #settings-popup .actions {
     display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;
@@ -225,27 +240,55 @@
   html.recovering-clearance #grid-body {
     transition: padding-bottom 220ms ease;
   }
-  #grid { border-collapse: separate; border-spacing: 2px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  #grid { border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
   #grid th, #grid td { padding: 8px 6px; white-space: nowrap; }
+  .band-floating-label {
+    position: fixed; top: 3px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 8; pointer-events: none;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,246,0.82);
+    color: var(--text-2);
+    font-size: 10px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    opacity: 0;
+    white-space: nowrap;
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+  }
   /* Top header: layer labels (sticky top, aligned to the very top) */
   #grid th {
     background: var(--paper-bg); color: var(--text-2); font-weight: 600;
-    position: sticky; top: 0; z-index: 2;
+    position: sticky; z-index: 2;
     border-bottom: none;
     min-width: 52px; text-align: center;
     height: 32px;
   }
+  #grid th.band-guide-cell {
+    top: 0; height: 28px; padding: 0;
+    line-height: 28px;
+    border-radius: 0;
+    z-index: 3;
+  }
+  #grid th.layer-header { top: 28px; }
+  #grid th.pos-band-guide {
+    position: sticky; right: 0; top: 0; z-index: 5;
+    min-width: 140px; height: 28px; padding: 0;
+    background: var(--visible-band-edge-color);
+  }
   /* Right header: position label column header (sticky right + sticky top corner) */
   #grid th.pos-header {
-    position: sticky; right: 0; top: 0; z-index: 4;
+    position: sticky; right: 0; top: 28px; z-index: 4;
     min-width: 140px; text-align: right;
     border-left: none;
-    background: var(--paper-bg);
+    background: var(--visible-band-edge-color);
   }
   /* Right body cells: position label (sticky right) — token text + ordinal right-aligned */
   #grid td.pos-label {
     font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 400;
-    color: var(--text); background: var(--paper-bg);
+    color: var(--text); background: var(--visible-band-edge-color);
     position: sticky; right: 0; z-index: 1;
     border-left: none;
     text-align: right; padding: 4px 12px;
@@ -269,10 +312,9 @@
     text-underline-offset: 4px;
   }
   #grid td.pos-label.gen { }
-  /* Data cells (layer × position) — show only token text, no ID. Taller cells
-     with a thin white gap between them (via border-spacing on the table). */
+  /* Data cells (layer × position) — show only token text, no ID. */
   #grid td.cell {
-    border-radius: 6px; text-align: center;
+    border-radius: 0; text-align: center;
     color: var(--text); background: transparent;
     transition: box-shadow 0.12s, color 0.12s, filter 0.12s;
     min-width: 52px; height: 36px;
@@ -386,6 +428,11 @@
   <div id="split">
     <!-- ===== LEFT: J-lens grid ===== -->
     <div id="grid-col">
+      <div id="band-floating-labels" aria-hidden="true">
+        <div class="band-floating-label" data-band="surface">Sensory / Surface Processing</div>
+        <div class="band-floating-label" data-band="workspace">Workspace Band</div>
+        <div class="band-floating-label" data-band="motor">Motor / Output Band</div>
+      </div>
       <div id="grid-body"></div>
       <div id="detail"></div>
     </div>
@@ -420,9 +467,9 @@
         <div class="hint">How many tokens the model generates per turn. Default = model max context (262144). Larger = slower (one full forward per token).</div>
       </div>
       <div class="field">
-        <label for="set-temp">Temperature</label>
-        <input id="set-temp" type="number" min="0" step="0.1">
-        <div class="hint">0 = greedy (deterministic). Higher = more random sampling.</div>
+        <label for="set-temp">Temperature <span class="value" id="set-temp-value">0.0</span></label>
+        <input id="set-temp" type="range" min="0" max="2" step="0.1">
+        <div class="hint">0 = greedy. 2 = high-variance sampling.</div>
       </div>
       <div class="field">
         <label for="set-top-n">Readout depth (top-n)</label>
@@ -632,16 +679,25 @@ function saveSettings() {
 
 function syncSettingsInputs() {
   $('set-max-tokens').value = state.settings.maxTokens;
-  $('set-temp').value = state.settings.temp;
+  const tempInput = $('set-temp');
+  const tempMin = parseFloat(tempInput.min) || 0;
+  const tempMax = parseFloat(tempInput.max) || 2;
+  const temp = Math.max(tempMin, Math.min(tempMax, Number(state.settings.temp) || 0));
+  state.settings.temp = temp;
+  tempInput.value = temp;
+  $('set-temp-value').textContent = temp.toFixed(1);
   $('set-top-n').value = state.settings.topN;
 }
 
 function readSettingsFromInputs() {
   state.settings.maxTokens = parseInt($('set-max-tokens').value) || MODEL_MAX_CONTEXT;
-  state.settings.temp = parseFloat($('set-temp').value) || 0;
+  const tempInput = $('set-temp');
+  const tempMin = parseFloat(tempInput.min) || 0;
+  const tempMax = parseFloat(tempInput.max) || 2;
+  state.settings.temp = parseFloat(tempInput.value) || 0;
   state.settings.topN = parseInt($('set-top-n').value) || 10;
   if (state.settings.maxTokens < 1) state.settings.maxTokens = 1;
-  if (state.settings.temp < 0) state.settings.temp = 0;
+  state.settings.temp = Math.max(tempMin, Math.min(tempMax, state.settings.temp));
   if (state.settings.topN < 1) state.settings.topN = 1;
   saveSettings();
 }
@@ -922,10 +978,76 @@ function cellIntensity(cell) {
   return t;
 }
 
-function cellBlueBackground(cell) {
+const LAYER_BANDS = [
+  { id: 'surface', label: 'Sensory / Surface Processing', coreStart: 0, coreEnd: 18, color: [112, 183, 220] },
+  { id: 'workspace', label: 'Workspace Band', coreStart: 25, coreEnd: 53, color: [232, 166, 48] },
+  { id: 'motor', label: 'Motor / Output Band', coreStart: 59, coreEnd: 63, color: [166, 153, 136] },
+];
+const PAPER_RGB = [255, 255, 246];
+const FREQ_BLUE_RGB = [36, 135, 222];
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function mixRgb(a, b, t) {
+  const clamped = Math.max(0, Math.min(1, t));
+  return [
+    Math.round(lerp(a[0], b[0], clamped)),
+    Math.round(lerp(a[1], b[1], clamped)),
+    Math.round(lerp(a[2], b[2], clamped)),
+  ];
+}
+
+function rgbCss(rgb, alpha = 1) {
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+}
+
+function tintRgb(rgb, amount) {
+  return mixRgb(PAPER_RGB, rgb, amount);
+}
+
+function layerBandPosition(layer, start, end) {
+  if (end <= start) return 0;
+  return Math.max(0, Math.min(1, (layer - start) / (end - start)));
+}
+
+function bandRgbAtLayer(layer) {
+  const surface = LAYER_BANDS[0].color;
+  const workspace = LAYER_BANDS[1].color;
+  const motor = LAYER_BANDS[2].color;
+  if (layer <= 18) return mixRgb(surface, tintRgb(surface, 0.45), layerBandPosition(layer, 0, 18));
+  if (layer <= 24) return mixRgb(surface, workspace, (layer - 19) / 5);
+  if (layer <= 53) return mixRgb(workspace, tintRgb(workspace, 0.35), layerBandPosition(layer, 25, 53));
+  if (layer <= 58) return mixRgb(workspace, motor, (layer - 54) / 4);
+  return mixRgb(motor, PAPER_RGB, layerBandPosition(layer, 59, 63));
+}
+
+function layerGuideBackground(layer) {
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.56));
+}
+
+function layerHeaderBackground(layer) {
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.36));
+}
+
+function layerEdgeBackground(layer) {
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.36));
+}
+
+function layerLabelBackground(band) {
+  return rgbCss(tintRgb(band.color, 0.56));
+}
+
+function cellBlueRgb(cell) {
   const t = cellIntensity(cell);
-  const alpha = t == null ? 0.10 : 0.10 + t * 0.22;
-  return `rgba(36,135,222,${alpha.toFixed(3)})`;
+  const amount = t == null ? 0.10 : 0.10 + t * 0.22;
+  return mixRgb(PAPER_RGB, FREQ_BLUE_RGB, amount);
+}
+
+function layerCellBackground(cell, layer) {
+  const base = cell ? cellBlueRgb(cell) : PAPER_RGB;
+  return rgbCss(mixRgb(base, bandRgbAtLayer(layer), 0.14));
 }
 
 function normalizeTokenText(s) {
@@ -977,6 +1099,86 @@ function updateGridHeaderShadows() {
   const maxScrollLeft = Math.max(0, body.scrollWidth - body.clientWidth);
   body.classList.toggle('scrolled-y', maxScrollTop > 1 && body.scrollTop > 1);
   body.classList.toggle('covering-x', maxScrollLeft > 1 && body.scrollLeft < maxScrollLeft - 1);
+  updateGridBandChrome();
+}
+
+function layerHeaderCells() {
+  return Array.from(document.querySelectorAll('#grid th.layer-header'));
+}
+
+function layerPositionAtViewportX(x) {
+  const headers = layerHeaderCells();
+  if (headers.length === 0) return null;
+  let nearest = null;
+  let nearestDistance = Infinity;
+  for (const th of headers) {
+    const rect = th.getBoundingClientRect();
+    const layer = Number(th.dataset.layer);
+    if (!Number.isFinite(layer) || rect.width <= 0) continue;
+    if (x >= rect.left && x <= rect.right) {
+      return layer + Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    }
+    const distance = x < rect.left ? rect.left - x : x - rect.right;
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearest = { layer, rect };
+    }
+  }
+  if (!nearest) return null;
+  return nearest.layer + (x > nearest.rect.right ? 1 : 0);
+}
+
+function layerBoundaryViewportX(layer, side) {
+  const th = document.querySelector(`#grid th.layer-header[data-layer="${layer}"]`);
+  if (!th) return null;
+  const rect = th.getBoundingClientRect();
+  return side === 'end' ? rect.right : rect.left;
+}
+
+function renderedCoreBoundsForBand(band) {
+  const renderedLayers = state.layers.filter(layer => layer >= band.coreStart && layer <= band.coreEnd);
+  if (renderedLayers.length === 0) return null;
+  const startX = layerBoundaryViewportX(renderedLayers[0], 'start');
+  const endX = layerBoundaryViewportX(renderedLayers[renderedLayers.length - 1], 'end');
+  if (startX == null || endX == null) return null;
+  return { startX, endX };
+}
+
+function updateGridBandChrome() {
+  const body = $('grid-body');
+  const labels = Array.from(document.querySelectorAll('.band-floating-label'));
+  const headers = layerHeaderCells();
+  if (!body || headers.length === 0) {
+    labels.forEach(label => { label.style.opacity = '0'; });
+    return;
+  }
+  const bodyRect = body.getBoundingClientRect();
+  const bodyStyle = getComputedStyle(body);
+  const maxScrollLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+  const sampleX = body.scrollLeft >= maxScrollLeft - 1
+    ? bodyRect.right - 1
+    : bodyRect.left + (parseFloat(bodyStyle.paddingLeft) || 0) + 1;
+  const edgeLayer = layerPositionAtViewportX(sampleX);
+  if (edgeLayer != null) {
+    document.documentElement.style.setProperty('--visible-band-edge-color', layerEdgeBackground(edgeLayer));
+  }
+
+  if (labels.length === 0) return;
+  const centerX = window.innerWidth / 2;
+  labels.forEach((label) => {
+    const band = LAYER_BANDS.find(item => item.id === label.dataset.band);
+    const bounds = band ? renderedCoreBoundsForBand(band) : null;
+    if (!band || !bounds) {
+      label.style.opacity = '0';
+      return;
+    }
+    const labelX = Math.max(bounds.startX, Math.min(bounds.endX, centerX));
+    const bandVisible = bounds.endX >= bodyRect.left && bounds.startX <= bodyRect.right;
+    const labelVisible = bandVisible && labelX >= bodyRect.left - 80 && labelX <= bodyRect.right + 80;
+    label.style.left = labelX + 'px';
+    label.style.background = layerLabelBackground(band);
+    label.style.opacity = labelVisible ? '1' : '0';
+  });
 }
 
 function buildGridRowTr(pos, selectedTokenKey, activePos) {
@@ -989,6 +1191,7 @@ function buildGridRowTr(pos, selectedTokenKey, activePos) {
     const td = document.createElement('td');
     td.className = 'cell';
     const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+    td.style.background = layerCellBackground(cell, layer);
     if (cell) {
       const top1 = cell.top_tokens[0] || '·';
       const word = document.createElement('span');
@@ -996,7 +1199,6 @@ function buildGridRowTr(pos, selectedTokenKey, activePos) {
       word.textContent = top1;
       td.appendChild(word);
       td.classList.add('selectable');
-      td.style.background = cellBlueBackground(cell);
       td.dataset.pos = pos;
       td.dataset.layer = layer;
       if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
@@ -1034,6 +1236,7 @@ function renderGrid({ focusSelection = false } = {}) {
   if (state.gridRows.length === 0 || state.layers.length === 0) {
     body.innerHTML = '';
     body.classList.remove('scrolled-y', 'covering-x');
+    updateGridBandChrome();
     return;
   }
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
@@ -1064,9 +1267,27 @@ function renderGrid({ focusSelection = false } = {}) {
 
   // Header row: layer labels (sticky top). The position label column is on the right.
   const thead = document.createElement('thead');
-  const hrow = document.createElement('tr');
+  const bandRow = document.createElement('tr');
+  bandRow.className = 'band-guide-row';
   state.layers.forEach(l => {
     const th = document.createElement('th');
+    th.className = 'band-guide-cell';
+    th.dataset.layer = l;
+    th.style.background = layerGuideBackground(l);
+    bandRow.appendChild(th);
+  });
+  const posBand = document.createElement('th');
+  posBand.className = 'pos-band-guide';
+  bandRow.appendChild(posBand);
+  thead.appendChild(bandRow);
+
+  const hrow = document.createElement('tr');
+  hrow.className = 'layer-header-row';
+  state.layers.forEach(l => {
+    const th = document.createElement('th');
+    th.className = 'layer-header';
+    th.dataset.layer = l;
+    th.style.background = layerHeaderBackground(l);
     th.textContent = 'L' + l;
     hrow.appendChild(th);
   });
@@ -1515,8 +1736,11 @@ $('settings-cancel').onclick = cancelSettings;
 $('settings-backdrop').addEventListener('click', (e) => {
   if (e.target === $('settings-backdrop')) cancelSettings();
 });
-// Enter inside a field commits; Escape cancels.
-['set-max-tokens', 'set-temp', 'set-top-n'].forEach((id) => {
+$('set-temp').addEventListener('input', () => {
+  $('set-temp-value').textContent = Number($('set-temp').value).toFixed(1);
+});
+// Enter inside number fields commits; Escape cancels.
+['set-max-tokens', 'set-top-n'].forEach((id) => {
   $(id).addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); commitSettings(); }
     if (e.key === 'Escape') { e.preventDefault(); cancelSettings(); }
