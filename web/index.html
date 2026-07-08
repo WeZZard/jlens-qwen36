@@ -19,9 +19,9 @@
     --highlight-orange: #ff8a00;
     --highlight-orange-soft: rgba(255,138,0,0.16);
     --user-bubble: #fff9ea;
-    --user-bubble-text: #3a3525;
+    --user-bubble-text: #5b5547;
     --asst-bubble: #fff9ea;
-    --asst-bubble-text: #3a3525;
+    --asst-bubble-text: #5b5547;
     --block-bg: #f1ead4;
     --prefill: #e8e3f5;
     --prefill-border: #b8a8e0;
@@ -39,6 +39,7 @@
     --radius-lg: 24px;
     --grid-bottom-clearance: 120px;
     --chat-bottom-clearance: 120px;
+    --detail-bottom: 100px;
     --detail-clearance-gap: 16px;
   }
   * { box-sizing: border-box; }
@@ -114,7 +115,7 @@
   }
   /* input row holds the textarea; Send button removed (Enter to send) */
   #chat-input-row {
-    display: flex; gap: 8px; align-items: flex-end;
+    display: flex; gap: 8px; align-items: center;
   }
   #chat-textarea {
     flex: 1; min-height: 44px; max-height: 120px;
@@ -126,28 +127,25 @@
     -webkit-text-security: none;
     autocomplete: off;
   }
-  /* auto-follow + resume row sits at the bottom of the box — fixed height so
-     showing/hiding the resume button doesn't change the box height. */
-  #auto-follow-wrap {
-    display: flex; align-items: center; gap: 12px;
-    padding: 0 2px;
-    font-size: 12px; color: var(--text-2);
-    white-space: nowrap;
-    height: 22px;
+  #stop-btn {
+    width: 36px; height: 36px; flex-shrink: 0;
+    border: 1px solid var(--highlight-orange);
+    border-radius: 50%;
+    background: var(--highlight-orange); color: #ffffff;
+    display: none; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 3px 10px rgba(60,50,30,0.10);
+    transition: background 0.12s, transform 0.1s, border-color 0.12s;
   }
-  #auto-follow-wrap input { margin: 0; cursor: pointer; }
-  /* resume button: small, tint color, same font size as auto-follow, only when unchecked */
-  #resume-btn {
-    margin-left: auto;
-    font-size: 12px; font-weight: 500;
-    padding: 0 10px;
-    border: 1px solid var(--accent); background: transparent; color: var(--accent);
-    border-radius: 10px; cursor: pointer; height: 20px;
-    line-height: 18px;
-    display: inline-flex; align-items: center;
+  #chat-input.streaming #stop-btn { display: inline-flex; }
+  #stop-btn::before {
+    content: '';
+    width: 10px; height: 10px;
+    border-radius: 2px;
+    background: currentColor;
   }
-  #resume-btn:hover { background: var(--accent-soft); }
-  #resume-btn:active { transform: scale(0.97); }
+  #stop-btn:hover { background: #e87900; border-color: #e87900; }
+  #stop-btn:active { transform: scale(0.96); }
   /* clear + settings buttons — fixed to the bottom-right, matching send-btn style */
   #clear-btn, #settings-btn {
     position: fixed; bottom: 16px; z-index: 10;
@@ -179,7 +177,7 @@
   #settings-backdrop.visible { display: flex; }
   #settings-popup {
     width: min(380px, 92vw);
-    background: rgba(253,246,227,0.96);
+    background: var(--paper-bg);
     border: 1px solid var(--border-2); border-radius: var(--radius);
     box-shadow: var(--shadow-md);
     padding: 18px 20px;
@@ -196,7 +194,7 @@
     border: 1px solid var(--border-2); border-radius: var(--radius-xs);
     background: var(--surface); color: var(--text); outline: none;
   }
-  #settings-popup .field input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  #settings-popup .field input:focus { border-color: var(--highlight-orange); box-shadow: 0 0 0 2px var(--highlight-orange-soft); }
   #settings-popup .field .hint { font-size: 11px; color: var(--text-3); margin-top: 3px; }
   #settings-popup .actions {
     display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;
@@ -207,9 +205,9 @@
     background: var(--surface); color: var(--text);
     transition: background 0.12s;
   }
-  #settings-popup .actions button.ok { background: var(--accent); color: white; border-color: var(--accent); }
-  #settings-popup .actions button.ok:hover { background: #94560f; }
-  #settings-popup .actions button.cancel:hover { background: var(--border); }
+  #settings-popup .actions button.ok { background: var(--highlight-orange); color: white; border-color: var(--highlight-orange); }
+  #settings-popup .actions button.ok:hover { background: #e87900; }
+  #settings-popup .actions button.cancel:hover { background: var(--highlight-orange-soft); }
 
   /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
   /* No top padding so the sticky layer-header aligns with the very top of the
@@ -294,7 +292,7 @@
   /* Width matches the input box. Sits just above it. */
   #detail {
     position: fixed;
-    left: 50%; bottom: 120px;
+    left: 50%; bottom: var(--detail-bottom);
     transform: translateX(-50%) translateY(0);
     width: min(640px, 92vw);
     background: #ffffff;
@@ -303,7 +301,7 @@
     corner-shape: squircle;
     box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
     padding: 14px 18px;
-    max-height: 40vh; overflow-y: auto;
+    overflow: hidden;
     z-index: 9;
     display: none;
     opacity: 0;
@@ -332,15 +330,44 @@
   #detail .empty { color: var(--text-3); font-size: 13px; padding: 8px 0; }
   #detail .ctx { font-size: 12px; color: var(--text-2); margin-bottom: 10px; }
   #detail .ctx b { color: var(--highlight-orange); font-family: ui-monospace, Menlo, monospace; }
-  #detail .readout { display: flex; flex-direction: column; gap: 4px; }
-  #detail .readout .row { display: flex; align-items: center; gap: 8px; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
-  #detail .readout .row .idx { color: var(--text-3); width: 18px; text-align: right; flex-shrink: 0; }
-  #detail .readout .row .tok { font-weight: 500; width: 100px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; }
-  #detail .readout .row .id { color: var(--text-3); font-size: 11px; width: 60px; flex-shrink: 0; }
-  /* Fixed-width bar pushed to the right edge of the card. */
-  #detail .readout .row .bar { width: 180px; height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; flex-shrink: 0; margin-left: auto; }
-  #detail .readout .row .bar > div { height: 100%; background: var(--highlight-orange); border-radius: 3px; }
-  #detail .readout .row.top1 .tok { color: var(--highlight-orange); font-weight: 600; }
+  #detail .readout {
+    --readout-cols: 28px minmax(72px, 1.2fr) minmax(54px, 0.65fr) minmax(96px, 2fr) 46px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 12px;
+    max-height: 240px; overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-inline: 0 28px;
+  }
+  #detail .readout-head {
+    display: grid; grid-template-columns: var(--readout-cols); column-gap: 10px;
+    align-items: center; min-height: 20px; padding: 0 0 4px 0;
+    color: var(--text-3); font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    position: sticky; top: 0; z-index: 1; background: #ffffff;
+  }
+  #detail .readout-head span:first-child,
+  #detail .readout-head span:last-child { text-align: right; }
+  #detail .readout-body {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  #detail .readout .row {
+    display: grid; grid-template-columns: var(--readout-cols); column-gap: 10px;
+    align-items: center; min-height: 18px;
+  }
+  #detail .readout .idx { color: var(--text-3); text-align: right; }
+  #detail .readout .tok { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #detail .readout .id { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+  #detail .readout .bar {
+    height: 6px; width: 100%;
+    background: var(--border); border-radius: 3px; overflow: hidden;
+  }
+  #detail .readout .bar > div { height: 100%; background: var(--highlight-orange); border-radius: 3px; }
+  #detail .readout .score-value {
+    color: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+  #detail .readout .row.top1 .tok,
+  #detail .readout .row.top1 .score-value { color: var(--highlight-orange); font-weight: 600; }
   #detail .readout .row.top1 .bar > div { background: var(--highlight-orange); }
   #detail .close {
     position: absolute; top: 8px; right: 10px;
@@ -373,12 +400,8 @@
   <div id="chat-input">
     <div id="chat-input-row">
       <textarea id="chat-textarea" name="chat-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Message the model…" rows="1"></textarea>
+      <button id="stop-btn" type="button" title="Stop outputting" aria-label="Stop outputting"></button>
     </div>
-    <span id="auto-follow-wrap">
-      <input id="auto-follow-chk" type="checkbox" checked>
-      <label for="auto-follow-chk">Auto-follow</label>
-      <button id="resume-btn" style="display:none">▶ Resume</button>
-    </span>
   </div>
 
   <!-- ===== Clear + Settings buttons (fixed, bottom-right) ===== -->
@@ -432,7 +455,8 @@ let state = {
   selectedCell: null,
   selectedToken: null,
   streaming: false,
-  streamId: null,       // server stream_id for pause/resume control
+  streamId: null,       // server stream_id for the active stream
+  streamAbortController: null,
   snapshotByMsgToken: new Map(),
   // Generation settings (configurable via the settings popup).
   settings: { maxTokens: 262144, temp: 0.0, topN: 10 },
@@ -443,6 +467,7 @@ const SETTINGS_KEY = 'jlens-settings-v1';
 const MODEL_MAX_CONTEXT = 262144;  // Qwen3.6-27B max_position_embeddings
 let chatDetailClearanceApplied = false;
 let detailCloseTimer = null;
+let focusSelectionOnRender = false;
 
 function saveState() {
   try {
@@ -459,11 +484,33 @@ function saveState() {
       snapshots: state.snapshots,
       layers: state.layers,
     };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+    // Stay under the localStorage quota (~5MB): drop the oldest snapshots
+    // rather than silently persisting nothing at all.
+    let json = JSON.stringify(persistable);
+    while (json.length > 4_200_000 && persistable.snapshots.length > 8) {
+      persistable.snapshots = persistable.snapshots.slice(
+        Math.ceil(persistable.snapshots.length / 4));
+      json = JSON.stringify(persistable);
+    }
+    localStorage.setItem(STORAGE_KEY, json);
   } catch (e) {
     console.warn('saveState failed (likely quota):', e);
   }
 }
+
+// During streaming, saveState (a full JSON.stringify of every snapshot,
+// synchronous on the main thread) must not run per token — debounce it and
+// flush at stream end / page hide.
+let _saveStateTimer = null;
+function scheduleSaveState() {
+  if (_saveStateTimer !== null) return;
+  _saveStateTimer = setTimeout(() => { _saveStateTimer = null; saveState(); }, 1000);
+}
+function flushSaveState() {
+  if (_saveStateTimer !== null) { clearTimeout(_saveStateTimer); _saveStateTimer = null; }
+  saveState();
+}
+window.addEventListener('beforeunload', flushSaveState);
 
 function loadSavedState() {
   try {
@@ -628,6 +675,15 @@ async function loadInfo() {
 }
 
 // ----- Overlay-aware scroll padding -----
+function updateFloatingOffsets() {
+  const input = $('chat-input');
+  if (!input) return;
+  const rect = input.getBoundingClientRect();
+  const inputStackHeight = Math.max(0, window.innerHeight - rect.top);
+  const detailBottom = Math.ceil(inputStackHeight + detailClearanceGap());
+  document.documentElement.style.setProperty('--detail-bottom', detailBottom + 'px');
+}
+
 function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail' } = {}) {
   let blockerTop = window.innerHeight;
   let detailVisible = false;
@@ -657,6 +713,7 @@ function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail' } = {})
 }
 
 function updateScrollClearance(opts = {}) {
+  updateFloatingOffsets();
   const root = document.documentElement;
   const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always' });
   const chatClearance = bottomStackClearance(opts);
@@ -922,7 +979,57 @@ function updateGridHeaderShadows() {
   body.classList.toggle('covering-x', maxScrollLeft > 1 && body.scrollLeft < maxScrollLeft - 1);
 }
 
-function renderGrid() {
+function buildGridRowTr(pos, selectedTokenKey, activePos) {
+  const tr = document.createElement('tr');
+  const tokStr = state.gridTokenStrs[pos] || '·';
+  const meta = state.gridTokenMsgs[pos];
+  const isGen = meta && meta.isGen;
+  // Data cells: one per layer
+  state.layers.forEach(layer => {
+    const td = document.createElement('td');
+    td.className = 'cell';
+    const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+    if (cell) {
+      const top1 = cell.top_tokens[0] || '·';
+      const word = document.createElement('span');
+      word.className = 'word';
+      word.textContent = top1;
+      td.appendChild(word);
+      td.classList.add('selectable');
+      td.style.background = cellBlueBackground(cell);
+      td.dataset.pos = pos;
+      td.dataset.layer = layer;
+      if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
+        td.classList.add('selected');
+      } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
+        td.classList.add('matching-token');
+      }
+      if (state.selectedCell && state.selectedCell.pos === pos) {
+        td.classList.add('selected-row');
+      }
+      if (isGen) td.classList.add('gen-row');
+      td.onclick = () => selectCell(pos, layer);
+    } else {
+      td.textContent = '';
+    }
+    tr.appendChild(td);
+  });
+  // Right: position label (sticky right) — token text + ordinal, right-aligned
+  const pl = document.createElement('td');
+  pl.className = 'pos-label';
+  if (isGen) pl.classList.add('gen');
+  if (activePos === pos) pl.classList.add('selected-token');
+  pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span>`;
+  pl.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
+  if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) {
+    pl.classList.add('clickable-token');
+    pl.onclick = () => selectTokenHeader(pos);
+  }
+  tr.appendChild(pl);
+  return tr;
+}
+
+function renderGrid({ focusSelection = false } = {}) {
   const body = $('grid-body');
   if (state.gridRows.length === 0 || state.layers.length === 0) {
     body.innerHTML = '';
@@ -930,6 +1037,28 @@ function renderGrid() {
     return;
   }
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
+
+  // Fast path while streaming with nothing selected: the only change is
+  // new rows at the bottom, so append them instead of rebuilding the whole
+  // table (which is O(rows x 65 cells) per token and grows without bound).
+  const existing = document.getElementById('grid');
+  if (existing && state.streaming && !focusSelection &&
+      state.selectedSnapshotId === null && !state.selectedCell &&
+      +existing.dataset.layerCount === state.layers.length &&
+      +existing.dataset.rowCount <= visibleN) {
+    const from = +existing.dataset.rowCount;
+    if (from < visibleN) {
+      const tbody = existing.tBodies[0];
+      for (let pos = from; pos < visibleN; pos++) {
+        tbody.appendChild(buildGridRowTr(pos, null, null));
+      }
+      existing.dataset.rowCount = visibleN;
+    }
+    body.scrollTop = body.scrollHeight;
+    updateGridHeaderShadows();
+    return;
+  }
+
   const table = document.createElement('table');
   table.id = 'grid';
 
@@ -952,59 +1081,15 @@ function renderGrid() {
   const activePos = selectedPosition();
   const tbody = document.createElement('tbody');
   for (let pos = 0; pos < visibleN; pos++) {
-    const tr = document.createElement('tr');
-    const tokStr = state.gridTokenStrs[pos] || '·';
-    const meta = state.gridTokenMsgs[pos];
-    const isGen = meta && meta.isGen;
-    // Data cells: one per layer
-    state.layers.forEach(layer => {
-      const td = document.createElement('td');
-      td.className = 'cell';
-      const cell = state.gridRows[pos] && state.gridRows[pos][layer];
-      if (cell) {
-        const top1 = cell.top_tokens[0] || '·';
-        const word = document.createElement('span');
-        word.className = 'word';
-        word.textContent = top1;
-        td.appendChild(word);
-        td.classList.add('selectable');
-        td.style.background = cellBlueBackground(cell);
-        td.dataset.pos = pos;
-        td.dataset.layer = layer;
-        if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
-          td.classList.add('selected');
-        } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
-          td.classList.add('matching-token');
-        }
-        if (state.selectedCell && state.selectedCell.pos === pos) {
-          td.classList.add('selected-row');
-        }
-        if (isGen) td.classList.add('gen-row');
-        td.onclick = () => selectCell(pos, layer);
-      } else {
-        td.textContent = '';
-      }
-      tr.appendChild(td);
-    });
-    // Right: position label (sticky right) — token text + ordinal, right-aligned
-    const pl = document.createElement('td');
-    pl.className = 'pos-label';
-    if (isGen) pl.classList.add('gen');
-    if (activePos === pos) pl.classList.add('selected-token');
-    pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span>`;
-    pl.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
-    if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) {
-      pl.classList.add('clickable-token');
-      pl.onclick = () => selectTokenHeader(pos);
-    }
-    tr.appendChild(pl);
-    tbody.appendChild(tr);
+    tbody.appendChild(buildGridRowTr(pos, selectedTokenKey, activePos));
   }
   table.appendChild(tbody);
+  table.dataset.rowCount = visibleN;
+  table.dataset.layerCount = state.layers.length;
   body.innerHTML = '';
   body.appendChild(table);
   updateGridHeaderShadows();
-  if (state.selectedCell || activePos !== null) {
+  if (focusSelection && (state.selectedCell || activePos !== null)) {
     // Center the selected cell, or the token header when no layer cell is selected.
     // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
     requestAnimationFrame(() => {
@@ -1059,23 +1144,38 @@ function renderDetail() {
     col.classList.add('visible');
     return;
   }
-  // Find max score for bar normalization
-  const maxScore = Math.max(...cell.top_scores, 1);
+  // Find max positive score for bar normalization.
+  const scores = cell.top_scores.map(Number);
+  const maxScore = Math.max(...scores.map(s => Math.max(s, 0)), 1);
   const readout = document.createElement('div');
   readout.className = 'readout';
+  const head = document.createElement('div');
+  head.className = 'readout-head';
+  ['#', 'Token', 'ID', '', 'Score'].forEach((label) => {
+    const cell = document.createElement('span');
+    cell.textContent = label;
+    head.appendChild(cell);
+  });
+  readout.appendChild(head);
+  const body = document.createElement('div');
+  body.className = 'readout-body';
   cell.top_tokens.forEach((tok, i) => {
     const row = document.createElement('div');
     row.className = 'row' + (i === 0 ? ' top1' : '');
     const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = (i+1);
     const t = document.createElement('span'); t.className = 'tok'; t.textContent = tok;
-    const id = document.createElement('span'); id.className = 'id'; id.textContent = `(${cell.top_ids[i]})`;
+    const id = document.createElement('span'); id.className = 'id'; id.textContent = cell.top_ids[i];
     const bar = document.createElement('span'); bar.className = 'bar';
     const fill = document.createElement('div');
-    fill.style.width = (cell.top_scores[i] / maxScore * 100) + '%';
+    fill.style.width = (Math.max(scores[i] || 0, 0) / maxScore * 100) + '%';
     bar.appendChild(fill);
-    row.appendChild(idx); row.appendChild(t); row.appendChild(id); row.appendChild(bar);
-    readout.appendChild(row);
+    const scoreValue = document.createElement('span');
+    scoreValue.className = 'score-value';
+    scoreValue.textContent = formatDetailScore(scores[i]);
+    row.appendChild(idx); row.appendChild(t); row.appendChild(id); row.appendChild(bar); row.appendChild(scoreValue);
+    body.appendChild(row);
   });
+  readout.appendChild(body);
   col.appendChild(readout);
   col.classList.add('visible');
 }
@@ -1083,6 +1183,15 @@ function renderDetail() {
 // ----- Timeline rendering -----
 // Timeline removed — the J-lens grid IS the timeline now.
 function renderTimeline() {}
+
+function formatDetailScore(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '0';
+  const abs = Math.abs(n);
+  if (abs >= 100) return Math.round(n).toString();
+  if (abs >= 10) return n.toFixed(1);
+  return n.toFixed(2);
+}
 
 function isBlockSelected(msgIdx, tokenIdx) {
   if (state.selectedSnapshotId === null) return false;
@@ -1109,9 +1218,9 @@ function selectBlock(msgIdx, tokenIdx) {
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
   const layer = token.globalPos >= 0 ? defaultLayerForPosition(token.globalPos) : null;
   state.selectedCell = layer == null ? null : { pos: token.globalPos, layer };
-  state.selectedSnapshotId = -1; // pinned inspection mode
+  state.selectedSnapshotId = null;
+  focusSelectionOnRender = true;
   updateAutoFollowUI();
-  sendControl('pause');
   renderAll();
 }
 function selectTokenInChat(msgIdx, tokenIdx) {
@@ -1120,10 +1229,10 @@ function selectTokenInChat(msgIdx, tokenIdx) {
   const hadCellSelection = !!state.selectedCell;
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
   state.selectedCell = null;
-  state.selectedSnapshotId = -1; // pinned inspection mode without selecting a J-lens block
+  state.selectedSnapshotId = null;
+  focusSelectionOnRender = true;
   if (hadCellSelection) dismissDetailCard();
   updateAutoFollowUI();
-  sendControl('pause');
   renderAll();
 }
 function selectTokenHeader(pos) {
@@ -1132,42 +1241,32 @@ function selectTokenHeader(pos) {
   const hadCellSelection = !!state.selectedCell;
   state.selectedToken = ref;
   state.selectedCell = null;
-  state.selectedSnapshotId = -1; // pinned token focus without selecting a J-lens block
+  state.selectedSnapshotId = null;
+  focusSelectionOnRender = true;
   if (hadCellSelection) dismissDetailCard();
   updateAutoFollowUI();
-  sendControl('pause');
   renderAll();
 }
 function selectCell(pos, layer) {
   state.selectedCell = { pos, layer };
   state.selectedToken = tokenRefForPosition(pos);
-  state.selectedSnapshotId = -1; // mark as pinned (not null = not auto-following)
+  state.selectedSnapshotId = null;
+  focusSelectionOnRender = true;
   updateAutoFollowUI();
-  sendControl('pause');
   renderAll();
 }
 function updateAutoFollowUI() {
-  const resumeBtn = $('resume-btn');
-  const chk = $('auto-follow-chk');
-  if (state.selectedSnapshotId === null) {
-    resumeBtn.style.display = 'none';
-    chk.checked = true;
-  } else {
-    // Show the resume button whenever the view is pinned away from the
-    // frontier, regardless of whether we're currently streaming. Previously
-    // it was gated on `state.streaming`, which made it disappear when
-    // generation finished while you were inspecting an earlier snapshot —
-    // leaving you stuck with no visible way to resume.
-    resumeBtn.style.display = '';
-    chk.checked = false;
-  }
+  const input = $('chat-input');
+  if (input) input.classList.toggle('streaming', state.streaming);
 }
 function renderAll() {
   const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
+  const shouldFocusSelection = focusSelectionOnRender;
+  focusSelectionOnRender = false;
   renderDetail();
   updateScrollClearance();
   renderChat({ scrollToBottom: state.selectedSnapshotId === null });
-  if (state.selectedToken) {
+  if (shouldFocusSelection && state.selectedToken) {
     requestAnimationFrame(() => {
       focusSelectedChatToken();
     });
@@ -1175,12 +1274,22 @@ function renderAll() {
     requestAnimationFrame(() => resolveChatDetailCollision());
   }
   chatDetailClearanceApplied = !!state.selectedCell;
-  renderGrid();
+  renderGrid({ focusSelection: shouldFocusSelection });
   renderTimeline();
 }
 
 // ----- Ingest a snapshot -----
 function ingestSnapshot(snap) {
+  // Round scores to 2dp at ingest: they are only displayed/tinted, and
+  // full-precision floats double the persisted JSON size.
+  if (snap.grid && snap.grid.cells) {
+    for (const k in snap.grid.cells) {
+      const cs = snap.grid.cells[k].top_scores;
+      if (cs) for (const arr of cs) {
+        for (let i = 0; i < arr.length; i++) arr[i] = Math.round(arr[i] * 100) / 100;
+      }
+    }
+  }
   state.snapshots.push(snap);
   state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
   while (state.messages.length <= snap.msg_idx) {
@@ -1239,7 +1348,7 @@ function ingestSnapshot(snap) {
       writeGridRow(globalPos, snap.grid.cells, 0);
     }
   }
-  saveState();
+  scheduleSaveState();
   renderAll();
 }
 
@@ -1291,10 +1400,13 @@ async function sendMessage() {
   ta.value = '';
   ta.style.height = 'auto';
 
+  const controller = new AbortController();
+  state.streamAbortController = controller;
   try {
     const resp = await fetch(API + '/api/chat_stream', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: controller.signal,
     });
     if (!resp.ok) {
       const txt = await resp.text();
@@ -1320,10 +1432,14 @@ async function sendMessage() {
     }
     if (buffer.trim()) handleSSEFrame(buffer);
   } catch (e) {
-    console.error('request failed:', e);
+    if (e.name !== 'AbortError') console.error('request failed:', e);
   } finally {
     state.streaming = false;
     state.streamId = null;
+    if (state.streamAbortController === controller) {
+      state.streamAbortController = null;
+    }
+    flushSaveState();
     updateAutoFollowUI();
     renderAll();
   }
@@ -1351,40 +1467,19 @@ function handleSSEFrame(frame) {
   }
 }
 
-// ----- Server-side pause/resume control -----
-async function sendControl(action) {
-  if (!state.streamId) return;
-  try {
-    await fetch(API + '/api/chat_control', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ stream_id: state.streamId, action }),
-    });
-  } catch (e) { console.warn('chat_control failed:', e); }
+function stopStreaming() {
+  if (!state.streaming) return;
+  if (state.streamAbortController) {
+    state.streamAbortController.abort();
+  }
+  state.streaming = false;
+  state.streamId = null;
+  updateAutoFollowUI();
+  renderAll();
 }
 
-// ----- Resume control -----
-$('resume-btn').onclick = () => {
-  state.selectedSnapshotId = null;
-  state.selectedCell = null;
-  state.selectedToken = null;
-  updateAutoFollowUI();
-  sendControl('resume');
-  renderAll();
-};
-$('auto-follow-chk').onchange = () => {
-  if ($('auto-follow-chk').checked) {
-    state.selectedSnapshotId = null;
-    state.selectedCell = null;
-    state.selectedToken = null;
-    sendControl('resume');
-  } else if (state.snapshots.length) {
-    state.selectedSnapshotId = state.snapshots[state.snapshots.length - 1].snapshot_id;
-    sendControl('pause');
-  }
-  updateAutoFollowUI();
-  renderAll();
-};
+// ----- Stream/view controls -----
+$('stop-btn').onclick = () => stopStreaming();
 
 // ----- Textarea auto-grow + Enter to send -----
 $('chat-textarea').addEventListener('input', () => {
