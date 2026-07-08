@@ -56,14 +56,14 @@ readouts evolve: `currency` → `Italian` (the boot-shaped country) →
 
 Research preview.
 
-The current public release is `v0.1-demo`:
+The current public release is `v0.2-fulldepth`:
 
 - Qwen3.6-27B 4-bit on Apple Silicon
-- 12-prompt fitted lens
-- 23 late layers (L40–L62)
-- Pre-fitted lens available as a [GitHub release](https://github.com/WeZZard/jlens-qwen36/releases/tag/v0.1-demo)
-- Useful for exploring J-lens-style readouts
-- Noisy, underfit, and not suitable for strong mechanistic claims
+- 20-prompt fitted lens, all 63 source layers (L0–L62)
+- Intervention-grade: corrected chain indexing + g/β decay-gate paths
+- Live chat viewer with a per-token workspace band (the hero image above)
+- Pre-fitted lens available as a [GitHub release](https://github.com/WeZZard/jlens-qwen36/releases/tag/v0.2-fulldepth)
+- Still demo-grade fit quality: readouts are interpretable but noisy
 
 **This is not evidence of consciousness.**
 **This is not proof that Qwen has a Claude-like global workspace.**
@@ -74,15 +74,15 @@ readouts can be surfaced in local models.
 
 ### Lens versions
 
-| Version | Prompts | Layers | Status |
-|---------|---------|--------|--------|
-| **v0.1-demo** (underfit) | 12 | 23 (L40–L62) | ✅ available now |
-| **v0.2-fulldepth** (better) | 20 | 64 (L0–L62) | in progress; will be published once validated |
+| Version | Prompts | Layers | Correctness | Status |
+|---------|---------|--------|-------------|--------|
+| **v0.2-fulldepth** (current) | 20 | 63 (L0–L62) | fixed chain indexing + g/β paths | ✅ available now |
+| v0.1-demo (superseded) | 12 | 23 (L40–L62) | chain off-by-one, g/β dropped | ⚠️ prefer v0.2 |
 
-The v0.1 demo qualitatively reproduces small J-lens-style readouts on
-selected prompts, but it should be treated as **hypothesis-generating**
-rather than a robust reproduction of the paper. The full-depth v0.2 is
-being fitted and will be published once validated.
+Both are **hypothesis-generating**, not robust reproductions of the paper
+(which fits ~100 usable prompts; these fit 20). v0.1 additionally predates
+two correctness fixes shipped in v0.2 — a chain-multiply off-by-one and the
+GDN decay-gate (g/β) gradient paths — so prefer v0.2 for any new work.
 
 ### Comparison to the paper
 
@@ -95,10 +95,13 @@ being fitted and will be published once validated.
 | Readout quality | clean | noisy artifacts (`____` in mid layers) |
 
 **What works well:**
+- Live chat streaming with a per-token **workspace band** — the top J-lens
+  tokens at all 63 layers, updated as each token generates (the hero image:
+  "blackmail" surfacing across L41+ on the executive-email prompt while the
+  visible reply stays compliant).
 - The slice viewer (position × layer grid) with click-to-pin and top-10 detail.
-- Baseline generation.
-- J-lens-style readouts on factual prompts (currency→euro, Italy as
-  intermediate concept).
+- Baseline generation and factual-recall readouts (currency→euro, with
+  Italy as the intermediate concept).
 
 **What's demo-quality:**
 - Readout noise in mid layers (needs more prompts).
@@ -141,6 +144,11 @@ you watch readouts evolve across layers:
 
 For example, on `Fact: The currency used in the country shaped like a boot is the`, you see `currency` → `Italian` (L52) → `euro` (L57+) → `euro` (model output).
 
+In **chat mode**, the same grid streams live: each generated token adds a
+row to the workspace band in real time, so you watch a concept form in the
+latent space before (or instead of) it reaches the visible output — this is
+what the hero image captures.
+
 ## Requirements
 
 - **Apple Silicon Mac** (M1+/M-series) — MLX is Apple-only
@@ -148,7 +156,7 @@ For example, on `Fact: The currency used in the country shaped like a boot is th
 - **~15 GB disk** for the model (auto-downloads from HuggingFace on first run)
 
 Memory:
-- Running the pre-fitted v0.1 demo: ~20 GB free RAM recommended.
+- Running the pre-fitted v0.2 lens: ~24 GB free RAM recommended (16 GB model + 3.3 GB lens).
 - Fitting a full-depth lens: 32 GB unified memory recommended; 64 GB tested.
 
 ## Quick start
@@ -277,13 +285,16 @@ readouts (J=I, no transport). Good for exploring the UI.
 
 ### The UI
 
-- **Slice grid** (top): position × layer, top-1 J-lens token per cell.
-  Click a cell to pin its token and see the top-10 readout.
-- **Generate** (bottom): baseline generation from the prompt.
-- **Intervene** (bottom): steer (inject a concept), swap (replace one
-  concept with another), or ablate (remove the J-space), with a
-  baseline-vs-intervened diff. Subtle with a 20-prompt lens; see
-  Limitations.
+- **Chat + workspace band**: message the model and watch the per-token
+  J-lens readouts stream live across all 63 layers (thinking disabled by
+  default — see Status). Rows virtualize, so long conversations stay
+  responsive; sessions autosave and can be reloaded.
+- **Slice grid**: position × layer, top-1 J-lens token per cell. Click a
+  cell to pin its token and see the top-10 readout.
+- **Generate**: baseline generation from a prompt.
+- **Intervene**: steer (inject a concept), swap (replace one concept with
+  another), or ablate (remove the J-space), with a baseline-vs-intervened
+  diff. Subtle with a 20-prompt lens; see Limitations.
 
 ## Using a different model
 
@@ -356,6 +367,16 @@ On an M4 Pro / 64 GB:
 
 Memory: ~15 GB for the model + ~6.6 GB for the full-depth checkpoint +
 ~2 GB working = ~24 GB peak. Fits comfortably in 32 GB; tested on 64 GB.
+
+**Serving / decoding** (the chat viewer): decoding uses the model's hybrid
+KV + recurrent-state caches, so per-token cost is constant in context
+length instead of the O(T²) full re-forward it started as. Per-token
+readout batches all 63 layers through one unembed. Net: ~7 tok/s with the
+full workspace band attached (M4 Pro), flat as the conversation grows. The
+lens is applied read-only at inference and never enters the generation
+forward, so none of this affects J-lens values. The grid is virtualized
+(only the visible row window is in the DOM), keeping the UI responsive at
+thousands of tokens.
 
 ## Limitations
 
