@@ -301,6 +301,32 @@ class ChatStreamRequest(BaseModel):
     top_n: int = 10
 
 
+
+def _token_segments(tok, ids: list[int]) -> list[str]:
+    """Per-token text segments that concatenate to the exact decoded text.
+
+    Byte-level BPE can split one UTF-8 character (e.g. a rare CJK char or an
+    emoji) across tokens; decoding tokens individually yields U+FFFD
+    replacement chars that can never be re-joined. Decode cumulatively and
+    attribute each newly-stabilized span to the token that completed it
+    (partial sequences hold back until complete).
+    """
+    segments, prev = [], ""
+    for i in range(len(ids)):
+        full = tok.decode(ids[:i + 1])
+        stable = full.rstrip("\ufffd")
+        if len(stable) >= len(prev):
+            segments.append(stable[len(prev):])
+            prev = stable
+        else:
+            segments.append("")
+    # Any trailing incomplete bytes: surface them on the last token.
+    full = tok.decode(ids)
+    if len(full) > len(prev) and segments:
+        segments[-1] += full[len(prev):]
+    return segments
+
+
 def _sse(event: str, data: dict) -> bytes:
     return f"event: {event}\n".encode() + b"data: " + json.dumps(data).encode() + b"\n\n"
 
@@ -630,7 +656,7 @@ async def chat_stream(req: ChatStreamRequest):
                 # acts cover only the delta chunk -> chunk-local indices.
                 local = [p - chunk_start for p in positions]
                 row = _readout_at_positions(acts, local, layers, top_n)
-                new_token_strs = [tok.decode([t]) for t in content_ids]
+                new_token_strs = _token_segments(tok, content_ids)
 
                 snapshot_id += 1
                 yield _sse("snapshot", {
@@ -694,6 +720,8 @@ async def chat_stream(req: ChatStreamRequest):
                 await asyncio.sleep(0)
 
                 n_gen = 0
+                gen_ids: list[int] = []
+                gen_prev = ""
                 eos_id = getattr(tok, "eos_token_id", None)
                 eos_hit = eos_id is not None and next_tok == eos_id
                 while not eos_hit and n_gen < max_tokens:
@@ -712,7 +740,17 @@ async def chat_stream(req: ChatStreamRequest):
                         new_next_tok = int(mx.random.categorical(lf / temp).tolist())
                     del logits, lf
 
-                    tok_str = tok.decode([next_tok])
+                    # Cumulative decode: emit only the newly-stabilized text
+                    # so UTF-8 chars split across BPE tokens survive (a lone
+                    # tok.decode([t]) turns each half into U+FFFD forever).
+                    gen_ids.append(next_tok)
+                    _full = tok.decode(gen_ids)
+                    _stable = _full.rstrip("\ufffd")
+                    if len(_stable) >= len(gen_prev):
+                        tok_str = _stable[len(gen_prev):]
+                        gen_prev = _stable
+                    else:
+                        tok_str = ""
                     snapshot_id += 1
                     yield _sse("snapshot", {
                         "snapshot_id": snapshot_id,
