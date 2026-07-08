@@ -814,6 +814,12 @@ const MODEL_MAX_CONTEXT = 262144;  // Qwen3.6-27B max_position_embeddings
 let chatDetailClearanceApplied = false;
 let detailCloseTimer = null;
 let focusSelectionOnRender = false;
+// One-shot initial-view requests, consumed by the next render:
+// - session load shows the FIRST token × the LAST layer, chat at the
+//   first user message;
+// - starting a stream shows the LAST layer (vertical keeps following).
+let pendingGridView = null;   // { vertical?: 'top', horizontal?: 'end' }
+let pendingChatTop = false;
 
 function firstUserMessagePreview() {
   const first = state.messages.find(m => m.role === 'user' && (m.content || '').trim());
@@ -963,6 +969,10 @@ function restoreConversation(saved) {
       }
     }
   }
+  // Initial view for a restored session: first token, last layer, chat
+  // at the first user message.
+  pendingGridView = { vertical: 'top', horizontal: 'end' };
+  pendingChatTop = true;
   updateAutoFollowUI();
   return true;
 }
@@ -1249,7 +1259,7 @@ function closeDetailCard() {
 }
 
 // ----- Chat rendering -----
-function renderChat({ scrollToBottom = false } = {}) {
+function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
   const log = $('chat-log');
   const previousScrollTop = log.scrollTop;
   log.innerHTML = '';
@@ -1297,7 +1307,7 @@ function renderChat({ scrollToBottom = false } = {}) {
     wrap.appendChild(bubble);
     log.appendChild(wrap);
   });
-  log.scrollTop = scrollToBottom ? log.scrollHeight : previousScrollTop;
+  log.scrollTop = scrollToTop ? 0 : (scrollToBottom ? log.scrollHeight : previousScrollTop);
 }
 
 // ----- Grid rendering -----
@@ -1414,10 +1424,33 @@ function cellOrangeRgb(cell) {
 
 function layerCellBackground(cell, layer) {
   const base = cell ? cellBlueRgb(cell) : PAPER_RGB;
-  return rgbCss(mixRgb(base, bandRgbAtLayer(layer), 0.14));
+  return rgbCss(mixRgb(base, bandRgbCached(layer), 0.14));
 }
 
+// Per-layer color caches: band colors are pure functions of the layer
+// index, but they were being recomputed for every cell of every row
+// rebuild (~5k times per virtualization window). Integer layers hit the
+// cache; fractional queries (the continuous edge-color sampling) do not.
+const _bandRgbCache = new Map();
+function bandRgbCached(layer) {
+  let rgb = _bandRgbCache.get(layer);
+  if (rgb === undefined) {
+    rgb = bandRgbAtLayer(layer);
+    _bandRgbCache.set(layer, rgb);
+  }
+  return rgb;
+}
+
+const _gutterCssCache = new Map();
 function layerCellGutterBackground(layer) {
+  if (Number.isInteger(layer)) {
+    let css = _gutterCssCache.get(layer);
+    if (css === undefined) {
+      css = rgbCss(tintRgb(bandRgbCached(layer), 0.08));
+      _gutterCssCache.set(layer, css);
+    }
+    return css;
+  }
   return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.08));
 }
 
@@ -1655,60 +1688,50 @@ function updateGridBandChrome() {
   });
 }
 
-function buildGridRowTr(pos, selectedTokenKey, activePos) {
-  const tr = document.createElement('tr');
+// Row markup is built as an HTML string, not via createElement: a window
+// rebuild touches ~5k cells (~15k nodes), and one innerHTML parse is
+// several times faster than that many DOM calls. Clicks are DELEGATED to
+// #grid-body (see listener below) via data-pos/data-layer, so no per-cell
+// handler closures exist at all.
+function gridRowHtml(pos, selectedTokenKey, activePos) {
   const tokStr = state.gridTokenStrs[pos] || '·';
   const meta = state.gridTokenMsgs[pos];
-  const isGen = meta && meta.isGen;
-  // Data cells: one per layer
-  state.layers.forEach(layer => {
-    const td = document.createElement('td');
-    td.className = 'cell';
-    const cell = state.gridRows[pos] && state.gridRows[pos][layer];
-    td.style.background = layerCellGutterBackground(layer);
-    if (cell) {
-      const top1 = cell.top_tokens[0] || '·';
-      const block = document.createElement('span');
-      block.className = 'cell-block';
-      block.style.background = layerCellBackground(cell, layer);
-      const word = document.createElement('span');
-      word.className = 'word';
-      word.textContent = top1;
-      block.appendChild(word);
-      td.appendChild(block);
-      td.classList.add('selectable');
-      td.dataset.pos = pos;
-      td.dataset.layer = layer;
-      if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
-        td.classList.add('selected');
-        block.style.background = rgbCss(HIGHLIGHT_ORANGE_RGB);
-      } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
-        td.classList.add('matching-token');
-        block.style.background = rgbCss(cellOrangeRgb(cell));
-      }
-      if (state.selectedCell && state.selectedCell.pos === pos) {
-        td.classList.add('selected-row');
-      }
-      if (isGen) td.classList.add('gen-row');
-      td.onclick = () => selectCell(pos, layer);
-    } else {
-      td.textContent = '';
+  const isGen = !!(meta && meta.isGen);
+  const rowData = state.gridRows[pos];
+  const selRow = !!(state.selectedCell && state.selectedCell.pos === pos);
+  let html = `<tr data-pos="${pos}">`;
+  for (const layer of state.layers) {
+    const cell = rowData && rowData[layer];
+    const gutter = layerCellGutterBackground(layer);
+    if (!cell) {
+      html += `<td class="cell" style="background:${gutter}"></td>`;
+      continue;
     }
-    tr.appendChild(td);
-  });
-  // Right: position label (sticky right) — token text + ordinal, right-aligned
-  const pl = document.createElement('td');
-  pl.className = 'pos-label';
-  if (isGen) pl.classList.add('gen');
-  if (activePos === pos) pl.classList.add('selected-token');
-  pl.innerHTML = `<span class="tok-text">${escapeHtml(tokStr)}</span>`;
-  pl.title = `position ${pos}: ${JSON.stringify(tokStr)}`;
-  if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) {
-    pl.classList.add('clickable-token');
-    pl.onclick = () => selectTokenHeader(pos);
+    const top1 = cell.top_tokens[0] || '·';
+    let cls = 'cell selectable';
+    let bg;
+    if (selRow && state.selectedCell.layer === layer) {
+      cls += ' selected';
+      bg = rgbCss(HIGHLIGHT_ORANGE_RGB);
+    } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
+      cls += ' matching-token';
+      bg = rgbCss(cellOrangeRgb(cell));
+    } else {
+      bg = layerCellBackground(cell, layer);
+    }
+    if (selRow) cls += ' selected-row';
+    if (isGen) cls += ' gen-row';
+    html += `<td class="${cls}" data-pos="${pos}" data-layer="${layer}" style="background:${gutter}">` +
+      `<span class="cell-block" style="background:${bg}"><span class="word">${escapeHtml(top1)}</span></span></td>`;
   }
-  tr.appendChild(pl);
-  return tr;
+  // Right: position label (sticky right) — token text, right-aligned.
+  let plCls = 'pos-label';
+  if (isGen) plCls += ' gen';
+  if (activePos === pos) plCls += ' selected-token';
+  if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) plCls += ' clickable-token';
+  html += `<td class="${plCls}" data-pos="${pos}" title="${escapeAttr(`position ${pos}: ${JSON.stringify(tokStr)}`)}">` +
+    `<span class="tok-text">${escapeHtml(tokStr)}</span></td></tr>`;
+  return html;
 }
 
 // Rows outside the visible window are NOT kept in the DOM: a full table at
@@ -1725,16 +1748,9 @@ const GRID_ROW_BUFFER = 30;
 const GRID_CELL_W = 128;
 const GRID_POS_W = 140;
 
-function _gridSpacerRow(heightPx, nCols) {
-  const tr = document.createElement('tr');
-  tr.className = 'grid-spacer';
-  const td = document.createElement('td');
-  td.colSpan = nCols;
-  td.style.padding = '0';
-  td.style.border = 'none';
-  td.style.height = `${heightPx}px`;
-  tr.appendChild(td);
-  return tr;
+function _gridSpacerHtml(heightPx, nCols) {
+  return `<tr class="grid-spacer"><td colspan="${nCols}" ` +
+    `style="padding:0;border:none;height:${Math.max(0, heightPx)}px"></td></tr>`;
 }
 
 function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
@@ -1756,6 +1772,9 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   let target = body.scrollTop;
   if (focusPos !== null && focusPos !== undefined) {
     target = Math.max(0, focusPos * rowH - body.clientHeight / 2);
+  } else if (pendingGridView && pendingGridView.vertical === 'top') {
+    // Session-load view: build the row window at the first token.
+    target = 0;
   } else if (!keepScroll && state.selectedSnapshotId === null) {
     // Follow mode: keep the newest rows in view.
     target = Math.max(0, visibleN * rowH - (body.clientHeight || 600));
@@ -1840,16 +1859,21 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   const selectedTokenKey = selectedCellTokenKey();
   const activePos = selectedPosition();
   const nCols = state.layers.length + 1;
+  // Spacers are emitted unconditionally (height 0 allowed): the
+  // incremental shiftGridWindow() fast path relies on the first and last
+  // tbody rows always being the two window spacers.
   const tbody = document.createElement('tbody');
+  let tbodyHtml = '';
   let rowCursor = 0;
   for (const [r0, r1] of rowRanges) {
-    if (r0 > rowCursor) tbody.appendChild(_gridSpacerRow((r0 - rowCursor) * rowH, nCols));
+    tbodyHtml += _gridSpacerHtml((r0 - rowCursor) * rowH, nCols);
     for (let pos = r0; pos < r1; pos++) {
-      tbody.appendChild(buildGridRowTr(pos, selectedTokenKey, activePos));
+      tbodyHtml += gridRowHtml(pos, selectedTokenKey, activePos);
     }
     rowCursor = r1;
   }
-  if (rowCursor < visibleN) tbody.appendChild(_gridSpacerRow((visibleN - rowCursor) * rowH, nCols));
+  tbodyHtml += _gridSpacerHtml((visibleN - rowCursor) * rowH, nCols);
+  tbody.innerHTML = tbodyHtml;
   table.appendChild(tbody);
   table.dataset.w0 = w0;
   table.dataset.w1 = w1;
@@ -1910,6 +1934,20 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
         gridGlide.farFlight = false;
       }
     });
+  } else if (pendingGridView) {
+    // One-shot initial view: session load lands on the first token; a
+    // stream start keeps following the newest rows. Both show the LAST
+    // layer (scrollLeft clamps to its maximum).
+    if (pendingGridView.vertical === 'top') {
+      body.scrollTop = 0;
+    } else if (!keepScroll && state.selectedSnapshotId === null) {
+      body.scrollTop = body.scrollHeight;
+    }
+    if (pendingGridView.horizontal === 'end') {
+      body.scrollLeft = body.scrollWidth;
+    }
+    pendingGridView = null;
+    updateGridHeaderShadows();
   } else if (!keepScroll && state.selectedSnapshotId === null) {
     body.scrollTop = body.scrollHeight;
     updateGridHeaderShadows();
@@ -2011,18 +2049,59 @@ function onGridBodyScroll() {
     // A far focus flight crosses spacer on purpose — its settle callback
     // normalizes the window; rebuilding mid-flight would fight the spring.
     if (gridGlide.farFlight) return;
-    const t = document.getElementById('grid');
-    if (!t || t.dataset.w0 === undefined) return;
-    const body = $('grid-body');
-    const rowH = state.gridRowH || 36;
-    const w0 = +t.dataset.w0, w1 = +t.dataset.w1, n = +t.dataset.n;
-    const first = Math.floor(body.scrollTop / rowH);
-    const last = Math.ceil((body.scrollTop + body.clientHeight) / rowH);
-    if ((first < w0 + GRID_ROW_BUFFER / 2 && w0 > 0) ||
-        (last > w1 - GRID_ROW_BUFFER / 2 && w1 < n)) {
-      renderGrid({ keepScroll: true });
-    }
+    shiftGridWindow();
   });
+}
+
+// Incremental virtualization: slide the rendered row window WITHOUT
+// rebuilding the table. Rows that left the window are removed, rows that
+// entered are parsed in at the edges, and the two spacers absorb the
+// height difference. A full renderGrid (~20-35ms at 64 layers) blew the
+// frame budget on every window shift during fast scrolling; this path
+// touches only the few rows that changed (~0.5ms per frame), so shifts
+// happen continuously instead of in hitchy half-buffer bursts.
+function shiftGridWindow() {
+  const t = document.getElementById('grid');
+  if (!t || t.dataset.w0 === undefined) return;
+  const body = $('grid-body');
+  const tbody = t.tBodies[0];
+  const rowH = state.gridRowH || 36;
+  const visibleN = +t.dataset.n;
+  const w0 = +t.dataset.w0, w1 = +t.dataset.w1;
+  const visCount = Math.ceil((body.clientHeight || 600) / rowH);
+  const first = Math.floor(body.scrollTop / rowH);
+  const n0 = Math.max(0, first - GRID_ROW_BUFFER);
+  const n1 = Math.min(visibleN, first + visCount + GRID_ROW_BUFFER);
+  if (n0 === w0 && n1 === w1) return;
+  // Fast path preconditions: a single window (exactly the two edge
+  // spacers) that overlaps the new one. Anything else — a dual-window
+  // flight leftover, a far scrollbar jump — takes the full rebuild.
+  const spacers = tbody ? tbody.querySelectorAll('tr.grid-spacer') : [];
+  if (spacers.length !== 2 || n1 <= w0 || n0 >= w1 ||
+      spacers[0] !== tbody.rows[0] || spacers[1] !== tbody.rows[tbody.rows.length - 1]) {
+    renderGrid({ keepScroll: true });
+    return;
+  }
+  const selectedTokenKey = selectedCellTokenKey();
+  const activePos = selectedPosition();
+  for (const tr of tbody.querySelectorAll('tr[data-pos]')) {
+    const p = +tr.dataset.pos;
+    if (p < n0 || p >= n1) tr.remove();
+  }
+  if (n0 < w0) {
+    let html = '';
+    for (let p = n0; p < Math.min(w0, n1); p++) html += gridRowHtml(p, selectedTokenKey, activePos);
+    spacers[0].insertAdjacentHTML('afterend', html);
+  }
+  if (n1 > w1) {
+    let html = '';
+    for (let p = Math.max(n0, w1); p < n1; p++) html += gridRowHtml(p, selectedTokenKey, activePos);
+    spacers[1].insertAdjacentHTML('beforebegin', html);
+  }
+  spacers[0].firstElementChild.style.height = (n0 * rowH) + 'px';
+  spacers[1].firstElementChild.style.height = (Math.max(0, visibleN - n1) * rowH) + 'px';
+  t.dataset.w0 = n0;
+  t.dataset.w1 = n1;
 }
 
 // ----- Markups -----
@@ -2030,9 +2109,19 @@ function markupIndexFor(pos, layer) {
   return state.markups.findIndex(m => m.pos === pos && m.layer === layer);
 }
 
+// A markup marks a BLOCK (pos × layer): its word is the block's top-1
+// readout token, not the input token at that position.
+function markupBlockWord(pos, layer) {
+  const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+  return (cell && cell.top_tokens && cell.top_tokens[0]) || '';
+}
+
 function addMarkup(pos, layer) {
   if (markupIndexFor(pos, layer) !== -1) return;
-  state.markups.push({ pos, layer, token: state.gridTokenStrs[pos] || '·' });
+  state.markups.push({
+    pos, layer,
+    token: markupBlockWord(pos, layer) || state.gridTokenStrs[pos] || '·',
+  });
   saveState();
   renderMarkups();
   renderDetail();
@@ -2062,8 +2151,12 @@ function renderMarkups() {
     const btn = document.createElement('button');
     btn.className = 'markup-btn';
     btn.type = 'button';
-    btn.textContent = (m.token || '').trim() || '·';
-    btn.title = `${JSON.stringify(m.token || '')} · position ${m.pos} · layer L${m.layer}`;
+    // Prefer the live block word (also corrects markups saved before the
+    // block-word fix); fall back to the stored token if the grid row is
+    // not available (e.g. trimmed session).
+    const word = markupBlockWord(m.pos, m.layer) || m.token || '';
+    btn.textContent = word.trim() || '·';
+    btn.title = `${JSON.stringify(word)} · position ${m.pos} (${JSON.stringify(state.gridTokenStrs[m.pos] || '')}) · layer L${m.layer}`;
     btn.onclick = () => selectCell(m.pos, m.layer);
     const del = document.createElement('button');
     del.className = 'markup-delete';
@@ -2264,7 +2357,12 @@ function renderAll() {
   // snapping to the tail first would make every focus animate from the
   // bottom of the log instead of from the reader's current position.
   const focusingChatToken = shouldFocusSelection && !!state.selectedToken;
-  renderChat({ scrollToBottom: state.selectedSnapshotId === null && !focusingChatToken });
+  const chatToTop = pendingChatTop;
+  pendingChatTop = false;
+  renderChat({
+    scrollToBottom: state.selectedSnapshotId === null && !focusingChatToken && !chatToTop,
+    scrollToTop: chatToTop,
+  });
   if (shouldFocusSelection && state.selectedToken) {
     requestAnimationFrame(() => {
       focusSelectedChatToken();
@@ -2403,6 +2501,10 @@ async function sendMessage() {
   state.messages.push({ role: 'assistant', content: '', tokens: [], prefillSnapshotId: null });
   state.streaming = true;
   state.selectedSnapshotId = null;
+  // While streaming, show the LAST layer (the output end of J-Space);
+  // vertical stays in follow mode. One-shot: manual scrolling afterwards
+  // is not fought.
+  pendingGridView = { horizontal: 'end' };
   updateAutoFollowUI();
   renderAll();
 
@@ -2651,6 +2753,17 @@ $('grid-body').addEventListener('scroll', onGridBodyScroll, { passive: true });
 // Direct user input on the grid takes over from any in-flight glide.
 ['wheel', 'touchstart', 'mousedown'].forEach((evt) =>
   $('grid-body').addEventListener(evt, () => gridGlide.cancel(), { passive: true }));
+// Delegated grid clicks: rows are built as plain HTML (no per-cell
+// handlers); data-pos/data-layer identify the target.
+$('grid-body').addEventListener('click', (e) => {
+  const td = e.target.closest('td');
+  if (!td) return;
+  if (td.classList.contains('selectable')) {
+    selectCell(+td.dataset.pos, +td.dataset.layer);
+  } else if (td.classList.contains('clickable-token')) {
+    selectTokenHeader(+td.dataset.pos);
+  }
+});
 $('chat-editor').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
@@ -2705,6 +2818,10 @@ document.addEventListener('keydown', (e) => {
 
 function escapeHtml(s) {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
 loadInfo();
