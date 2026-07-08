@@ -35,7 +35,11 @@ from jlens_qwen.lens import JacobianLens
 _model = None
 _lens = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
-_lens_path = os.environ.get("JLENS_PATH", "data/lens/qwen36_27b.npz")
+# Default matches the README quick start (Options A and B both produce
+# data/lens/lens.npz). Override with JLENS_PATH — e.g. the Neuronpedia
+# lens from Option A2. If the file is missing the server silently falls
+# back to the logit lens and records ONLY the final layer.
+_lens_path = os.environ.get("JLENS_PATH", "data/lens/lens.npz")
 # Deployment mode, decided at deployment time via JLENS_MODE:
 # - "active" (default): full app — chat with the model, mark up blocks,
 #   save/delete sessions, configure generation.

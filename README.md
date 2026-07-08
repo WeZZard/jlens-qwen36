@@ -186,6 +186,54 @@ noise — see the Status section above.
 The older `v0.1-demo` release (12 prompts, 23 late layers) predates the
 chain-indexing fix and the g/β gate paths — prefer v0.2.
 
+### Option A2: use Neuronpedia's pre-fitted lens (n=1000)
+
+[Neuronpedia](https://neuronpedia.org/jlens) publishes Jacobian lenses
+fitted with Anthropic's [jlens](https://github.com/anthropics/jlens)
+library (which this project's lens code mirrors), including one for
+Qwen3.6-27B fitted on 1000 wikitext prompts — 50× the prompts of the
+v0.2 release lens. Same matrix conventions, so it drops in after a
+one-time `.pt` → `.npz` conversion:
+
+```bash
+# 1. Download from Hugging Face (3.3 GB)
+uv run python -c "
+from huggingface_hub import hf_hub_download
+hf_hub_download('neuronpedia/jacobian-lens',
+    'qwen3.6-27b/jlens/Salesforce-wikitext/Qwen3.6-27B_jacobian_lens_n1000.pt',
+    local_dir='data/lens/hf')
+"
+
+# 2. Convert to this project's npz format (torch is needed only here)
+uv run --with torch python -c "
+import torch, numpy as np, json
+d = torch.load('data/lens/hf/qwen3.6-27b/jlens/Salesforce-wikitext/Qwen3.6-27B_jacobian_lens_n1000.pt',
+               map_location='cpu', weights_only=False)
+out = {f'J_{l}': J.to(torch.float16).numpy() for l, J in d['J'].items()}
+out.update(n_prompts=d['n_prompts'], d_model=d['d_model'])
+np.savez('data/lens/neuronpedia_n1000.npz', **out)
+json.dump({'n_prompts': d['n_prompts'], 'd_model': d['d_model'],
+           'source_layers': sorted(d['J'])},
+          open('data/lens/neuronpedia_n1000.json', 'w'))
+"
+
+# 3. Launch the visualizer with it
+JLENS_PATH=data/lens/neuronpedia_n1000.npz \
+  uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
+```
+
+Verified compatible with this project: identical save schema (`J`
+per-layer dict + `n_prompts` + `d_model`), same `J @ h` transport
+orientation (direct similarity to the v0.2 lens beats transposed at
+every layer), all 63 source layers, and readouts converge to the
+model's actual next token at late layers. Differences to expect vs the
+v0.2 lens: it was fitted on the bf16 HF weights (works fine on the
+4-bit MLX quant), readout scores run ~3–6× larger (token rankings —
+what the grid shows — are unaffected), and semantic commitment tends to
+surface later in the layer stack, with more formatting-like tokens in
+the middle band (a wikitext-fit trait). Credit: fitted by @mntss
+(Anthropic Interpretability) via Neuronpedia; MIT-licensed.
+
 ### Option B: fit your own lens (hours)
 
 ```bash
