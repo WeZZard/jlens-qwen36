@@ -857,6 +857,10 @@ let state = {
   snapshotByMsgToken: new Map(),
   // Token markups: [{pos, layer, token}] bookmarks into the J-Space grid.
   markups: [],
+  // Server session id holding the full-fidelity copy of THIS conversation
+  // (set on session load, manual save, and stream-end autosave). Used to
+  // recover the quota-trimmed localStorage cache on reload.
+  sourceSessionId: null,
   // Generation settings (configurable via the settings popup).
   settings: { maxTokens: 262144, temp: 0.0, topN: 10 },
 };
@@ -893,6 +897,7 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     snapshots: state.snapshots,
     layers: state.layers,
     markups: state.markups.map(m => ({ pos: m.pos, layer: m.layer, token: m.token })),
+    sourceSessionId: state.sourceSessionId,
   };
   if (trimForLocalStorage) {
     let json = JSON.stringify(persistable);
@@ -960,6 +965,7 @@ function restoreConversation(saved) {
         .filter(m => m && Number.isFinite(m.pos) && Number.isFinite(m.layer))
         .map(m => ({ pos: m.pos, layer: m.layer, token: m.token || '' }))
     : [];
+  state.sourceSessionId = saved.sourceSessionId || null;
   if (saved.settings) {
     state.settings = { ...state.settings, ...saved.settings };
     syncSettingsInputs();
@@ -1035,32 +1041,68 @@ function restoreConversation(saved) {
   return true;
 }
 
+// A complete conversation has contiguous per-token snapshots starting at
+// token_idx 0 for every generated message (the quota trim drops the OLDEST
+// ones, leaving a range that starts late). Detecting holes directly — at
+// restore time — is what makes recovery robust: the write-time `trimmed`
+// flag can be laundered away by post-restore re-saves that fit the quota.
+function snapshotsAreLossy(saved) {
+  const byMsg = new Map();
+  for (const sn of saved.snapshots || []) {
+    if (sn.token_idx === -1) continue;
+    if (!byMsg.has(sn.msg_idx)) byMsg.set(sn.msg_idx, []);
+    byMsg.get(sn.msg_idx).push(sn.token_idx);
+  }
+  for (const idxs of byMsg.values()) {
+    idxs.sort((a, b) => a - b);
+    if (idxs[0] !== 0) return true;
+    for (let i = 1; i < idxs.length; i++) {
+      if (idxs[i] - idxs[i - 1] > 1) return true;
+    }
+  }
+  return false;
+}
+
 function loadSavedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw);
     if (!restoreConversation(saved)) return;
-    if (saved.trimmed) {
-      // The localStorage copy was quota-trimmed (middle snapshots dropped).
-      // The server autosave keeps the last completed conversation at full
-      // fidelity — if it is the SAME conversation, upgrade to it so the
-      // full data survives reloads (and future manual saves aren't lossy).
-      fetch(API + '/api/sessions/autosave-latest.json')
-        .then(r => (r.ok ? r.json() : null))
-        .then((full) => {
-          if (!full) return;
+    if (!saved.trimmed && !snapshotsAreLossy(saved)) return;
+    // The localStorage copy is lossy (quota-trimmed middles). Recover from
+    // the conversation's durable server copies: the session file it was
+    // loaded from / saved to, and the stream-end autosave. Restore the
+    // most complete matching candidate.
+    const candidates = [...new Set([
+      saved.sourceSessionId,
+      'autosave-latest.json',
+    ].filter(Boolean))];
+    (async () => {
+      let best = null;
+      let bestId = null;
+      for (const id of candidates) {
+        try {
+          const r = await fetch(API + '/api/sessions/' + encodeURIComponent(id));
+          if (!r.ok) continue;
+          const full = await r.json();
           const sameConversation = full.preview === saved.preview &&
             (full.messages || []).length === (saved.messages || []).length;
           if (sameConversation &&
-              (full.snapshots || []).length > state.snapshots.length &&
-              restoreConversation(full)) {
-            saveState();
-            renderAll();
+              (full.snapshots || []).length > Math.max(state.snapshots.length, best ? best.snapshots.length : 0)) {
+            best = full;
+            bestId = id;
           }
-        })
-        .catch(() => {});
-    }
+        } catch (e) {}
+      }
+      if (best && restoreConversation(best)) {
+        state.sourceSessionId = bestId;
+        saveState();
+        renderAll();
+      } else if (!best) {
+        console.warn('conversation cache was quota-trimmed and no matching full server copy was found; middle snapshots are unavailable');
+      }
+    })();
   } catch (e) {
     console.warn('loadSavedState failed:', e);
   }
@@ -1074,6 +1116,7 @@ function clearState() {
   state.gridTokenMsgs = [];
   state.layers = [];
   state.markups = [];
+  state.sourceSessionId = null;
   state.selectedSnapshotId = null;
   state.selectedCell = null;
   state.selectedToken = null;
@@ -2668,11 +2711,18 @@ async function sendMessage() {
     }
     flushSaveState();
     // Durable full-fidelity autosave: localStorage above may be
-    // quota-trimmed, the server-side copy never is.
+    // quota-trimmed, the server-side copy never is. On success, record it
+    // as this conversation's recovery source and re-persist the cache so
+    // the reference survives reloads.
     if (state.messages.length > 0) {
       fetch(API + '/api/sessions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...serializableConversation(), autosave: true }),
+      }).then((r) => {
+        if (r.ok) {
+          state.sourceSessionId = 'autosave-latest.json';
+          saveState();
+        }
       }).catch(() => {});
     }
     updateAutoFollowUI();
@@ -2810,6 +2860,8 @@ async function saveCurrentSession() {
     });
     if (!resp.ok) throw new Error(await resp.text());
     const saved = await resp.json();
+    state.sourceSessionId = saved.id;
+    saveState();
     btn.textContent = saved.staged ? 'Saved and staged' : 'Saved';
     await refreshSessions();
   } catch (e) {
@@ -2830,6 +2882,9 @@ async function loadSession(sessionId) {
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
     if (restoreConversation(data)) {
+      // This session file IS the durable full copy of the conversation —
+      // remember it so trimmed localStorage restores can recover from it.
+      state.sourceSessionId = sessionId;
       saveState();
       renderAll();
       closeSessionsMenu();
