@@ -85,7 +85,8 @@
   .msg .bubble {
     padding: 10px 14px; border-radius: var(--radius-lg);
     corner-shape: squircle;
-    font-size: 14px; line-height: 1.5; word-break: break-word;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 13px; line-height: 1.5; word-break: break-word;
     white-space: pre-wrap;
     box-shadow: none;
   }
@@ -113,29 +114,51 @@
     border-radius: var(--radius-lg);
     corner-shape: squircle;
     box-shadow: 0 6px 24px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
-  }
-  /* input row holds the textarea; Send button removed (Enter to send) */
-  #chat-input-row {
-    display: flex; gap: 8px; align-items: center;
     overflow: hidden;
   }
-  #chat-textarea {
+  #chat-input::after {
+    content: '';
+    position: absolute;
+    left: 22px; right: 74px; bottom: 12px;
+    height: 10px;
+    background: #ffffff;
+    pointer-events: none;
+    z-index: 3;
+  }
+  #chat-input:not(.streaming)::after { right: 22px; }
+  /* input row holds the editor; Send button removed (Enter to send) */
+  #chat-input-row {
+    position: relative; z-index: 2;
+    display: flex; gap: 8px; align-items: center;
+    overflow: clip;
+  }
+  #chat-editor {
     flex: 1; min-height: 44px; max-height: 120px;
     font: inherit; font-size: 14px; padding: 10px 12px;
     border: none; border-radius: 10px;
     background: transparent; color: var(--text);
     resize: none; outline: none;
-    overflow: hidden; overflow-x: hidden; overflow-y: hidden;
+    overflow: clip; overflow-x: clip; overflow-y: clip;
     scrollbar-width: none;
     -ms-overflow-style: none;
     appearance: none;
     -webkit-appearance: none;
     box-shadow: none;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    user-select: text;
+    -webkit-user-select: text;
     /* Prevent the browser from treating this as a password/autofill field. */
     -webkit-text-security: none;
     autocomplete: off;
   }
-  #chat-textarea::-webkit-scrollbar {
+  #chat-editor:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-3);
+    pointer-events: none;
+  }
+  #chat-editor::-webkit-scrollbar {
     width: 0; height: 0;
     display: none;
   }
@@ -352,20 +375,53 @@
   /* No top padding so the sticky layer-header aligns with the very top of the
      grid column. Bottom padding is updated from the actual fixed overlays. */
   #grid-body {
+    position: relative; z-index: 1;
     flex: 1; overflow: auto;
     padding: 0 0 var(--grid-bottom-clearance) 8px;
     scroll-padding-bottom: var(--grid-bottom-clearance);
     background: transparent;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+    /* Keep the vertical-scrollbar gutter reserved even when rows don't
+       overflow yet, so the sticky TOKEN column never shifts. */
+    scrollbar-gutter: stable;
   }
-  #grid-body::-webkit-scrollbar { display: none; }
+  /* Firefox-only fallback: setting scrollbar-width/color in Chromium would
+     DISABLE the ::-webkit-scrollbar styling below, so scope it away. */
+  @supports not selector(::-webkit-scrollbar) {
+    #grid-body { scrollbar-width: thin; scrollbar-color: rgba(60,50,30,0.28) transparent; }
+  }
+  /* Custom-styled scrollbars are CLASSIC (space-taking) in WebKit/Blink:
+     the vertical bar gets its own gutter to the right of the sticky TOKEN
+     column — it never overlays the header or the token labels. The TOKEN
+     cells' own 12px right padding keeps their text clear of the bar. */
+  #grid-body::-webkit-scrollbar { width: 10px; height: 10px; }
+  #grid-body::-webkit-scrollbar-track { background: transparent; }
+  #grid-body::-webkit-scrollbar-corner { background: transparent; }
+  #grid-body::-webkit-scrollbar-thumb {
+    background-color: rgba(60,50,30,0.22);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  #grid-body::-webkit-scrollbar-thumb:hover { background-color: rgba(60,50,30,0.34); }
+  /* Full-height J-Space surface: sits behind the grid table (z-index 0 vs
+     the scroller's 1) and extends the per-column tint to the bottom of
+     #grid-col even when the table has few rows. Its gradient is rebuilt
+     from the live layer-header rects so it follows horizontal scroll. */
+  #grid-underlay {
+    position: absolute; inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background: transparent;
+  }
   html.recovering-clearance #chat-log,
   html.recovering-clearance #grid-body {
     transition: padding-bottom 220ms ease;
   }
-  #grid { border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
-  #grid th, #grid td { padding: 8px 6px; white-space: nowrap; }
+  /* Fixed layout: every block in the J-Space grid has a fixed size
+     (column widths come from the JS-built <colgroup>; long tokens
+     ellipsize instead of stretching their column). */
+  #grid { table-layout: fixed; border-collapse: separate; border-spacing: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  #grid th, #grid td { padding: 0; white-space: nowrap; }
   .band-floating-label {
     position: fixed; top: 0; left: 50%;
     transform: translateX(-50%);
@@ -386,7 +442,7 @@
     background: var(--paper-bg); color: var(--text-2); font-weight: 600;
     position: sticky; z-index: 2;
     border-bottom: none;
-    min-width: 52px; text-align: center;
+    min-width: 128px; text-align: center;
     height: 32px;
   }
   #grid th.band-guide-cell {
@@ -399,19 +455,23 @@
   #grid th.pos-band-guide {
     position: sticky; right: 0; top: 0; z-index: 7;
     min-width: 140px; height: 28px; padding: 0;
-    background: var(--visible-band-edge-color);
+    background: linear-gradient(to right, var(--visible-band-edge-color), var(--paper-bg));
   }
   /* Right header: position label column header (sticky right + sticky top corner) */
   #grid th.pos-header {
     position: sticky; right: 0; top: 28px; z-index: 8;
     min-width: 140px; text-align: right;
+    padding: 0 12px;
+    box-sizing: border-box;
+    text-transform: uppercase;
     border-left: none;
-    background: var(--visible-band-edge-color);
+    background: linear-gradient(to right, var(--visible-band-edge-color), var(--paper-bg));
   }
   /* Right body cells: position label (sticky right) — token text + ordinal right-aligned */
   #grid td.pos-label {
     font-family: -apple-system, sans-serif; font-size: 13px; font-weight: 400;
-    color: var(--text); background: var(--visible-band-edge-color);
+    color: var(--text);
+    background: linear-gradient(to right, var(--visible-band-edge-color), var(--paper-bg));
     position: sticky; right: 0; z-index: 1;
     border-left: none;
     text-align: right; padding: 4px 12px;
@@ -437,18 +497,32 @@
   #grid td.pos-label.gen { }
   /* Data cells (layer × position) — show only token text, no ID. */
   #grid td.cell {
+    padding: 2px;
     border-radius: 0; text-align: center;
     color: var(--text); background: transparent;
     transition: box-shadow 0.12s, color 0.12s, filter 0.12s;
-    min-width: 52px; height: 36px;
+    min-width: 128px; height: 36px;
   }
-  #grid td.cell .word { display: block; font-weight: 400; }
+  #grid td.cell .cell-block {
+    height: 32px;
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 7px;
+    corner-shape: squircle;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0 4px;
+    overflow: hidden;
+    transition: box-shadow 0.12s, color 0.12s, filter 0.12s, background 0.12s;
+  }
+  #grid td.cell .word { display: block; font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
   #grid td.cell.selectable { cursor: pointer; }
-  #grid td.cell.selectable:hover { filter: saturate(1.2) brightness(0.98); }
-  #grid td.cell.selected { box-shadow: inset 0 0 0 2px var(--highlight-orange), 0 0 0 1px rgba(255,138,0,0.18); }
-  #grid td.cell.selected .word { color: var(--highlight-orange); font-weight: 700; }
-  #grid td.cell.matching-token { box-shadow: inset 0 0 0 1.5px rgba(255,138,0,0.42), 0 0 0 1px rgba(255,138,0,0.10); }
-  #grid td.cell.matching-token .word { color: var(--highlight-orange); font-weight: 700; }
+  #grid td.cell.selectable:hover .cell-block { filter: saturate(1.2) brightness(0.98); }
+  /* Selected + matching blocks: orange background (set inline per block)
+     with white text, no borders. The selected block uses the full vivid
+     highlight orange; matching blocks use a lighter, softer orange — the
+     shade difference alone differentiates them. */
+  #grid td.cell.selected .word { color: #ffffff; font-weight: 700; }
+  #grid td.cell.matching-token .word { color: #ffffff; font-weight: 700; }
   #grid td.cell.selected-row { }
   #grid td.cell.gen-row { }
   #grid td.cell.gen-row.selected-row { }
@@ -551,6 +625,7 @@
   <div id="split">
     <!-- ===== LEFT: J-lens grid ===== -->
     <div id="grid-col">
+      <div id="grid-underlay" aria-hidden="true"></div>
       <div id="band-floating-labels" aria-hidden="true">
         <div class="band-floating-label" data-band="surface">Sensory / Surface Processing</div>
         <div class="band-floating-label" data-band="workspace">Workspace Band</div>
@@ -569,7 +644,7 @@
   <!-- ===== BOTTOM: floating message input (fixed, solid white) ===== -->
   <div id="chat-input">
     <div id="chat-input-row">
-      <textarea id="chat-textarea" name="chat-textarea" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Message the model…" rows="1"></textarea>
+      <div id="chat-editor" contenteditable="plaintext-only" role="textbox" aria-multiline="true" data-placeholder="Message the model…" spellcheck="false"></div>
       <button id="stop-btn" type="button" title="Stop outputting" aria-label="Stop outputting"></button>
     </div>
   </div>
@@ -1148,9 +1223,9 @@ function cellIntensity(cell) {
 }
 
 const LAYER_BANDS = [
-  { id: 'surface', label: 'Sensory / Surface Processing', coreStart: 0, coreEnd: 18, color: [112, 183, 220] },
-  { id: 'workspace', label: 'Workspace Band', coreStart: 25, coreEnd: 53, color: [232, 166, 48] },
-  { id: 'motor', label: 'Motor / Output Band', coreStart: 59, coreEnd: 63, color: [166, 153, 136] },
+  { id: 'surface', label: 'Sensory / Surface Processing', coreStart: 0, coreEnd: 18, color: [82, 164, 190] },
+  { id: 'workspace', label: 'Workspace Band', coreStart: 25, coreEnd: 53, color: [224, 174, 72] },
+  { id: 'motor', label: 'Motor / Output Band', coreStart: 59, coreEnd: 63, color: [174, 164, 146] },
 ];
 const PAPER_RGB = [255, 255, 246];
 const FREQ_BLUE_RGB = [36, 135, 222];
@@ -1176,32 +1251,43 @@ function tintRgb(rgb, amount) {
   return mixRgb(PAPER_RGB, rgb, amount);
 }
 
-function layerBandPosition(layer, start, end) {
-  if (end <= start) return 0;
-  return Math.max(0, Math.min(1, (layer - start) / (end - start)));
+function smoothstep(edge0, edge1, x) {
+  if (edge0 === edge1) return x >= edge1 ? 1 : 0;
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
 }
 
 function bandRgbAtLayer(layer) {
   const surface = LAYER_BANDS[0].color;
   const workspace = LAYER_BANDS[1].color;
   const motor = LAYER_BANDS[2].color;
-  if (layer <= 18) return mixRgb(surface, tintRgb(surface, 0.45), layerBandPosition(layer, 0, 18));
-  if (layer <= 24) return mixRgb(surface, workspace, (layer - 19) / 5);
-  if (layer <= 53) return mixRgb(workspace, tintRgb(workspace, 0.35), layerBandPosition(layer, 25, 53));
-  if (layer <= 58) return mixRgb(workspace, motor, (layer - 54) / 4);
-  return mixRgb(motor, PAPER_RGB, layerBandPosition(layer, 59, 63));
+  const surfaceToWorkspace = smoothstep(16, 28, layer);
+  const workspaceToMotor = smoothstep(50, 61, layer);
+  const motorToPaper = smoothstep(60, 63, layer);
+  const early = mixRgb(surface, workspace, surfaceToWorkspace);
+  const late = mixRgb(early, motor, workspaceToMotor);
+  return mixRgb(late, PAPER_RGB, motorToPaper);
 }
 
 function layerGuideBackground(layer) {
-  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.56));
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.46));
 }
 
 function layerHeaderBackground(layer) {
-  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.36));
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.28));
 }
 
-function layerEdgeBackground(layer) {
-  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.36));
+// Per-cell interpolated header background: the cell's edges take the color
+// at the midpoint between adjacent layers, so consecutive header cells form
+// one continuous horizontal gradient. Stays a fully-painted (opaque)
+// background — body rows cannot show through the sticky header.
+function bandHeaderGradient(layer, prevLayer, nextLayer, tint) {
+  const leftAt = prevLayer != null ? (prevLayer + layer) / 2 : layer;
+  const rightAt = nextLayer != null ? (layer + nextLayer) / 2 : layer;
+  const left = rgbCss(tintRgb(bandRgbAtLayer(leftAt), tint));
+  const mid = rgbCss(tintRgb(bandRgbAtLayer(layer), tint));
+  const right = rgbCss(tintRgb(bandRgbAtLayer(rightAt), tint));
+  return `linear-gradient(90deg, ${left}, ${mid} 50%, ${right})`;
 }
 
 function layerLabelBackground(band) {
@@ -1214,9 +1300,24 @@ function cellBlueRgb(cell) {
   return mixRgb(PAPER_RGB, FREQ_BLUE_RGB, amount);
 }
 
+// Orange analog of cellBlueRgb for highlighted (matching-token) blocks:
+// the same confidence-driven variation, but a deliberately lighter, softer
+// wash — the vivid full orange is reserved for the selected block, so the
+// shade difference alone tells them apart.
+const HIGHLIGHT_ORANGE_RGB = [255, 138, 0];
+function cellOrangeRgb(cell) {
+  const t = cellIntensity(cell);
+  const amount = t == null ? 0.50 : 0.50 + t * 0.20;
+  return mixRgb(PAPER_RGB, HIGHLIGHT_ORANGE_RGB, amount);
+}
+
 function layerCellBackground(cell, layer) {
   const base = cell ? cellBlueRgb(cell) : PAPER_RGB;
   return rgbCss(mixRgb(base, bandRgbAtLayer(layer), 0.14));
+}
+
+function layerCellGutterBackground(layer) {
+  return rgbCss(tintRgb(bandRgbAtLayer(layer), 0.08));
 }
 
 function normalizeTokenText(s) {
@@ -1313,39 +1414,116 @@ function renderedCoreBoundsForBand(band) {
   return { startX, endX };
 }
 
+// Rebuild the full-height underlay gradient from the live layer-header
+// rects: one hard-stop segment per visible layer column (matching the
+// per-column gutter tint), plus an edge-color segment under the sticky
+// token column. Runs on render, scroll, and resize via updateGridBandChrome.
+// The style write is skipped when the gradient is unchanged (vertical
+// scrolling doesn't move columns) so scroll animations stay jank-free.
+let _gridUnderlayBg = null;
+function setGridUnderlayBackground(bg) {
+  const underlay = $('grid-underlay');
+  if (!underlay || bg === _gridUnderlayBg) return;
+  _gridUnderlayBg = bg;
+  underlay.style.background = bg;
+}
+function updateGridUnderlay() {
+  const underlay = $('grid-underlay');
+  const col = $('grid-col');
+  if (!underlay || !col) return;
+  const headers = layerHeaderCells();
+  const colRect = col.getBoundingClientRect();
+  if (headers.length === 0 || colRect.width <= 0) {
+    setGridUnderlayBackground('transparent');
+    return;
+  }
+  const stickyRightRects = [
+    document.querySelector('#grid th.pos-band-guide'),
+    document.querySelector('#grid th.pos-header'),
+  ].filter(Boolean).map(el => el.getBoundingClientRect());
+  const stickyLeft = stickyRightRects.length
+    ? Math.min(...stickyRightRects.map(r => r.left)) - colRect.left
+    : colRect.width;
+  const stickyRight = stickyRightRects.length
+    ? Math.max(...stickyRightRects.map(r => r.right)) - colRect.left
+    : colRect.width;
+  const px = (v) => `${Math.round(v * 10) / 10}px`;
+  const stops = [];
+  let cursor = 0;
+  headers.forEach((th) => {
+    const layer = Number(th.dataset.layer);
+    const rect = th.getBoundingClientRect();
+    if (!Number.isFinite(layer) || rect.width <= 0) return;
+    const left = Math.max(rect.left - colRect.left, cursor, 0);
+    const right = Math.min(rect.right - colRect.left, stickyLeft, colRect.width);
+    if (right <= left) return;
+    if (left > cursor) stops.push(`transparent ${px(cursor)} ${px(left)}`);
+    stops.push(`${layerCellGutterBackground(layer)} ${px(left)} ${px(right)}`);
+    cursor = right;
+  });
+  if (stickyLeft > cursor) stops.push(`transparent ${px(cursor)} ${px(stickyLeft)}`);
+  cursor = Math.max(cursor, stickyLeft);
+  if (stickyRight > cursor) {
+    // Matches the pos-band-guide/pos-header/pos-label fade: rightmost
+    // visible table color at the token column's left edge → page background
+    // at its right edge.
+    stops.push(`var(--visible-band-edge-color) ${px(cursor)}`);
+    stops.push(`var(--paper-bg) ${px(stickyRight)}`);
+    cursor = stickyRight;
+  }
+  if (cursor < colRect.width) stops.push(`transparent ${px(cursor)} ${px(colRect.width)}`);
+  setGridUnderlayBackground(stops.length
+    ? `linear-gradient(to right, ${stops.join(', ')})`
+    : 'transparent');
+}
+
+let _appliedBandEdgeColor = null;
 function updateGridBandChrome() {
   const body = $('grid-body');
   const labels = Array.from(document.querySelectorAll('.band-floating-label'));
   const headers = layerHeaderCells();
   if (!body || headers.length === 0) {
     labels.forEach(label => { label.style.opacity = '0'; });
+    updateGridUnderlay();
     return;
   }
   const bodyRect = body.getBoundingClientRect();
   const bodyStyle = getComputedStyle(body);
-  const maxScrollLeft = Math.max(0, body.scrollWidth - body.clientWidth);
-  const sampleX = body.scrollLeft >= maxScrollLeft - 1
-    ? bodyRect.right - 1
-    : bodyRect.left + (parseFloat(bodyStyle.paddingLeft) || 0) + 1;
-  const edgeLayer = layerPositionAtViewportX(sampleX);
-  if (edgeLayer != null) {
-    document.documentElement.style.setProperty('--visible-band-edge-color', layerEdgeBackground(edgeLayer));
-  }
-
-  if (labels.length === 0) return;
-  const centerX = window.innerWidth / 2;
-  const guide = document.querySelector('#grid th.band-guide-cell');
-  const layerHeader = document.querySelector('#grid th.layer-header');
   const posBand = document.querySelector('#grid th.pos-band-guide');
   const posHeader = document.querySelector('#grid th.pos-header');
-  const guideRect = guide ? guide.getBoundingClientRect() : null;
-  const layerHeaderRect = layerHeader ? layerHeader.getBoundingClientRect() : null;
   const stickyRightRects = [posBand, posHeader]
     .filter(Boolean)
     .map(el => el.getBoundingClientRect());
   const stickyRightLeft = stickyRightRects.length
     ? Math.min(...stickyRightRects.map(rect => rect.left))
     : bodyRect.right;
+  const sampleX = Math.max(
+    bodyRect.left + (parseFloat(bodyStyle.paddingLeft) || 0) + 1,
+    Math.min(bodyRect.right - 1, stickyRightLeft - 1)
+  );
+  const edgeLayer = layerPositionAtViewportX(sampleX);
+  let edgeColor = 'var(--paper-bg)';
+  if (edgeLayer != null) {
+    // Use the TABLE BACKGROUND tint (the gutter color behind the cells),
+    // not the header tint: the fade's left edge must equal the color of
+    // the table surface at the rightmost visible layer, so the boundary
+    // between the table and the fade region is seamless. Skip the root
+    // custom-property write when unchanged — it invalidates every element
+    // referencing it and would run on every frame of a vertical scroll.
+    edgeColor = layerCellGutterBackground(edgeLayer);
+    if (edgeColor !== _appliedBandEdgeColor) {
+      _appliedBandEdgeColor = edgeColor;
+      document.documentElement.style.setProperty('--visible-band-edge-color', edgeColor);
+    }
+  }
+  updateGridUnderlay();
+
+  if (labels.length === 0) return;
+  const centerX = window.innerWidth / 2;
+  const guide = document.querySelector('#grid th.band-guide-cell');
+  const layerHeader = document.querySelector('#grid th.layer-header');
+  const guideRect = guide ? guide.getBoundingClientRect() : null;
+  const layerHeaderRect = layerHeader ? layerHeader.getBoundingClientRect() : null;
   const dataLeft = bodyRect.left + (parseFloat(bodyStyle.paddingLeft) || 0);
   const dataRight = Math.min(bodyRect.right, stickyRightLeft - 8);
   labels.forEach((label) => {
@@ -1386,20 +1564,26 @@ function buildGridRowTr(pos, selectedTokenKey, activePos) {
     const td = document.createElement('td');
     td.className = 'cell';
     const cell = state.gridRows[pos] && state.gridRows[pos][layer];
-    td.style.background = layerCellBackground(cell, layer);
+    td.style.background = layerCellGutterBackground(layer);
     if (cell) {
       const top1 = cell.top_tokens[0] || '·';
+      const block = document.createElement('span');
+      block.className = 'cell-block';
+      block.style.background = layerCellBackground(cell, layer);
       const word = document.createElement('span');
       word.className = 'word';
       word.textContent = top1;
-      td.appendChild(word);
+      block.appendChild(word);
+      td.appendChild(block);
       td.classList.add('selectable');
       td.dataset.pos = pos;
       td.dataset.layer = layer;
       if (state.selectedCell && state.selectedCell.pos === pos && state.selectedCell.layer === layer) {
         td.classList.add('selected');
+        block.style.background = rgbCss(HIGHLIGHT_ORANGE_RGB);
       } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
         td.classList.add('matching-token');
+        block.style.background = rgbCss(cellOrangeRgb(cell));
       }
       if (state.selectedCell && state.selectedCell.pos === pos) {
         td.classList.add('selected-row');
@@ -1433,6 +1617,12 @@ function buildGridRowTr(pos, selectedTokenKey, activePos) {
 // rows around the viewport, with spacer rows preserving scroll geometry;
 // the scroll handler re-renders when the viewport nears a window edge.
 const GRID_ROW_BUFFER = 30;
+
+// Fixed block sizes for the J-Space grid (the content area itself stays
+// fluid — these fix each block inside it). Row height stays 36px; long
+// tokens ellipsize inside their block instead of stretching the column.
+const GRID_CELL_W = 128;
+const GRID_POS_W = 140;
 
 function _gridSpacerRow(heightPx, nCols) {
   const tr = document.createElement('tr');
@@ -1476,15 +1666,29 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   const table = document.createElement('table');
   table.id = 'grid';
 
+  // Fixed-size blocks: explicit column widths + explicit table width so
+  // table-layout: fixed applies and no column stretches with its content.
+  const colgroup = document.createElement('colgroup');
+  state.layers.forEach(() => {
+    const col = document.createElement('col');
+    col.style.width = GRID_CELL_W + 'px';
+    colgroup.appendChild(col);
+  });
+  const posCol = document.createElement('col');
+  posCol.style.width = GRID_POS_W + 'px';
+  colgroup.appendChild(posCol);
+  table.appendChild(colgroup);
+  table.style.width = (state.layers.length * GRID_CELL_W + GRID_POS_W) + 'px';
+
   // Header row: layer labels (sticky top). The position label column is on the right.
   const thead = document.createElement('thead');
   const bandRow = document.createElement('tr');
   bandRow.className = 'band-guide-row';
-  state.layers.forEach(l => {
+  state.layers.forEach((l, i) => {
     const th = document.createElement('th');
     th.className = 'band-guide-cell';
     th.dataset.layer = l;
-    th.style.background = layerGuideBackground(l);
+    th.style.background = bandHeaderGradient(l, state.layers[i - 1], state.layers[i + 1], 0.46);
     bandRow.appendChild(th);
   });
   const posBand = document.createElement('th');
@@ -1494,17 +1698,17 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
 
   const hrow = document.createElement('tr');
   hrow.className = 'layer-header-row';
-  state.layers.forEach(l => {
+  state.layers.forEach((l, i) => {
     const th = document.createElement('th');
     th.className = 'layer-header';
     th.dataset.layer = l;
-    th.style.background = layerHeaderBackground(l);
+    th.style.background = bandHeaderGradient(l, state.layers[i - 1], state.layers[i + 1], 0.28);
     th.textContent = 'L' + l;
     hrow.appendChild(th);
   });
   const posHeader = document.createElement('th');
   posHeader.className = 'pos-header';
-  posHeader.textContent = 'token';
+  posHeader.textContent = 'TOKEN';
   hrow.appendChild(posHeader);
   thead.appendChild(hrow);
   table.appendChild(thead);
@@ -1536,10 +1740,17 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
 
   updateGridHeaderShadows();
   if (focusSelection && (state.selectedCell || activePos !== null)) {
-    // Jump near the target first (the window is built around it); the
-    // rAF smooth-scroll below only does the fine centering. Without this,
-    // a far selection would smooth-scroll across thousands of rows.
-    body.scrollTop = target;
+    // Approach-then-glide. A far selection cannot smooth-scroll across
+    // thousands of virtualized rows (the animation would cross unrendered
+    // spacer and get cancelled by a window re-render), so jump to a point
+    // one short glide away from the target — still inside the freshly
+    // built row window — and let the rAF below animate the final stretch.
+    // A nearby selection skips the jump entirely and glides in one motion.
+    const GLIDE_PX = 360;
+    const from = body.scrollTop;
+    if (Math.abs(target - from) > GLIDE_PX) {
+      body.scrollTop = target > from ? target - GLIDE_PX : target + GLIDE_PX;
+    }
     // Center the selected cell, or the token header when no layer cell is selected.
     // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
     requestAnimationFrame(() => {
@@ -1736,7 +1947,11 @@ function renderAll() {
   focusSelectionOnRender = false;
   renderDetail();
   updateScrollClearance();
-  renderChat({ scrollToBottom: state.selectedSnapshotId === null });
+  // When a focus scroll is about to run, keep the chat log where it is:
+  // snapping to the tail first would make every focus animate from the
+  // bottom of the log instead of from the reader's current position.
+  const focusingChatToken = shouldFocusSelection && !!state.selectedToken;
+  renderChat({ scrollToBottom: state.selectedSnapshotId === null && !focusingChatToken });
   if (shouldFocusSelection && state.selectedToken) {
     requestAnimationFrame(() => {
       focusSelectedChatToken();
@@ -1850,9 +2065,25 @@ function writeGridRow(pos, cells, sliceIndex) {
 }
 
 // ----- Streaming request -----
+function chatInputValue() {
+  return $('chat-editor').textContent || '';
+}
+
+function setChatInputValue(value) {
+  const box = $('chat-editor');
+  box.textContent = value || '';
+  resizeChatInput();
+}
+
+function resizeChatInput() {
+  const box = $('chat-editor');
+  box.style.height = 'auto';
+  box.style.height = Math.min(box.scrollHeight, 120) + 'px';
+  updateScrollClearance();
+}
+
 async function sendMessage() {
-  const ta = $('chat-textarea');
-  const content = ta.value.trim();
+  const content = chatInputValue().trim();
   if (!content || state.streaming) return;
 
   state.messages.push({ role: 'user', content, tokens: [], prefillSnapshotId: null });
@@ -1868,8 +2099,7 @@ async function sendMessage() {
     temp: state.settings.temp,
     top_n: state.settings.topN,
   };
-  ta.value = '';
-  ta.style.height = 'auto';
+  setChatInputValue('');
 
   const controller = new AbortController();
   state.streamAbortController = controller;
@@ -2095,12 +2325,9 @@ async function deleteSavedSession(sessionId, preview) {
   }
 }
 
-// ----- Textarea auto-grow + Enter to send -----
-$('chat-textarea').addEventListener('input', () => {
-  const ta = $('chat-textarea');
-  ta.style.height = 'auto';
-  ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
-  updateScrollClearance();
+// ----- Message input auto-grow + Enter to send -----
+$('chat-editor').addEventListener('input', () => {
+  resizeChatInput();
 });
 window.addEventListener('resize', () => {
   updateScrollClearance();
@@ -2108,7 +2335,7 @@ window.addEventListener('resize', () => {
   if (state.selectedCell) renderGrid();
 });
 $('grid-body').addEventListener('scroll', onGridBodyScroll, { passive: true });
-$('chat-textarea').addEventListener('keydown', (e) => {
+$('chat-editor').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
 
