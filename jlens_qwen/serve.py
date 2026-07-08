@@ -12,8 +12,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import mlx.core as mx
 import numpy as np
@@ -32,6 +36,8 @@ _model = None
 _lens = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
 _lens_path = os.environ.get("JLENS_PATH", "data/lens/qwen36_27b.npz")
+_repo_root = Path(__file__).resolve().parent.parent
+_sessions_dir = _repo_root / "data" / "sessions"
 
 # Pause/resume control for the active generation stream.
 # The generation loop checks this event before each token.
@@ -302,6 +308,157 @@ def _sse(event: str, data: dict) -> bytes:
 class ChatControlRequest(BaseModel):
     stream_id: str
     action: str  # "pause" | "resume"
+
+
+class SessionSaveRequest(BaseModel):
+    preview: str | None = None
+    messages: list[dict[str, Any]] = []
+    snapshots: list[dict[str, Any]] = []
+    layers: list[int] = []
+    settings: dict[str, Any] = {}
+    # Fire-and-forget full-fidelity save at stream end. localStorage is
+    # quota-trimmed (~4.2MB) and silently loses old snapshots on long
+    # conversations; the autosave keeps the complete state server-side
+    # under a fixed id (overwritten each stream, never git-staged).
+    autosave: bool = False
+
+
+def _session_preview(data: dict[str, Any]) -> str:
+    preview = str(data.get("preview") or "").strip()
+    if preview:
+        return preview[:160]
+    for msg in data.get("messages") or []:
+        if msg.get("role") == "user":
+            content = str(msg.get("content") or "").strip()
+            if content:
+                return re.sub(r"\s+", " ", content)[:160]
+    return "Untitled session"
+
+
+def _session_slug(preview: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9]+", "-", preview.lower()).strip("-")
+    return (slug or "session")[:48]
+
+
+def _session_path(session_id: str) -> Path:
+    safe_id = re.sub(r"[^a-zA-Z0-9_.-]", "", session_id)
+    path = (_sessions_dir / safe_id).resolve()
+    if not str(path).startswith(str(_sessions_dir.resolve())) or path.suffix != ".json":
+        raise HTTPException(400, "invalid session id")
+    return path
+
+
+def _stage_session_file(path: Path) -> bool:
+    try:
+        rel = path.relative_to(_repo_root)
+        proc = subprocess.run(
+            ["git", "add", str(rel)],
+            cwd=_repo_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def _remove_session_file(path: Path) -> bool:
+    try:
+        rel = path.relative_to(_repo_root)
+        proc = subprocess.run(
+            ["git", "rm", "-f", "--", str(rel)],
+            cwd=_repo_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if proc.returncode == 0:
+            return True
+        if path.exists():
+            path.unlink()
+        proc = subprocess.run(
+            ["git", "add", "-u", "--", str(rel)],
+            cwd=_repo_root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+@app.get("/api/sessions")
+async def list_sessions():
+    _sessions_dir.mkdir(parents=True, exist_ok=True)
+    sessions = []
+    for path in sorted(_sessions_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(path.read_text())
+        except Exception:
+            continue
+        sessions.append({
+            "id": path.name,
+            "preview": _session_preview(data),
+            "created_at": data.get("created_at"),
+            "saved_at": data.get("saved_at"),
+            "message_count": len(data.get("messages") or []),
+            "snapshot_count": len(data.get("snapshots") or []),
+            "path": str(path.relative_to(_repo_root)),
+        })
+    return {"sessions": sessions}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    path = _session_path(session_id)
+    if not path.exists():
+        raise HTTPException(404, "session not found")
+    return JSONResponse(json.loads(path.read_text()))
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str):
+    path = _session_path(session_id)
+    if not path.exists():
+        raise HTTPException(404, "session not found")
+    staged = _remove_session_file(path)
+    return {
+        "id": session_id,
+        "deleted": True,
+        "staged": staged,
+    }
+
+
+@app.post("/api/sessions")
+async def save_session(req: SessionSaveRequest):
+    _sessions_dir.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    data = req.dict()
+    autosave = data.pop("autosave", False)
+    preview = _session_preview(data)
+    if autosave:
+        session_id = "autosave-latest.json"
+    else:
+        session_id = f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{_session_slug(preview)}.json"
+    path = _sessions_dir / session_id
+    data.update({
+        "schema": 1,
+        "preview": preview,
+        "created_at": now,
+        "saved_at": now,
+    })
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    staged = False if autosave else _stage_session_file(path)
+    return {
+        "id": session_id,
+        "preview": preview,
+        "created_at": now,
+        "saved_at": now,
+        "path": str(path.relative_to(_repo_root)),
+        "staged": staged,
+    }
 
 
 @app.post("/api/chat_control")
