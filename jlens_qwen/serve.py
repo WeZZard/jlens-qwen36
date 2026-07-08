@@ -36,6 +36,16 @@ _model = None
 _lens = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
 _lens_path = os.environ.get("JLENS_PATH", "data/lens/qwen36_27b.npz")
+# Deployment mode, decided at deployment time via JLENS_MODE:
+# - "active" (default): full app — chat with the model, mark up blocks,
+#   save/delete sessions, configure generation.
+# - "presentation": strictly read-only display of historical data — view
+#   saved sessions and jump between markups; every mutating endpoint is
+#   rejected and the UI hides all editing affordances.
+_app_mode = os.environ.get("JLENS_MODE", "active")
+if _app_mode not in ("active", "presentation"):
+    print(f"unknown JLENS_MODE {_app_mode!r}; falling back to 'active'", flush=True)
+    _app_mode = "active"
 _repo_root = Path(__file__).resolve().parent.parent
 _sessions_dir = _repo_root / "data" / "sessions"
 
@@ -82,7 +92,14 @@ async def lens_info():
 
 @app.get("/api/model")
 async def model_info():
-    return {"model_id": _model_id, "n_layers": _model.n_layers, "d_model": _model.d_model}
+    return {"model_id": _model_id, "n_layers": _model.n_layers, "d_model": _model.d_model,
+            "mode": _app_mode}
+
+
+def _require_active_mode():
+    """Reject state-changing requests in a presentation deployment."""
+    if _app_mode != "active":
+        raise HTTPException(403, "read-only presentation deployment")
 
 
 def _record_layers() -> list[int]:
@@ -155,6 +172,7 @@ def _readout_at_positions(
 
 @app.post("/api/slice")
 async def slice_endpoint(req: SliceRequest):
+    _require_active_mode()
     if _model is None:
         raise HTTPException(503, "model not loaded")
     prompt = req.prompt
@@ -219,6 +237,7 @@ class GenerateRequest(BaseModel):
 @app.post("/api/generate")
 async def generate_endpoint(req: GenerateRequest):
     """Generate a continuation (no intervention)."""
+    _require_active_mode()
     if _model is None:
         raise HTTPException(503, "model not loaded")
     text, toks = _model.generate(req.prompt, max_tokens=req.max_tokens, temp=req.temp)
@@ -242,6 +261,7 @@ class InterveneRequest(BaseModel):
 @app.post("/api/intervene")
 async def intervene_endpoint(req: InterveneRequest):
     """Generate with a J-space intervention."""
+    _require_active_mode()
     if _model is None:
         raise HTTPException(503, "model not loaded")
     if _lens is None:
@@ -452,6 +472,7 @@ async def get_session(session_id: str):
 
 @app.delete("/api/sessions/{session_id}")
 async def delete_session(session_id: str):
+    _require_active_mode()
     path = _session_path(session_id)
     if not path.exists():
         raise HTTPException(404, "session not found")
@@ -465,6 +486,7 @@ async def delete_session(session_id: str):
 
 @app.post("/api/sessions")
 async def save_session(req: SessionSaveRequest):
+    _require_active_mode()
     _sessions_dir.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     data = req.dict()
@@ -502,6 +524,7 @@ async def chat_control(req: ChatControlRequest):
     it left off. The stream_id is returned in the initial `event: stream_start`
     frame of the chat_stream response.
     """
+    _require_active_mode()
     if req.stream_id not in _pause_events:
         raise HTTPException(404, f"stream {req.stream_id} not found")
     ev = _pause_events[req.stream_id]
@@ -527,6 +550,7 @@ async def chat_stream(req: ChatStreamRequest):
     to render. Snapshots carry a monotonic `snapshot_id` so an SSE
     reconnect with `Last-Event-ID` can resume.
     """
+    _require_active_mode()
     if _model is None:
         raise HTTPException(503, "model not loaded")
 
@@ -791,7 +815,16 @@ async def chat_stream(req: ChatStreamRequest):
 async def index():
     html_path = Path(__file__).parent.parent / "web" / "index.html"
     if html_path.exists():
-        return HTMLResponse(html_path.read_text())
+        html = html_path.read_text()
+        # Deployment mode is injected before any style/script runs so the
+        # presentation UI never flashes active-mode controls.
+        if _app_mode != "active":
+            html = html.replace(
+                'window.JLENS_MODE = "active"',
+                f'window.JLENS_MODE = "{_app_mode}"',
+                1,
+            )
+        return HTMLResponse(html)
     return HTMLResponse("<h1>J-Space Visualizer</h1><p>web/index.html not found</p>")
 
 

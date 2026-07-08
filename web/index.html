@@ -3,6 +3,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>J-Space Visualizer — Qwen3.6-27B</title>
+<script>
+  /* Deployment mode, decided at deployment time (JLENS_MODE env var on the
+     server): "active" is the full app; "presentation" is a strictly
+     read-only viewer for saved sessions and their markups. The server
+     rewrites this value when serving the page; the class is applied before
+     any CSS so presentation deployments never flash active-mode controls. */
+  window.JLENS_MODE = "active";
+  document.documentElement.classList.toggle('presentation', window.JLENS_MODE === 'presentation');
+</script>
 <style>
   :root {
     --paper-bg: #fffff6;
@@ -181,9 +190,15 @@
   }
   #stop-btn:hover { background: #e87900; border-color: #e87900; }
   #stop-btn:active { transform: scale(0.96); }
-  /* clear + settings + session buttons — fixed controls, matching send-btn style */
+  /* clear + settings + session buttons — floating controls, matching
+     send-btn style. The bottom-right buttons live in a flex row
+     (#corner-actions) so hiding one (e.g. Clear in presentation mode)
+     automatically slides the rest into the corner. */
+  #corner-actions {
+    position: fixed; right: 16px; bottom: 16px; z-index: 10;
+    display: flex; gap: 14px;
+  }
   #clear-btn, #settings-btn, #sessions-btn {
-    position: fixed; bottom: 16px; z-index: 10;
     height: 44px; border: 1px solid var(--border-2); border-radius: 22px;
     font-size: 14px; font-weight: 500; cursor: pointer;
     display: flex; align-items: center; gap: 6px;
@@ -191,11 +206,11 @@
     box-shadow: 0 6px 20px rgba(60,50,30,0.14), 0 2px 6px rgba(60,50,30,0.08);
     transition: background 0.12s, transform 0.1s;
   }
-  #clear-btn { right: 16px; padding: 0 18px; justify-content: center; }
-  #sessions-btn { right: 94px; padding: 0 18px; justify-content: center; }
+  #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; }
   #clear-btn:hover, #settings-btn:hover, #sessions-btn:hover { background: var(--surface); }
   #settings-btn {
-    left: 16px; width: 44px; padding: 0;
+    position: fixed; bottom: 16px; left: 16px; z-index: 10;
+    width: 44px; padding: 0;
     border-radius: 50%; justify-content: center;
   }
   #clear-btn:active, #settings-btn:active, #sessions-btn:active { transform: scale(0.97); }
@@ -615,6 +630,22 @@
   #detail .readout .row.top1 .tok,
   #detail .readout .row.top1 .score-value { color: var(--highlight-orange); font-weight: 600; }
   #detail .readout .row.top1 .bar > div { background: var(--highlight-orange); }
+  /* Signature, bottom center of the detail card. --text-2 (#6b6450) is
+     the midpoint of the token text color (--text) and the ID color
+     (--text-3). */
+  #detail .signature {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.02em;
+  }
+  #detail .signature a {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  #detail .signature a:hover { text-decoration: underline; }
   #detail .close {
     position: absolute; top: 8px; right: 10px;
     border: none; background: transparent; color: var(--text-3);
@@ -704,6 +735,20 @@
   .status { color: var(--text-3); font-size: 13px; }
   .loading { color: var(--accent); }
   .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
+
+  /* ===== Presentation mode: read-only viewer ===== */
+  /* No input box, no clearing, no settings, no saving/deleting sessions,
+     no adding/removing markups. Detail cards, saved-session loading, and
+     markup jumping stay available. */
+  html.presentation #chat-input,
+  html.presentation #clear-btn,
+  html.presentation #settings-btn,
+  html.presentation #save-current-session,
+  html.presentation .session-delete,
+  html.presentation .markup-delete,
+  html.presentation #detail .markup-save {
+    display: none !important;
+  }
 </style>
 </head><body>
 <div id="app">
@@ -739,8 +784,10 @@
   <button id="settings-btn" title="Generation settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
-  <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
-  <button id="clear-btn" title="Clear conversation">Clear</button>
+  <div id="corner-actions">
+    <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
+    <button id="clear-btn" title="Clear conversation">Clear</button>
+  </div>
   <div id="sessions-menu" aria-live="polite">
     <div class="sessions-head">
       <span>Saved Sessions</span>
@@ -784,6 +831,12 @@
 <script>
 const API = '';
 const $ = (id) => document.getElementById(id);
+
+// Deployment mode (see the head script; the server injects the value).
+// Read dynamically so the mode can also be toggled at runtime in tests.
+function isPresentation() {
+  return window.JLENS_MODE === 'presentation';
+}
 
 // ----- State -----
 let state = {
@@ -850,12 +903,17 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
       // the full state regardless — this trim only bounds localStorage.)
       const prefills = persistable.snapshots.filter(sn => sn.token_idx === -1);
       let toks = persistable.snapshots.filter(sn => sn.token_idx !== -1);
+      const fullTokCount = toks.length;
       while (json.length > 4_200_000 && toks.length > 8) {
         toks = toks.slice(Math.ceil(toks.length / 4));
         persistable.snapshots = prefills.concat(toks)
           .sort((a, b) => a.snapshot_id - b.snapshot_id);
         json = JSON.stringify(persistable);
       }
+      // Mark lossy payloads so the next page load knows to upgrade from
+      // the full-fidelity server autosave instead of silently carrying
+      // (and eventually re-saving) a hollowed-out conversation.
+      if (toks.length < fullTokCount) persistable.trimmed = true;
     }
   }
   return persistable;
@@ -981,7 +1039,28 @@ function loadSavedState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
-    restoreConversation(JSON.parse(raw));
+    const saved = JSON.parse(raw);
+    if (!restoreConversation(saved)) return;
+    if (saved.trimmed) {
+      // The localStorage copy was quota-trimmed (middle snapshots dropped).
+      // The server autosave keeps the last completed conversation at full
+      // fidelity — if it is the SAME conversation, upgrade to it so the
+      // full data survives reloads (and future manual saves aren't lossy).
+      fetch(API + '/api/sessions/autosave-latest.json')
+        .then(r => (r.ok ? r.json() : null))
+        .then((full) => {
+          if (!full) return;
+          const sameConversation = full.preview === saved.preview &&
+            (full.messages || []).length === (saved.messages || []).length;
+          if (sameConversation &&
+              (full.snapshots || []).length > state.snapshots.length &&
+              restoreConversation(full)) {
+            saveState();
+            renderAll();
+          }
+        })
+        .catch(() => {});
+    }
   } catch (e) {
     console.warn('loadSavedState failed:', e);
   }
@@ -1088,17 +1167,22 @@ async function loadInfo() {
 function updateFloatingOffsets() {
   const input = $('chat-input');
   if (!input) return;
-  const rect = input.getBoundingClientRect();
-  const inputStackHeight = Math.max(0, window.innerHeight - rect.top);
+  // With the input box hidden (presentation mode) its rect is all zeros,
+  // which would push the detail card off-screen — anchor 16px from the
+  // bottom instead.
+  const hidden = getComputedStyle(input).display === 'none';
+  const inputStackHeight = hidden
+    ? 16
+    : Math.max(0, window.innerHeight - input.getBoundingClientRect().top);
   const detailBottom = Math.ceil(inputStackHeight + detailClearanceGap());
   document.documentElement.style.setProperty('--detail-bottom', detailBottom + 'px');
 }
 
-function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail' } = {}) {
+function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail', ids = null } = {}) {
   let blockerTop = window.innerHeight;
   let detailVisible = false;
   let blockerVisible = false;
-  ['chat-input', 'detail', 'settings-btn', 'clear-btn'].forEach((id) => {
+  (ids || ['chat-input', 'detail', 'settings-btn', 'clear-btn', 'sessions-btn']).forEach((id) => {
     if (id === 'detail' && ignoreDetail) return;
     const el = $(id);
     if (!el) return;
@@ -1125,8 +1209,15 @@ function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail' } = {})
 function updateScrollClearance(opts = {}) {
   updateFloatingOffsets();
   const root = document.documentElement;
-  const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always' });
-  const chatClearance = bottomStackClearance(opts);
+  // In presentation mode the grid runs to the true bottom of the screen —
+  // the corner buttons float over the chat column, not the grid — so only
+  // an open detail card creates grid clearance there.
+  const gridIds = isPresentation() ? ['detail'] : null;
+  const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always', ids: gridIds });
+  // The chat also always gets the breathing gap above whatever floats at
+  // the bottom (input box, or just the corner buttons in presentation
+  // mode) — flush contact reads as the bubbles running into the buttons.
+  const chatClearance = bottomStackClearance({ ...opts, gapMode: 'always' });
   root.style.setProperty('--grid-bottom-clearance', gridClearance + 'px');
   root.style.setProperty('--chat-bottom-clearance', chatClearance + 'px');
 }
@@ -1253,8 +1344,11 @@ function closeDetailCard() {
   dismissDetailCard();
   updateAutoFollowUI();
   renderMarkups();
-  renderChat({ scrollToBottom: state.selectedSnapshotId === null });
-  renderGrid();
+  // Closing the card must not move either pane: re-render in place. (If a
+  // stream is running, the next snapshot's renderAll resumes follow mode
+  // by itself.)
+  renderChat();
+  renderGrid({ keepScroll: true });
   renderTimeline();
 }
 
@@ -2117,6 +2211,7 @@ function markupBlockWord(pos, layer) {
 }
 
 function addMarkup(pos, layer) {
+  if (isPresentation()) return;
   if (markupIndexFor(pos, layer) !== -1) return;
   state.markups.push({
     pos, layer,
@@ -2128,6 +2223,7 @@ function addMarkup(pos, layer) {
 }
 
 function removeMarkup(index) {
+  if (isPresentation()) return;
   state.markups.splice(index, 1);
   saveState();
   renderMarkups();
@@ -2158,26 +2254,28 @@ function renderMarkups() {
     btn.textContent = word.trim() || '·';
     btn.title = `${JSON.stringify(word)} · position ${m.pos} (${JSON.stringify(state.gridTokenStrs[m.pos] || '')}) · layer L${m.layer}`;
     btn.onclick = () => selectCell(m.pos, m.layer);
-    const del = document.createElement('button');
-    del.className = 'markup-delete';
-    del.type = 'button';
-    del.title = 'Remove markup';
-    del.setAttribute('aria-label', 'Remove markup');
-    del.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M3 6h18"></path>
-        <path d="M8 6V4h8v2"></path>
-        <path d="M19 6l-1 14H6L5 6"></path>
-        <path d="M10 11v5"></path>
-        <path d="M14 11v5"></path>
-      </svg>
-    `;
-    del.onclick = (e) => {
-      e.stopPropagation();
-      removeMarkup(i);
-    };
     item.appendChild(btn);
-    item.appendChild(del);
+    if (!isPresentation()) {
+      const del = document.createElement('button');
+      del.className = 'markup-delete';
+      del.type = 'button';
+      del.title = 'Remove markup';
+      del.setAttribute('aria-label', 'Remove markup');
+      del.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18"></path>
+          <path d="M8 6V4h8v2"></path>
+          <path d="M19 6l-1 14H6L5 6"></path>
+          <path d="M10 11v5"></path>
+          <path d="M14 11v5"></path>
+        </svg>
+      `;
+      del.onclick = (e) => {
+        e.stopPropagation();
+        removeMarkup(i);
+      };
+      item.appendChild(del);
+    }
     wrap.appendChild(item);
   });
 }
@@ -2207,17 +2305,20 @@ function renderDetail() {
   close.onclick = () => closeDetailCard();
   col.appendChild(close);
   // Save-as-markup button, top-right (left of the close button).
-  const mark = document.createElement('button');
-  mark.className = 'markup-save';
-  mark.type = 'button';
-  const alreadyMarked = markupIndexFor(pos, layer) !== -1;
-  mark.textContent = alreadyMarked ? 'Marked' : 'Markup';
-  mark.disabled = alreadyMarked;
-  mark.title = alreadyMarked
-    ? 'This block is already saved as a markup'
-    : 'Save this block as a markup';
-  if (!alreadyMarked) mark.onclick = () => addMarkup(pos, layer);
-  col.appendChild(mark);
+  // Presentation mode is read-only: no markup creation.
+  if (!isPresentation()) {
+    const mark = document.createElement('button');
+    mark.className = 'markup-save';
+    mark.type = 'button';
+    const alreadyMarked = markupIndexFor(pos, layer) !== -1;
+    mark.textContent = alreadyMarked ? 'Marked' : 'Markup';
+    mark.disabled = alreadyMarked;
+    mark.title = alreadyMarked
+      ? 'This block is already saved as a markup'
+      : 'Save this block as a markup';
+    if (!alreadyMarked) mark.onclick = () => addMarkup(pos, layer);
+    col.appendChild(mark);
+  }
   const h3 = document.createElement('h3');
   h3.textContent = 'Detail';
   col.appendChild(h3);
@@ -2228,6 +2329,7 @@ function renderDetail() {
   const cell = state.gridRows[pos] && state.gridRows[pos][layer];
   if (!cell) {
     col.appendChild(document.createTextNode('No readout at this position.'));
+    appendDetailSignature(col);
     col.classList.add('visible');
     return;
   }
@@ -2264,7 +2366,15 @@ function renderDetail() {
   });
   readout.appendChild(body);
   col.appendChild(readout);
+  appendDetailSignature(col);
   col.classList.add('visible');
+}
+
+function appendDetailSignature(col) {
+  const sig = document.createElement('div');
+  sig.className = 'signature';
+  sig.innerHTML = 'Designed by <a href="https://wezzard.com" target="_blank" rel="noopener">WeZZard</a>';
+  col.appendChild(sig);
 }
 
 // ----- Timeline rendering -----
@@ -2494,6 +2604,7 @@ function resizeChatInput() {
 }
 
 async function sendMessage() {
+  if (isPresentation()) return;
   const content = chatInputValue().trim();
   if (!content || state.streaming) return;
 
@@ -2684,6 +2795,7 @@ function closeSessionsMenu() {
 }
 
 async function saveCurrentSession() {
+  if (isPresentation()) return;
   if (state.messages.length === 0 || state.streaming) return;
   const btn = $('save-current-session');
   const oldText = btn.textContent;
@@ -2784,6 +2896,7 @@ document.addEventListener('click', (e) => {
   closeSessionsMenu();
 });
 $('clear-btn').onclick = () => {
+  if (isPresentation()) return;
   if (state.streaming) return;  // don't clear mid-stream
   if (state.messages.length === 0) return;
   if (!confirm('Clear the conversation? This cannot be undone.')) return;
@@ -2792,7 +2905,7 @@ $('clear-btn').onclick = () => {
 };
 
 // ----- Settings modal -----
-$('settings-btn').onclick = () => openSettingsModal();
+$('settings-btn').onclick = () => { if (!isPresentation()) openSettingsModal(); };
 $('settings-ok').onclick = commitSettings;
 $('settings-cancel').onclick = cancelSettings;
 // Click on the dimming backdrop (outside the dialog) cancels.
