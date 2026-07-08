@@ -516,8 +516,8 @@ async def chat_stream(req: ChatStreamRequest):
                 if temp == 0:
                     next_tok = int(mx.argmax(lf).tolist())
                 else:
-                    probs = mx.softmax(lf / temp)
-                    next_tok = int(mx.random.categorical(probs).tolist())
+                    # categorical() takes unnormalized logits, NOT probabilities.
+                    next_tok = int(mx.random.categorical(lf / temp).tolist())
                 del logits, lf
 
                 snapshot_id += 1
@@ -549,8 +549,8 @@ async def chat_stream(req: ChatStreamRequest):
                     if temp == 0:
                         new_next_tok = int(mx.argmax(lf).tolist())
                     else:
-                        probs = mx.softmax(lf / temp)
-                        new_next_tok = int(mx.random.categorical(probs).tolist())
+                        # categorical() takes unnormalized logits, NOT probabilities.
+                        new_next_tok = int(mx.random.categorical(lf / temp).tolist())
                     del logits, lf
 
                     tok_str = tok.decode([next_tok])

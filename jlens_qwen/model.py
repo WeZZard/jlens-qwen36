@@ -230,7 +230,10 @@ class MLXLensModel:
         def _sample(lf: mx.array) -> int:
             if temp == 0:
                 return int(mx.argmax(lf).tolist())
-            return int(mx.random.categorical(mx.softmax(lf / temp)).tolist())
+            # mx.random.categorical takes UNNORMALIZED logits (it applies the
+            # softmax itself). Feeding it softmax probabilities compresses the
+            # distribution to near-uniform over the 248k vocab -> gibberish.
+            return int(mx.random.categorical(lf / temp).tolist())
 
         if intervene_layer is None or intervene_fn is None:
             # Fast path: cached incremental decoding (O(T) instead of O(T^2)).
