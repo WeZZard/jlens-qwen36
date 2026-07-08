@@ -299,6 +299,10 @@ class ChatStreamRequest(BaseModel):
     max_tokens: int = 32
     temp: float = 0.0
     top_n: int = 10
+    # Qwen3.x thinking: disabled by default for the demo — the <think>
+    # block burns hundreds of tokens before the answer. The J-lens stays
+    # exact either way (this only changes the prompt template).
+    enable_thinking: bool = False
 
 
 
@@ -630,7 +634,7 @@ async def chat_stream(req: ChatStreamRequest):
                 msg = eff_messages[msg_idx]
                 # Apply the template for messages[0..msg_idx] without generation prompt.
                 prefix_msgs = [{"role": m.role, "content": m.content} for m in eff_messages[:msg_idx + 1]]
-                formatted_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=False)
+                formatted_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=False, enable_thinking=req.enable_thinking)
                 if isinstance(formatted_ids, list):
                     formatted_ids_list = formatted_ids
                 else:
@@ -680,7 +684,7 @@ async def chat_stream(req: ChatStreamRequest):
                 # Apply the template with add_generation_prompt=True to get
                 # the generation prefix (ends with <|im_start|>assistant\n...).
                 prefix_msgs = [{"role": m.role, "content": m.content} for m in eff_messages[:-1]]
-                gen_prefix_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=True)
+                gen_prefix_ids = tok.apply_chat_template(prefix_msgs, add_generation_prompt=True, enable_thinking=req.enable_thinking)
                 if isinstance(gen_prefix_ids, list):
                     gen_prefix_list = gen_prefix_ids
                 else:
