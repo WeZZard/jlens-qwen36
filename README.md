@@ -147,10 +147,12 @@ Memory:
 
 ## Quick start
 
-### Option A: use the pre-fitted lens (2 minutes)
+### Option A: use the pre-fitted lens (5 minutes)
 
-A demo-quality J-lens (12 prompts, 23 late layers) is available as a
-GitHub release asset. Download it and start the server:
+The full-depth v0.2 lens (20 prompts, all 63 source layers,
+intervention-grade: corrected chain indexing + g/β gate paths) is
+published as a GitHub release. It ships as two parts (GitHub caps
+release files at 2 GB). Download, reassemble, and start the server:
 
 ```bash
 # 1. Clone
@@ -160,10 +162,14 @@ cd jlens-qwen36
 # 2. Install dependencies
 uv sync
 
-# 3. Download the pre-fitted lens (1.1 GB)
-gh release download v0.1-demo --repo WeZZard/jlens-qwen36 \
-  --pattern '*.npz' --dir data/lens/
-mv data/lens/jlens-qwen3.6-27b-4bit-12prompt-23layer.npz data/lens/lens.npz
+# 3. Download the pre-fitted lens (3.3 GB, two parts)
+gh release download v0.2-fulldepth --repo WeZZard/jlens-qwen36 \
+  --pattern '*.npz.part-*' --dir data/lens/
+cat data/lens/jlens-qwen3.6-27b-4bit-20prompt-63layer.npz.part-* \
+  > data/lens/lens.npz
+rm data/lens/*.npz.part-*
+# integrity: shasum -a 256 data/lens/lens.npz
+# expect 0a5e0917f2747683eff05d2554d59ca5f25452420165fc27567ea5cfcbe6e9d7
 
 # 4. Launch the visualizer
 uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
@@ -171,13 +177,14 @@ uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
 # 5. Open http://127.0.0.1:8765/ in a browser
 ```
 
-**What you get:** the slice grid, generation, and interventions all
-work. Readouts are interpretable on factual prompts (currency→euro,
-Italy as intermediate concept). Mid-layer noise and weak interventions —
-see the Status section above.
+**What you get:** the slice grid, chat streaming with per-token
+workspace readouts at all 63 layers, generation, and interventions.
+Readouts are interpretable on factual prompts (currency→euro, with
+Italy as the intermediate concept visible from L24). Residual mid-layer
+noise — see the Status section above.
 
-**A full-depth version is coming.** A 20-prompt, all-64-layer lens is
-being fitted and will be published as `v0.2-fulldepth` once validated.
+The older `v0.1-demo` release (12 prompts, 23 late layers) predates the
+chain-indexing fix and the g/β gate paths — prefer v0.2.
 
 ### Option B: fit your own lens (hours)
 
