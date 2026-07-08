@@ -25,18 +25,38 @@ from mlx_lm.models.gated_delta import gated_delta_ops, gated_delta_update
 
 _PATCHED = False
 _CHECKPOINT_APPLIED = False
+_INFERENCE_KERNEL = False
+
+
+def set_inference_mode(enabled: bool = True) -> None:
+    """Route ``gated_delta_update`` back to the stock fused kernel.
+
+    The ops-forcing patch exists so autograd can differentiate the
+    recurrence during fitting. Cached generation (StreamSession) needs no
+    gradients and the fused kernel is ~20x faster on prefill, so inference
+    contexts flip this on. Fitting processes never call this; the default
+    (False) preserves fit semantics.
+    """
+    global _INFERENCE_KERNEL
+    _INFERENCE_KERNEL = enabled
 
 
 def _patched_gated_delta_update(
     q, k, v, a, b, A_log, dt_bias, state=None, mask=None, use_kernel=True
 ):
-    """Drop-in replacement for ``gated_delta_update`` that always uses the
-    ops-based differentiable implementation (ignores ``use_kernel``).
+    """Drop-in replacement for ``gated_delta_update`` that uses the
+    ops-based differentiable implementation (ignores ``use_kernel``),
+    unless inference mode is enabled (see ``set_inference_mode``).
 
     Mirrors the pre-processing in the original ``gated_delta_update``: compute
     ``beta = sigmoid(b)`` and ``g = compute_g(A_log, a, dt_bias)``, then call
     ``gated_delta_ops``.
     """
+    if _INFERENCE_KERNEL and use_kernel:
+        # Stock dispatch (fused Metal kernel when on GPU).
+        return gated_delta_update(
+            q, k, v, a, b, A_log, dt_bias, state, mask, use_kernel
+        )
     from mlx_lm.models.gated_delta import compute_g, gated_delta_ops
 
     beta = mx.sigmoid(b)
@@ -102,4 +122,4 @@ def patch_gdn() -> None:
     _PATCHED = True
 
 
-__all__ = ["patch_gdn"]
+__all__ = ["patch_gdn", "set_inference_mode"]

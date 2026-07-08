@@ -350,6 +350,11 @@ async def chat_stream(req: ChatStreamRequest):
 
             tok = _model.tokenizer
 
+            # One cached decoding session for the whole stream: each message
+            # (and each generated token) is fed as a delta chunk, so the
+            # per-step cost is O(chunk) instead of O(total sequence).
+            session = _model.make_stream(capture_layers=layers)
+
             # We build the formatted token sequence using the chat template.
             # For each message, the template wraps it as:
             #   <|im_start|>{role}\n{content}<|im_end|>\n
@@ -426,22 +431,22 @@ async def chat_stream(req: ChatStreamRequest):
                 content_start, content_end = content_positions_for(formatted_ids_list, msg.role, None)
                 content_ids = formatted_ids_list[content_start:content_end]
 
-                # The input_ids for this step is the full formatted sequence
-                # up to and including this message's <|im_end|>\n.
-                new_input_ids = mx.array([formatted_ids_list])
-                # But we only want readouts at the NEW content positions
-                # (relative to the full sequence).
+                # Feed only the DELTA since what the session has consumed
+                # (chat-template prefixes are extend-only for fixed priors).
                 start_pos = content_start
                 end_pos = content_end
                 n_new = end_pos - start_pos
                 if n_new <= 0:
                     continue
-
-                final, acts = _model.forward(new_input_ids, capture_layers=layers)
-                for l in layers:
-                    mx.eval(acts[l])
+                chunk_start = session.n_consumed
+                delta = formatted_ids_list[chunk_start:]
+                if not delta:
+                    continue
+                _, acts = session.extend(delta)
                 positions = list(range(start_pos, end_pos))
-                row = _readout_at_positions(acts, positions, layers, top_n)
+                # acts cover only the delta chunk -> chunk-local indices.
+                local = [p - chunk_start for p in positions]
+                row = _readout_at_positions(acts, local, layers, top_n)
                 new_token_strs = [tok.decode([t]) for t in content_ids]
 
                 snapshot_id += 1
@@ -455,7 +460,7 @@ async def chat_stream(req: ChatStreamRequest):
                     "token_strs": new_token_strs,
                     "grid": {"layers": layers, "positions": positions, "cells": row},
                 })
-                del acts, final
+                del acts
                 await asyncio.sleep(0)
                 if msg.role == "assistant" and msg.content:
                     yield _sse("done", {"msg_idx": msg_idx, "n_tokens": n_new, "historical": True})
@@ -472,20 +477,18 @@ async def chat_stream(req: ChatStreamRequest):
                 else:
                     gen_prefix_list = gen_prefix_ids.tolist() if hasattr(gen_prefix_ids, 'tolist') else list(gen_prefix_ids)
 
-                input_ids = mx.array([gen_prefix_list])
                 global_pos = len(gen_prefix_list)
 
-                # Prefill snapshot: readout at the last position (frontier).
-                final, acts = _model.forward(input_ids, capture_layers=layers)
-                for l in layers:
-                    mx.eval(acts[l])
+                # Feed the generation-prefix delta; readout at the frontier.
+                chunk_start = session.n_consumed
+                delta = gen_prefix_list[chunk_start:]
+                logits, acts = session.extend(delta) if delta else (None, {})
                 prefill_positions = [global_pos - 1] if global_pos > 0 else []
                 prefill_row = _readout_at_positions(
-                    acts, prefill_positions, layers, top_n
-                ) if prefill_positions else {l: {"top_ids": [], "top_tokens": [], "top_scores": []} for l in layers}
+                    acts, [len(delta) - 1], layers, top_n
+                ) if (prefill_positions and delta) else {l: {"top_ids": [], "top_tokens": [], "top_scores": []} for l in layers}
 
-                logits = _model.unembed(final[:, -1, :])
-                lf = logits[0].astype(mx.float32)
+                lf = logits.astype(mx.float32)
                 if temp == 0:
                     next_tok = int(mx.argmax(lf).tolist())
                 else:
@@ -504,7 +507,7 @@ async def chat_stream(req: ChatStreamRequest):
                     "token_strs": [],
                     "grid": {"layers": layers, "positions": prefill_positions, "cells": prefill_row},
                 })
-                del acts, final
+                del acts
                 await asyncio.sleep(0)
 
                 n_gen = 0
@@ -514,14 +517,11 @@ async def chat_stream(req: ChatStreamRequest):
                     # Block here if the client has paused generation.
                     await pause_event.wait()
 
-                    input_ids = mx.concatenate([input_ids, mx.array([[next_tok]])], axis=1)
+                    # One-token cached step: acts cover just this token.
                     new_pos = global_pos
-                    final, acts = _model.forward(input_ids, capture_layers=layers)
-                    for l in layers:
-                        mx.eval(acts[l])
-                    row = _readout_at_positions(acts, [new_pos], layers, top_n)
-                    logits = _model.unembed(final[:, -1, :])
-                    lf = logits[0].astype(mx.float32)
+                    logits, acts = session.extend([next_tok])
+                    row = _readout_at_positions(acts, [0], layers, top_n)
+                    lf = logits.astype(mx.float32)
                     if temp == 0:
                         new_next_tok = int(mx.argmax(lf).tolist())
                     else:
@@ -541,7 +541,7 @@ async def chat_stream(req: ChatStreamRequest):
                         "pos": new_pos,
                         "grid": {"layers": layers, "positions": [new_pos], "cells": row},
                     })
-                    del acts, final
+                    del acts
                     global_pos += 1
                     n_gen += 1
                     next_tok = new_next_tok

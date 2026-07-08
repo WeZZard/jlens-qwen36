@@ -225,30 +225,97 @@ class MLXLensModel:
         """
         input_ids = self.encode(prompt, max_length=512)
         generated: list[int] = []
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
 
+        def _sample(lf: mx.array) -> int:
+            if temp == 0:
+                return int(mx.argmax(lf).tolist())
+            return int(mx.random.categorical(mx.softmax(lf / temp)).tolist())
+
+        if intervene_layer is None or intervene_fn is None:
+            # Fast path: cached incremental decoding (O(T) instead of O(T^2)).
+            session = self.make_stream()
+            logits, _ = session.extend(input_ids[0].tolist())
+            for _ in range(max_tokens):
+                next_tok = _sample(logits.astype(mx.float32))
+                generated.append(next_tok)
+                if eos_id is not None and next_tok == eos_id:
+                    break
+                logits, _ = session.extend([next_tok])
+            return self.tokenizer.decode(generated), generated
+
+        # Intervention path: uncached full re-forward per step (the
+        # intervention patches a mid-stack layer, which the cached step
+        # loop does not support yet).
         for step in range(max_tokens):
-            if intervene_layer is not None and intervene_fn is not None and (
-                step == 0 or intervene_each_step
-            ):
+            if step == 0 or intervene_each_step:
                 final = self.forward_with_intervention(
                     input_ids, intervene_layer, intervene_positions, intervene_fn
                 )
             else:
                 final, _ = self.forward(input_ids)
-            logits = self.unembed(final[:, -1, :])
-            lf = logits[0].astype(mx.float32)
-            if temp == 0:
-                next_tok = int(mx.argmax(lf).tolist())
-            else:
-                probs = mx.softmax(lf / temp)
-                next_tok = int(mx.random.categorical(probs).tolist())
+            next_tok = _sample(self.unembed(final[:, -1, :])[0].astype(mx.float32))
             generated.append(next_tok)
             input_ids = mx.concatenate([input_ids, mx.array([[next_tok]])], axis=1)
-            if hasattr(self.tokenizer, "eos_token_id") and next_tok == self.tokenizer.eos_token_id:
+            if eos_id is not None and next_tok == eos_id:
                 break
 
         text = self.tokenizer.decode(generated)
         return text, generated
+
+    def make_stream(self, capture_layers=None) -> "StreamSession":
+        """Create a cached incremental-decoding session (see StreamSession)."""
+        return StreamSession(self, capture_layers=capture_layers)
+
+
+class StreamSession:
+    """Cached incremental decoding with per-layer residual capture.
+
+    Uses the model's own hybrid caches (KV for the 16 full-attention
+    layers, conv+recurrent state for the 48 GDN layers) so each new chunk
+    costs one pass over its own tokens instead of re-running the whole
+    sequence — O(T) total decode vs the O(T^2) of repeated
+    ``MLXLensModel.forward`` calls. GDN prefill/steps run the stock fused
+    kernel (``patch_gdn.set_inference_mode``); no gradients are available
+    on this path, which is fine — readouts only need activations.
+    """
+
+    def __init__(self, model: MLXLensModel, capture_layers=None) -> None:
+        from mlx_lm.models.cache import make_prompt_cache
+        from .patch_gdn import set_inference_mode
+
+        set_inference_mode(True)
+        self._model = model
+        self.caches = make_prompt_cache(model._model)
+        self.capture = sorted(set(capture_layers or []))
+        self.n_consumed = 0
+
+    def extend(self, ids) -> tuple[mx.array, dict[int, mx.array]]:
+        """Feed token ids (a Python list) after the tokens already consumed.
+
+        Returns ``(logits, acts)`` where ``logits`` is the last position's
+        vocab logits ``[vocab]`` and ``acts[l]`` is the residual after
+        layer ``l`` for the new tokens only, ``[1, len(ids), D]``.
+        """
+        from mlx_lm.models.base import create_attention_mask, create_ssm_mask
+
+        m = self._model
+        text = m._text_module
+        hidden = text.embed_tokens(mx.array([list(ids)]))
+        fa_mask = create_attention_mask(hidden, self.caches[text.fa_idx])
+        ssm_mask = create_ssm_mask(hidden, self.caches[text.ssm_idx])
+
+        acts: dict[int, mx.array] = {}
+        for i, (layer, c) in enumerate(zip(m.layers, self.caches)):
+            mask = ssm_mask if layer.is_linear else fa_mask
+            hidden = layer(hidden, mask=mask, cache=c)
+            if i in self.capture:
+                acts[i] = hidden
+        final = text.norm(hidden)
+        logits = m.unembed(final[:, -1, :])[0]
+        mx.eval(logits, *acts.values())
+        self.n_consumed += len(ids)
+        return logits, acts
 
 
 def load(model_id: str = "mlx-community/Qwen3.6-27B-4bit") -> MLXLensModel:
@@ -257,4 +324,4 @@ def load(model_id: str = "mlx-community/Qwen3.6-27B-4bit") -> MLXLensModel:
     return MLXLensModel(model, tokenizer)
 
 
-__all__ = ["MLXLensModel", "load"]
+__all__ = ["MLXLensModel", "StreamSession", "load"]
