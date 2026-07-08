@@ -84,6 +84,17 @@ def _record_layers() -> list[int]:
     return sorted(set(layers) | {_model.n_layers - 1})
 
 
+_tok_str_cache: dict[int, str] = {}
+
+
+def _tok_str(tid: int) -> str:
+    s = _tok_str_cache.get(tid)
+    if s is None:
+        s = _model.tokenizer.decode([tid])
+        _tok_str_cache[tid] = s
+    return s
+
+
 def _readout_at_positions(
     acts: dict[int, mx.array],
     positions: list[int],
@@ -92,34 +103,47 @@ def _readout_at_positions(
 ) -> dict[int, dict]:
     """Compute top-n J-lens tokens at `positions` for each of `layers`.
 
+    Batched across layers: ALL transported vectors go through ONE
+    final_norm + unembed + argsort ([L, P, vocab]) instead of one per
+    layer. This reads the ~636MB quantized lm_head once per call instead
+    of |layers| times (~40GB of traffic per token at 64 layers) and does
+    one GPU->CPU sync instead of two per layer. Identical values.
+
     Returns {layer: {"top_ids": [[int]*n]*len(positions),
                      "top_tokens": [[str]*n]*len(positions),
                      "top_scores": [[float]*n]*len(positions)}}.
     """
-    out: dict[int, dict] = {}
-    pos_idx = mx.array(positions)
-    for layer in layers:
-        # Slice to the requested positions BEFORE transport/unembed: the
-        # readout only needs |positions| rows, not the whole sequence
-        # ([P, D] @ [D, D] + [P, vocab] instead of [S, ...] — S can be
-        # hundreds of positions in a chat).
-        h = acts[layer][0][pos_idx].astype(mx.float32)  # [P, D]
-        if _lens is not None and layer in _lens.jacobians:
-            h = _lens.transport(h, layer)
-        logits = _model.unembed(_model.final_norm(h))  # [P, vocab]
-        lf = logits.astype(mx.float32)
-        top_ids, top_tokens, top_scores = [], [], []
-        for i in range(len(positions)):
-            v = lf[i]
-            top_mx = mx.argsort(v)[-top_n:][::-1]
-            vals_mx = v[top_mx]
-            top = [int(t) for t in top_mx.tolist()]
-            scores = [float(s) for s in vals_mx.tolist()]
-            top_ids.append(top)
-            top_scores.append(scores)
-            top_tokens.append([_model.tokenizer.decode([t]) for t in top])
-        out[layer] = {"top_ids": top_ids, "top_tokens": top_tokens, "top_scores": top_scores}
-        del logits, lf
+    out: dict[int, dict] = {l: {"top_ids": [], "top_tokens": [], "top_scores": []}
+                            for l in layers}
+    if not positions:
+        return out
+
+    # Chunk positions so the [L, P_chunk, vocab] logits tensor stays small
+    # (64 layers x 8 positions x 248k vocab fp32 ~= 0.5GB).
+    CHUNK = 8
+    for c0 in range(0, len(positions), CHUNK):
+        chunk = positions[c0:c0 + CHUNK]
+        pos_idx = mx.array(chunk)
+        hs = []
+        for layer in layers:
+            h = acts[layer][0][pos_idx].astype(mx.float32)  # [P, D]
+            if _lens is not None and layer in _lens.jacobians:
+                h = _lens.transport(h, layer)
+            hs.append(h)
+        hstack = mx.stack(hs)  # [L, P, D]
+        logits = _model.unembed(_model.final_norm(hstack)).astype(mx.float32)
+        order = mx.argsort(logits, axis=-1)[..., -top_n:][..., ::-1]  # [L, P, n]
+        vals = mx.take_along_axis(logits, order, axis=-1)
+        ids_l = order.tolist()
+        vals_l = vals.tolist()
+        for li, layer in enumerate(layers):
+            o = out[layer]
+            for pi in range(len(chunk)):
+                ids = [int(t) for t in ids_l[li][pi]]
+                o["top_ids"].append(ids)
+                o["top_scores"].append([float(s) for s in vals_l[li][pi]])
+                o["top_tokens"].append([_tok_str(t) for t in ids])
+        del logits, order, vals
     return out
 
 
