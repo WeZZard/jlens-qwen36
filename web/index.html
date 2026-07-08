@@ -214,7 +214,9 @@
   }
   #sessions-menu.visible { display: flex; }
   #sessions-menu .sessions-head {
-    padding: 12px 14px;
+    padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
     font-size: 12px; font-weight: 700; color: var(--text-2);
     text-transform: uppercase; letter-spacing: 0.04em;
     border-bottom: 1px solid var(--border);
@@ -264,16 +266,21 @@
   #sessions-empty {
     padding: 18px 12px; color: var(--text-3); font-size: 13px; text-align: center;
   }
+  /* Small save button at the top right of the menu title. */
   #save-current-session {
-    margin: 8px;
+    flex-shrink: 0;
     border: 1px solid var(--highlight-orange);
-    border-radius: var(--radius-sm);
+    border-radius: 999px;
     background: var(--highlight-orange);
     color: #ffffff;
-    height: 38px;
-    font: inherit; font-weight: 600;
+    height: 24px; padding: 0 12px;
+    font: inherit; font-size: 11px; font-weight: 600;
+    letter-spacing: normal; text-transform: none;
     cursor: pointer;
+    transition: background 0.12s, transform 0.1s;
   }
+  #save-current-session:hover { background: #e87900; }
+  #save-current-session:active { transform: scale(0.96); }
   #save-current-session:disabled {
     opacity: 0.55;
     cursor: default;
@@ -614,6 +621,85 @@
     font-size: 18px; cursor: pointer; line-height: 1; padding: 2px 6px; border-radius: 4px;
   }
   #detail .close:hover { color: var(--text); background: var(--border); }
+  /* Save-as-markup button, top-right of the detail card (left of ×). */
+  #detail .markup-save {
+    position: absolute; top: 8px; right: 42px;
+    height: 24px; padding: 0 12px;
+    border: 1px solid var(--highlight-orange);
+    border-radius: 999px;
+    background: #ffffff; color: var(--highlight-orange);
+    font: inherit; font-size: 11px; font-weight: 600;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, transform 0.1s;
+  }
+  #detail .markup-save:hover { background: var(--highlight-orange); color: #ffffff; }
+  #detail .markup-save:active { transform: scale(0.96); }
+  #detail .markup-save:disabled {
+    border-color: var(--border-2); color: var(--text-3); background: var(--surface);
+    cursor: default;
+  }
+
+  /* ----- Markups: floating column on the left edge of the screen -----
+     The buttons form one group whose vertical center stays aligned to the
+     vertical center of the screen — adding markups grows the group evenly
+     up and down. It scrolls internally before touching the screen edges
+     or the settings button. */
+  #markups {
+    position: fixed; left: 0; top: 50vh; z-index: 9;
+    transform: translateY(-50%);
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    /* The scroll container clips at its box: pad it on every side so the
+       pills' drop shadows have room instead of getting cropped. The 16px
+       left padding doubles as the pills' screen-edge offset. */
+    padding: 20px 20px 20px 16px;
+    max-height: calc(100vh - 112px);
+    overflow-y: auto;
+    scrollbar-width: none;
+    /* Only the pills themselves take clicks — the padded frame lets
+       interactions pass through to the grid beneath. */
+    pointer-events: none;
+  }
+  #markups::-webkit-scrollbar { display: none; }
+  .markup-item { display: flex; align-items: center; gap: 6px; max-width: 240px; pointer-events: auto; }
+  .markup-btn {
+    min-width: 0;
+    padding: 7px 14px;
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    background: #ffffff; color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; line-height: 1.3;
+    text-align: left;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    box-shadow: 0 4px 14px rgba(60,50,30,0.14), 0 1px 4px rgba(60,50,30,0.08);
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s;
+  }
+  .markup-btn:hover { background: var(--surface); }
+  .markup-btn:active { transform: scale(0.97); }
+  .markup-item.active .markup-btn {
+    border-color: var(--highlight-orange);
+    color: var(--highlight-orange);
+    font-weight: 700;
+  }
+  /* Red remove button: only shown for the selected markup. */
+  .markup-delete {
+    width: 30px; height: 30px; flex-shrink: 0;
+    border: none; border-radius: 50%;
+    background: #e0483e; color: #ffffff;
+    display: none; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(224,72,62,0.35), 0 1px 4px rgba(60,50,30,0.10);
+    transition: background 0.12s, transform 0.1s;
+  }
+  .markup-item.active .markup-delete { display: inline-flex; }
+  .markup-delete:hover { background: #c93a31; }
+  .markup-delete:active { transform: scale(0.94); }
+  .markup-delete svg {
+    width: 15px; height: 15px;
+    stroke: currentColor; fill: none;
+    stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  }
 
   .status { color: var(--text-3); font-size: 13px; }
   .loading { color: var(--accent); }
@@ -656,12 +742,17 @@
   <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
   <button id="clear-btn" title="Clear conversation">Clear</button>
   <div id="sessions-menu" aria-live="polite">
-    <div class="sessions-head">Saved Sessions</div>
+    <div class="sessions-head">
+      <span>Saved Sessions</span>
+      <button id="save-current-session" title="Save the current session">Save</button>
+    </div>
     <div id="sessions-list">
       <div id="sessions-empty">No saved sessions yet.</div>
     </div>
-    <button id="save-current-session">Save current session</button>
   </div>
+
+  <!-- ===== Markups: floating column, left edge ===== -->
+  <div id="markups" aria-label="Saved markups"></div>
 
   <!-- ===== Settings modal (centered, dimmed backdrop) ===== -->
   <div id="settings-backdrop">
@@ -711,6 +802,8 @@ let state = {
   streamId: null,       // server stream_id for the active stream
   streamAbortController: null,
   snapshotByMsgToken: new Map(),
+  // Token markups: [{pos, layer, token}] bookmarks into the J-Space grid.
+  markups: [],
   // Generation settings (configurable via the settings popup).
   settings: { maxTokens: 262144, temp: 0.0, topN: 10 },
 };
@@ -740,6 +833,7 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     })),
     snapshots: state.snapshots,
     layers: state.layers,
+    markups: state.markups.map(m => ({ pos: m.pos, layer: m.layer, token: m.token })),
   };
   if (trimForLocalStorage) {
     let json = JSON.stringify(persistable);
@@ -797,6 +891,11 @@ function restoreConversation(saved) {
   }));
   state.snapshots = saved.snapshots || [];
   state.layers = saved.layers || [];
+  state.markups = Array.isArray(saved.markups)
+    ? saved.markups
+        .filter(m => m && Number.isFinite(m.pos) && Number.isFinite(m.layer))
+        .map(m => ({ pos: m.pos, layer: m.layer, token: m.token || '' }))
+    : [];
   if (saved.settings) {
     state.settings = { ...state.settings, ...saved.settings };
     syncSettingsInputs();
@@ -885,6 +984,7 @@ function clearState() {
   state.gridTokenStrs = [];
   state.gridTokenMsgs = [];
   state.layers = [];
+  state.markups = [];
   state.selectedSnapshotId = null;
   state.selectedCell = null;
   state.selectedToken = null;
@@ -1142,6 +1242,7 @@ function closeDetailCard() {
   state.selectedToken = null;
   dismissDetailCard();
   updateAutoFollowUI();
+  renderMarkups();
   renderChat({ scrollToBottom: state.selectedSnapshotId === null });
   renderGrid();
   renderTimeline();
@@ -1663,6 +1764,29 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   const w0 = Math.max(0, Math.floor(target / rowH) - GRID_ROW_BUFFER);
   const w1 = Math.min(visibleN, Math.floor(target / rowH) + visCount + GRID_ROW_BUFFER);
 
+  // Far focus glide: ALSO keep the rows currently in the viewport rendered
+  // (a second row window), so the full-distance spring departs from real
+  // content instead of blank spacer. The gap between the two windows stays
+  // spacer — the underlay's column tints show through mid-flight.
+  const ranges = [[w0, w1]];
+  let farFlight = false;
+  if (focusSelection && focusPos !== null && focusPos !== undefined) {
+    const fromTop = body.scrollTop;
+    farFlight = Math.abs(target - fromTop) > (GRID_ROW_BUFFER - 3) * rowH;
+    if (farFlight) {
+      const s0 = Math.max(0, Math.floor(fromTop / rowH) - 5);
+      const s1 = Math.min(visibleN, Math.ceil((fromTop + (body.clientHeight || 600)) / rowH) + 5);
+      if (s1 > s0) ranges.push([s0, s1]);
+    }
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const rowRanges = [ranges[0]];
+  for (let i = 1; i < ranges.length; i++) {
+    const last = rowRanges[rowRanges.length - 1];
+    if (ranges[i][0] <= last[1]) last[1] = Math.max(last[1], ranges[i][1]);
+    else rowRanges.push(ranges[i]);
+  }
+
   const table = document.createElement('table');
   table.id = 'grid';
 
@@ -1717,11 +1841,15 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   const activePos = selectedPosition();
   const nCols = state.layers.length + 1;
   const tbody = document.createElement('tbody');
-  if (w0 > 0) tbody.appendChild(_gridSpacerRow(w0 * rowH, nCols));
-  for (let pos = w0; pos < w1; pos++) {
-    tbody.appendChild(buildGridRowTr(pos, selectedTokenKey, activePos));
+  let rowCursor = 0;
+  for (const [r0, r1] of rowRanges) {
+    if (r0 > rowCursor) tbody.appendChild(_gridSpacerRow((r0 - rowCursor) * rowH, nCols));
+    for (let pos = r0; pos < r1; pos++) {
+      tbody.appendChild(buildGridRowTr(pos, selectedTokenKey, activePos));
+    }
+    rowCursor = r1;
   }
-  if (w1 < visibleN) tbody.appendChild(_gridSpacerRow((visibleN - w1) * rowH, nCols));
+  if (rowCursor < visibleN) tbody.appendChild(_gridSpacerRow((visibleN - rowCursor) * rowH, nCols));
   table.appendChild(tbody);
   table.dataset.w0 = w0;
   table.dataset.w1 = w1;
@@ -1740,16 +1868,32 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
 
   updateGridHeaderShadows();
   if (focusSelection && (state.selectedCell || activePos !== null)) {
-    // Approach-then-glide. A far selection cannot smooth-scroll across
-    // thousands of virtualized rows (the animation would cross unrendered
-    // spacer and get cancelled by a window re-render), so jump to a point
-    // one short glide away from the target — still inside the freshly
-    // built row window — and let the rAF below animate the final stretch.
-    // A nearby selection skips the jump entirely and glides in one motion.
-    const GLIDE_PX = 360;
-    const from = body.scrollTop;
-    if (Math.abs(target - from) > GLIDE_PX) {
-      body.scrollTop = target > from ? target - GLIDE_PX : target + GLIDE_PX;
+    // Full-distance spring on both axes — no teleports. For far targets
+    // the dual row-window built above keeps both the departure and the
+    // arrival regions rendered; the spacer in between shows the underlay
+    // surface during the fast middle of the flight. Window re-renders are
+    // suppressed while flying (farFlight) and one normalizing render runs
+    // on settle. Velocity carries from any in-flight glide (go() reads
+    // it), so retargeting mid-flight bends the motion instead of snapping.
+    gridGlide.onSettle = null;
+    gridGlide.farFlight = farFlight;
+    // Horizontal axis: when a layer cell is selected and its column is not
+    // fully visible (in the area left of the sticky token column), center
+    // it. Fixed column geometry (8px gutter + GRID_CELL_W per layer)
+    // makes the target exact without measuring rects.
+    let targetLeft = null;
+    if (state.selectedCell) {
+      const li = state.layers.indexOf(state.selectedCell.layer);
+      if (li !== -1) {
+        const usableW = Math.max(GRID_CELL_W, body.clientWidth - GRID_POS_W);
+        const colLeft = 8 + li * GRID_CELL_W;
+        const fullyVisible = colLeft >= body.scrollLeft &&
+          colLeft + GRID_CELL_W <= body.scrollLeft + usableW;
+        if (!fullyVisible) {
+          const maxLeft = Math.max(0, body.scrollWidth - body.clientWidth);
+          targetLeft = Math.max(0, Math.min(maxLeft, colLeft + GRID_CELL_W / 2 - usableW / 2));
+        }
+      }
     }
     // Center the selected cell, or the token header when no layer cell is selected.
     // Use requestAnimationFrame so the DOM has settled after innerHTML reset.
@@ -1757,9 +1901,13 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
       const sel = body.querySelector('td.cell.selected') || body.querySelector('td.pos-label.selected-token');
       if (sel) {
         const targetRect = sel.getBoundingClientRect();
-        const target = focusTargetForViewportCenter(body, targetRect);
-        body.scrollTo({ top: target, behavior: 'smooth' });
+        gridGlide.go(body, focusTargetForViewportCenter(body, targetRect), targetLeft, () => {
+          gridGlide.farFlight = false;
+          renderGrid({ keepScroll: true });
+        });
         requestAnimationFrame(updateGridHeaderShadows);
+      } else {
+        gridGlide.farFlight = false;
       }
     });
   } else if (!keepScroll && state.selectedSnapshotId === null) {
@@ -1768,6 +1916,91 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   }
 }
 
+// rAF-driven glide animator for #grid-body. Unlike native smooth
+// scrollTo(), it survives virtualization re-renders (it owns scrollTop
+// frame by frame), can be retargeted mid-flight, and is cancelled by
+// direct user input on the grid.
+//
+// The motion is a critically damped spring (SwiftUI-style: response
+// GLIDE_RESPONSE seconds, damping fraction 1): quick initial response
+// with a long, soft settle and no overshoot. Velocity carries across
+// retargets — clicking markup B while still flying toward markup A bends
+// the motion fluidly instead of restarting the curve from zero.
+const GLIDE_RESPONSE = 0.65;
+const gridGlide = {
+  raf: null,
+  vTop: 0,
+  vLeft: 0,
+  // True while a far flight is crossing virtualized spacer: the scroll
+  // handler must not rebuild the row window mid-flight (the settle
+  // callback normalizes it instead).
+  farFlight: false,
+  onSettle: null,
+  _settle() {
+    const cb = this.onSettle;
+    this.onSettle = null;
+    if (cb) cb();
+  },
+  cancel() {
+    if (this.raf !== null) cancelAnimationFrame(this.raf);
+    this.raf = null;
+    this.vTop = 0;
+    this.vLeft = 0;
+    this.farFlight = false;
+    this._settle();
+  },
+  // Two-axis glide: toLeft is optional — pass null to leave the
+  // horizontal position untouched. Both axes share one spring clock so a
+  // diagonal focus settles on both targets together. onSettle fires once
+  // when the spring comes to rest (or on cancel).
+  go(el, toTop, toLeft = null, onSettle = null) {
+    const inFlight = this.raf !== null;
+    const v0Top = inFlight ? this.vTop : 0;
+    const v0Left = inFlight && toLeft != null ? this.vLeft : 0;
+    if (inFlight) cancelAnimationFrame(this.raf);
+    this.raf = null;
+    this.onSettle = onSettle;
+    const omega = (2 * Math.PI) / GLIDE_RESPONSE;
+    const endTop = toTop;
+    const endLeft = toLeft == null ? el.scrollLeft : toLeft;
+    // Critically damped spring: x(t) = end + (A + Bt)·e^(−ωt), with
+    // A = x0 − end and B = v0 + ωA (so x(0) = x0 and x′(0) = v0).
+    const aTop = el.scrollTop - endTop;
+    const aLeft = el.scrollLeft - endLeft;
+    if (Math.abs(aTop) < 1 && Math.abs(aLeft) < 1 && !inFlight) {
+      this.farFlight = false;
+      this._settle();
+      return;
+    }
+    const bTop = v0Top + omega * aTop;
+    const bLeft = toLeft == null ? 0 : v0Left + omega * aLeft;
+    const start = performance.now();
+    const step = (now) => {
+      const t = (now - start) / 1000;
+      const decay = Math.exp(-omega * t);
+      const posTop = endTop + (aTop + bTop * t) * decay;
+      const posLeft = endLeft + (aLeft + bLeft * t) * decay;
+      this.vTop = (bTop - omega * (aTop + bTop * t)) * decay;
+      this.vLeft = (bLeft - omega * (aLeft + bLeft * t)) * decay;
+      const doneTop = Math.abs(posTop - endTop) < 0.5 && Math.abs(this.vTop) < 15;
+      const doneLeft = toLeft == null ||
+        (Math.abs(posLeft - endLeft) < 0.5 && Math.abs(this.vLeft) < 15);
+      el.scrollTop = doneTop ? endTop : posTop;
+      if (toLeft != null) el.scrollLeft = doneLeft ? endLeft : posLeft;
+      if (doneTop && doneLeft) {
+        this.raf = null;
+        this.vTop = 0;
+        this.vLeft = 0;
+        this.farFlight = false;
+        this._settle();
+        return;
+      }
+      this.raf = requestAnimationFrame(step);
+    };
+    this.raf = requestAnimationFrame(step);
+  },
+};
+
 // Re-render the window when the viewport nears its edge (rAF-throttled).
 let _gridScrollRaf = null;
 function onGridBodyScroll() {
@@ -1775,6 +2008,9 @@ function onGridBodyScroll() {
   _gridScrollRaf = requestAnimationFrame(() => {
     _gridScrollRaf = null;
     updateGridHeaderShadows();
+    // A far focus flight crosses spacer on purpose — its settle callback
+    // normalizes the window; rebuilding mid-flight would fight the spring.
+    if (gridGlide.farFlight) return;
     const t = document.getElementById('grid');
     if (!t || t.dataset.w0 === undefined) return;
     const body = $('grid-body');
@@ -1786,6 +2022,70 @@ function onGridBodyScroll() {
         (last > w1 - GRID_ROW_BUFFER / 2 && w1 < n)) {
       renderGrid({ keepScroll: true });
     }
+  });
+}
+
+// ----- Markups -----
+function markupIndexFor(pos, layer) {
+  return state.markups.findIndex(m => m.pos === pos && m.layer === layer);
+}
+
+function addMarkup(pos, layer) {
+  if (markupIndexFor(pos, layer) !== -1) return;
+  state.markups.push({ pos, layer, token: state.gridTokenStrs[pos] || '·' });
+  saveState();
+  renderMarkups();
+  renderDetail();
+}
+
+function removeMarkup(index) {
+  state.markups.splice(index, 1);
+  saveState();
+  renderMarkups();
+  renderDetail();
+}
+
+function isActiveMarkup(m) {
+  return !!state.selectedCell &&
+    state.selectedCell.pos === m.pos &&
+    state.selectedCell.layer === m.layer;
+}
+
+function renderMarkups() {
+  const wrap = $('markups');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  state.markups.forEach((m, i) => {
+    const item = document.createElement('div');
+    item.className = 'markup-item';
+    if (isActiveMarkup(m)) item.classList.add('active');
+    const btn = document.createElement('button');
+    btn.className = 'markup-btn';
+    btn.type = 'button';
+    btn.textContent = (m.token || '').trim() || '·';
+    btn.title = `${JSON.stringify(m.token || '')} · position ${m.pos} · layer L${m.layer}`;
+    btn.onclick = () => selectCell(m.pos, m.layer);
+    const del = document.createElement('button');
+    del.className = 'markup-delete';
+    del.type = 'button';
+    del.title = 'Remove markup';
+    del.setAttribute('aria-label', 'Remove markup');
+    del.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M3 6h18"></path>
+        <path d="M8 6V4h8v2"></path>
+        <path d="M19 6l-1 14H6L5 6"></path>
+        <path d="M10 11v5"></path>
+        <path d="M14 11v5"></path>
+      </svg>
+    `;
+    del.onclick = (e) => {
+      e.stopPropagation();
+      removeMarkup(i);
+    };
+    item.appendChild(btn);
+    item.appendChild(del);
+    wrap.appendChild(item);
   });
 }
 
@@ -1813,6 +2113,18 @@ function renderDetail() {
   close.title = 'Close detail';
   close.onclick = () => closeDetailCard();
   col.appendChild(close);
+  // Save-as-markup button, top-right (left of the close button).
+  const mark = document.createElement('button');
+  mark.className = 'markup-save';
+  mark.type = 'button';
+  const alreadyMarked = markupIndexFor(pos, layer) !== -1;
+  mark.textContent = alreadyMarked ? 'Marked' : 'Markup';
+  mark.disabled = alreadyMarked;
+  mark.title = alreadyMarked
+    ? 'This block is already saved as a markup'
+    : 'Save this block as a markup';
+  if (!alreadyMarked) mark.onclick = () => addMarkup(pos, layer);
+  col.appendChild(mark);
   const h3 = document.createElement('h3');
   h3.textContent = 'Detail';
   col.appendChild(h3);
@@ -1946,6 +2258,7 @@ function renderAll() {
   const shouldFocusSelection = focusSelectionOnRender;
   focusSelectionOnRender = false;
   renderDetail();
+  renderMarkups();
   updateScrollClearance();
   // When a focus scroll is about to run, keep the chat log where it is:
   // snapping to the tail first would make every focus animate from the
@@ -2335,6 +2648,9 @@ window.addEventListener('resize', () => {
   if (state.selectedCell) renderGrid();
 });
 $('grid-body').addEventListener('scroll', onGridBodyScroll, { passive: true });
+// Direct user input on the grid takes over from any in-flight glide.
+['wheel', 'touchstart', 'mousedown'].forEach((evt) =>
+  $('grid-body').addEventListener(evt, () => gridGlide.cancel(), { passive: true }));
 $('chat-editor').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });

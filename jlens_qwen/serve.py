@@ -316,6 +316,8 @@ class SessionSaveRequest(BaseModel):
     snapshots: list[dict[str, Any]] = []
     layers: list[int] = []
     settings: dict[str, Any] = {}
+    # Token markups: [{pos, layer, token}] bookmarks into the J-Space grid.
+    markups: list[dict[str, Any]] = []
     # Fire-and-forget full-fidelity save at stream end. localStorage is
     # quota-trimmed (~4.2MB) and silently loses old snapshots on long
     # conversations; the autosave keeps the complete state server-side
