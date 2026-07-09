@@ -38,11 +38,12 @@ from jlens_qwen import perf
 _model = None
 _lens = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
-# Default matches the README quick start (Options A and B both produce
-# data/lens/lens.npz). Override with JLENS_PATH — e.g. the Neuronpedia
-# lens from Option A2. If the file is missing the server silently falls
-# back to the logit lens and records ONLY the final layer.
-_lens_path = os.environ.get("JLENS_PATH", "data/lens/lens.npz")
+# Lens selection is ENFORCED at startup — there is no silent fallback.
+# JLENS_PATH=<file> loads that file or refuses to start; JLENS_PATH=none
+# runs lens-less (logit lens, final layer only) as an explicit choice;
+# unset uses data/lens/lens.npz if present, auto-selects a lone candidate
+# loudly, and refuses to start when the choice is ambiguous or empty.
+# See resolve_lens_path().
 # Deployment mode, decided at deployment time via JLENS_MODE:
 # - "active" (default): full app — chat with the model, mark up blocks,
 #   save/delete sessions, configure generation.
@@ -67,6 +68,66 @@ _pause_events: dict[str, asyncio.Event] = {}
 # pre-thread semantics.
 _gpu_lock = asyncio.Lock()
 
+class LensResolutionError(RuntimeError):
+    """Lens selection could not be resolved explicitly; refuse to start."""
+
+
+def _lens_choices(lens_dir: str) -> str:
+    from glob import glob
+
+    lines = []
+    for p in sorted(glob(os.path.join(lens_dir, "*.npz"))):
+        size_gb = os.path.getsize(p) / 1e9
+        lines.append(f"  JLENS_PATH={p}   ({size_gb:.1f} GB)")
+    if not lines:
+        lines.append(f"  (no .npz files in {lens_dir})")
+    lines.append("  JLENS_PATH=none   (run lens-less: logit lens, final layer only)")
+    return "Choose a lens explicitly:\n" + "\n".join(lines)
+
+
+def resolve_lens_path(explicit: str | None, lens_dir: str) -> str | None:
+    """Decide which lens to load — explicitly, never by silent fallback.
+
+    Returns a path to load, or None for explicitly-chosen lens-less mode.
+    Raises LensResolutionError (refusing startup) when the choice would
+    otherwise be silent and wrong: an explicit path that doesn't exist,
+    or no default with an ambiguous/empty candidate set. A lone candidate
+    is auto-selected with a loud log line — an unambiguous choice can't
+    be silently wrong.
+    """
+    from glob import glob
+
+    if explicit:
+        if explicit.strip().lower() in ("none", "logit"):
+            return None
+        if os.path.exists(explicit):
+            return explicit
+        raise LensResolutionError(
+            f"JLENS_PATH points to a missing file: {explicit!r}\n"
+            + _lens_choices(lens_dir)
+        )
+    default = os.path.join(lens_dir, "lens.npz")
+    if os.path.exists(default):
+        return default
+    candidates = sorted(glob(os.path.join(lens_dir, "*.npz")))
+    if len(candidates) == 1:
+        print(f"LENS: auto-selected the only available lens: {candidates[0]}",
+              flush=True)
+        return candidates[0]
+    if candidates:
+        raise LensResolutionError(
+            f"No lens at the default path {default} and JLENS_PATH is not "
+            "set, but multiple lens files exist — refusing to guess.\n"
+            + _lens_choices(lens_dir)
+        )
+    raise LensResolutionError(
+        f"No lens files found in {lens_dir}.\n"
+        "Fit one (uv run python scripts/run_fit.py), download the release "
+        "lens (see README), or choose lens-less mode explicitly: "
+        "JLENS_PATH=none"
+    )
+
+
 app = FastAPI(title="J-Space Visualizer")
 
 
@@ -79,19 +140,27 @@ class SliceRequest(BaseModel):
 @app.on_event("startup")
 async def load():
     global _model, _lens
+    # Resolve the lens FIRST so a wrong/ambiguous choice fails in
+    # milliseconds instead of after a 15 GB model load.
+    try:
+        lens_path = resolve_lens_path(
+            os.environ.get("JLENS_PATH"), str(_repo_root / "data" / "lens"))
+    except LensResolutionError as e:
+        print(f"\nLENS SELECTION FAILED\n{e}\n", flush=True)
+        raise
+    if lens_path is None:
+        print("LENS: none — explicit lens-less mode (logit lens, final layer only)",
+              flush=True)
     print(f"Loading model {_model_id!r}...", flush=True)
     _model = load_model(_model_id)
     print(f"  {_model}", flush=True)
-    if os.path.exists(_lens_path):
-        print(f"Loading lens from {_lens_path}...", flush=True)
-        _lens = JacobianLens.load(_lens_path)
+    if lens_path is not None:
+        print(f"Loading lens from {lens_path}...", flush=True)
+        _lens = JacobianLens.load(lens_path)
         print(f"  {_lens}", flush=True)
         _t0 = time.perf_counter()
         _lens.warm()
         print(f"  lens warmed (fp16 GPU upload) in {time.perf_counter() - _t0:.1f}s", flush=True)
-    else:
-        print(f"  no lens at {_lens_path}; using logit lens (J=I)", flush=True)
-        print(f"  (fit one with: uv run python scripts/run_fit.py)", flush=True)
 
 
 @app.get("/api/lens")
