@@ -175,10 +175,58 @@ def _sample_tok(logits: mx.array, temp: float) -> int:
     return int(mx.random.categorical(lf / temp).tolist())
 
 
+_WS_GLYPHS = {" ": "␣", "\n": "⏎", "\t": "⇥"}
+
+
+_u2b_cache: dict[str, int] = {}
+
+
+def _u2b() -> dict[str, int]:
+    """Inverse of GPT-2's byte<->unicode table (inlined: transformers no
+    longer exports bytes_to_unicode at a stable path)."""
+    if not _u2b_cache:
+        bs = (list(range(ord("!"), ord("~") + 1))
+              + list(range(ord("¡"), ord("¬") + 1))
+              + list(range(ord("®"), ord("ÿ") + 1)))
+        cs = bs[:]
+        n = 0
+        for b in range(256):
+            if b not in bs:
+                bs.append(b)
+                cs.append(256 + n)
+                n += 1
+        _u2b_cache.update({chr(c): b for b, c in zip(bs, cs)})
+    return _u2b_cache
+
+
+def _token_bytes(tid: int) -> bytes | None:
+    """Raw bytes of a byte-level BPE token. Returns None if the tokenizer
+    isn't byte-level or the mapping fails."""
+    try:
+        t = _model.tokenizer.convert_ids_to_tokens([tid])[0]
+        u2b = _u2b()
+        return bytes(u2b[c] for c in t)
+    except Exception:
+        return None
+
+
 def _tok_str(tid: int) -> str:
+    """Display string for a single readout token (band cells only).
+
+    A byte-level BPE token can be a fragment of a multi-byte UTF-8 char
+    (CJK, emoji): decoded alone it yields U+FFFD, which the UI renders as
+    a black diamond. Show the raw bytes instead. Pure-whitespace tokens
+    otherwise render as blank cells; show visible glyphs.
+    """
     s = _tok_str_cache.get(tid)
     if s is None:
         s = _model.tokenizer.decode([tid])
+        if "�" in s:
+            b = _token_bytes(tid)
+            if b is not None:
+                s = "⟨" + " ".join(f"{x:02X}" for x in b) + "⟩"
+        elif s and all(c in _WS_GLYPHS for c in s):
+            s = "".join(_WS_GLYPHS[c] for c in s)
         _tok_str_cache[tid] = s
     return s
 
