@@ -4,6 +4,9 @@ A visual debugger for a local Qwen3.6-27B (4-bit) on Apple Silicon / MLX.
 It fits a **Jacobian lens** and shows which words the model is pushing
 toward at every layer and token position.
 
+> **Try it live at [jlens.wezzard.com](https://jlens.wezzard.com)** — a
+> read-only presentation mode of this project, running in the browser.
+
 ![Global-workspace concept readout](assets/screenshot_blackmail.png)
 
 Inspired by Anthropic's [*Verbalizable Representations Form a Global
