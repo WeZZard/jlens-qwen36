@@ -41,6 +41,7 @@ enough to feel live.
 |---|-----------|----------|
 | [decode-01](decode-01.md) | Cached incremental decoding + readout fixes | O(T²) → O(T); ~0.3 → ~3 tok/s |
 | [decode-02](decode-02.md) | Batched per-token readout | one unembed for all 63 layers; → ~7 tok/s |
+| [decode-03](decode-03.md) | Exact blocked top-k selection | full argsort was 14.7 ms/token; → 8.5 tok/s |
 
 ### `ui` — the web front-end
 

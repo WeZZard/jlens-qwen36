@@ -58,30 +58,33 @@ landing either requires a documented tolerance here + golden regen).
 
 ## Baseline
 
-**131.7 ms/token = 7.59 tok/s** @ `d3d7bbe`, 2026-07-09 — measured by
-`uv run python scripts/bench_decode.py` (median of 32 greedy tokens,
-45-tok prompt, 64 layers, top_n 10, full-depth lens, M4 Pro, MLX 0.31.2).
-The bench drives the real production functions in-process; decode-02's
-141 ms/token additionally included SSE/HTTP transport.
+**118.1 ms/token = 8.47 tok/s** @ H1 (blocked top-k), 2026-07-09 —
+measured by `uv run python scripts/bench_decode.py` (median of 32 greedy
+tokens, 45-tok prompt, 64 layers, top_n 10, full-depth lens, M4 Pro,
+MLX 0.31.2). The bench drives the real production functions in-process;
+decode-02's historical 141 ms/token additionally included SSE/HTTP
+transport.
 
 Measured split per generated token (call-level, exact; readout stages via
 `JLENS_PERF=1`, medians):
 
 | stage | ms | notes |
 |---|---|---|
-| forward (extend) | 72.2 | was estimated ~100 — headroom over pure-bandwidth floor is smaller than assumed |
-| readout.transport | 15.5 | matches microbench 14.2 |
-| readout.unembed | 29.9 | **largest readout stage**; matches the synthetic stand-in (~24–30) |
-| readout.topk | 14.7 | matches microbench 14.6 |
+| forward (extend) | 71.8 | ~1.4× above the ~50 ms pure-bandwidth floor |
+| readout.transport | 15.3 | next target (H7 int8: → ~7.7, needs-decision) |
+| readout.unembed | 29.8 | **largest readout stage** (H2 fp16: → ~24, needs-decision) |
+| readout.topk | 1.4 | was 14.7 — H1 landed (exact blocked selection) |
 | readout.tolist | 0.1 | |
-| sample + emit (detok+json) | 0.5 | CPU-side is negligible at short T |
-| **TOTAL** | **131.7** | 7.59 tok/s |
+| sample + emit (detok+json) | 0.5 | CPU-side negligible at short T |
+| **TOTAL** | **118.1** | 8.47 tok/s (was 131.7 @ d3d7bbe) |
 
-Prefill readout: **4976 ms for 45 prompt tokens = 110.6 ms/prompt-token**
-(6 chunks ≈ 825 ms avg; the first chunk includes the one-time lens
-fp16 memoization upload, so steady-state per-chunk cost needs a separate
-measurement — see H4). Prefill forward: 637 ms. Instrumentation overhead
-when ON: ~2% (134.0 vs 131.7); zero when off (default).
+Prefill readout: **4169 ms for 45 prompt tokens = 92.6 ms/prompt-token**
+(was 110.6; first chunk still carries the one-time lens fp16 memoization
+upload — steady-state per-chunk cost needs isolating, see H4). Prefill
+forward: 662 ms. Instrumentation overhead when ON ~2%; zero when off.
+
+History of the headline number: 131.7 @ `d3d7bbe` (H0 re-measure) →
+118.1 (H1).
 
 ## Backlog
 
@@ -89,7 +92,7 @@ when ON: ~2% (134.0 vs 131.7); zero when off (default).
 |----|-----------|--------------|------------|--------|--------|----------|
 | H0 | Per-stage instrumentation + in-repo benchmark script; re-measure baseline | enables all | — | S | landed | `scripts/bench_decode.py` + `jlens_qwen/perf.py` + 4 flag-gated marks in `_readout_at_positions`; baseline 131.7 ms/token measured; gate 4/4 green with marks in place |
 | G1 | Build the decode correctness gate (see Gate) | enables all | — | M | landed | 4 golden-based tests + generator, mutation-checked (2/2 caught); see Gate section |
-| H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | open | **in-situ: topk = 14.7 ms/token median**; microbench 14.6→0.7–0.8 ms at [64,1,248k], ids identical; [64,8,248k] 112→3.2 ms; `mx.argpartition`/`mx.topk` are NOT faster (full sort); numpy 7× slower |
+| H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | landed | **e2e 131.7→118.1 ms/token (−10.3%); topk 14.7→1.36 ms; prefill readout 110.6→92.6 ms/pt; gate 4/4, golden ids byte-identical**; see decode-03.md |
 | H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | needs-decision | **in-situ: unembed = 29.9 ms/token — largest readout stage**; 29.7→23.7 ms on synthetic stand-in; may flip near-tied ranks → tolerance decision + golden regen required |
 | H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; matters only at large T/S | high | S | open | in-situ at T=32: emit = 0.3 ms (invisible); the win is long conversations and multi-k-token prompts, not steady-state tok/s |
 | H4 | Prefill readout: measure steady-state chunk cost (exclude one-time lens upload), raise CHUNK, fp16 logits, per-chunk SSE frames | prefill TTFT: measured 110.6 ms/prompt-token | medium→high | M | open | **in-situ: 4976 ms readout for a 45-tok prompt** (6 chunks ≈ 825 ms avg incl. one-time lens fp16 memoization in chunk 1); at 1k-tok prompts this extrapolates to ~2 min — top UX pain |
@@ -132,3 +135,10 @@ token) — H1 + H4 attack it directly. Past ~10 tok/s requires H8.
   (forward 72 not 100), H3 deprioritized for tok/s (invisible at T=32).
   Gate 4/4 green with marks in place; instrumentation overhead 0 when
   off, ~2% when on.
+- 2026-07-09 — H1 landed: exact blocked two-stage top-k
+  (`serve._blocked_topk`, B=1024, −inf padding for the non-divisible
+  vocab). **131.7 → 118.1 ms/token (8.47 tok/s, −10.3%)**; topk stage
+  14.7 → 1.36 ms/token; prefill readout 110.6 → 92.6 ms/prompt-token.
+  Gate 4/4 — golden top-10 ids byte-identical across all 192 cells
+  (exactness proof held on real data, including near-ties). Iteration
+  doc: decode-03.md.

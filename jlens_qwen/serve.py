@@ -112,6 +112,43 @@ def _record_layers() -> list[int]:
     return sorted(set(layers) | {_model.n_layers - 1})
 
 
+def _blocked_topk(logits: mx.array, k: int) -> tuple[mx.array, mx.array]:
+    """Exact top-k (ids, values) along the last axis, descending.
+
+    Two-stage: per-block maxima -> top-k blocks by max -> exact sort of
+    the k*C surviving candidates. Exact, not approximate: any top-k
+    element has at most k-1 elements above it, which occupy at most k-1
+    other blocks, so its own block ranks within the top-k blocks by max.
+
+    Replaces a full argsort over the ~248k vocab: MLX's argsort,
+    argpartition, and topk all run a full sort on GPU (measured ~14.7 ms
+    per generated token at [64,1,248k] vs ~0.8 ms for this scheme; see
+    docs/perf/LEDGER.md H1). Values match argsort bit-for-bit; ordering
+    at exact score ties may differ, which the decode gate's golden
+    readout pins.
+    """
+    *lead, V = logits.shape
+    B = 1024                      # blocks -> C = ceil(V/B) candidates each
+    C = (V + B - 1) // B
+    pad = B * C - V
+    x = logits
+    if pad:
+        fill = mx.full((*lead, pad), -float("inf"), dtype=x.dtype)
+        x = mx.concatenate([x, fill], axis=-1)
+    xb = x.reshape(*lead, B, C)
+    bmax = xb.max(axis=-1)                                     # [..., B]
+    top_blocks = mx.argsort(bmax, axis=-1)[..., -k:]           # [..., k]
+    cand = mx.take_along_axis(
+        xb, mx.broadcast_to(top_blocks[..., None], (*lead, k, C)), axis=-2
+    )                                                          # [..., k, C]
+    flat = cand.reshape(*lead, k * C)
+    sub = mx.argsort(flat, axis=-1)[..., -k:][..., ::-1]       # [..., k]
+    vals = mx.take_along_axis(flat, sub, axis=-1)
+    blk = mx.take_along_axis(top_blocks, sub // C, axis=-1)
+    ids = blk * C + (sub % C)
+    return ids, vals
+
+
 _tok_str_cache: dict[int, str] = {}
 
 
@@ -163,8 +200,7 @@ def _readout_at_positions(
         t = perf.mark(t, "readout.transport", hstack)
         logits = _model.unembed(_model.final_norm(hstack)).astype(mx.float32)
         t = perf.mark(t, "readout.unembed", logits)
-        order = mx.argsort(logits, axis=-1)[..., -top_n:][..., ::-1]  # [L, P, n]
-        vals = mx.take_along_axis(logits, order, axis=-1)
+        order, vals = _blocked_topk(logits, top_n)  # [L, P, n]
         t = perf.mark(t, "readout.topk", order, vals)
         ids_l = order.tolist()
         vals_l = vals.tolist()
