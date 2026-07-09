@@ -92,10 +92,11 @@ uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
 
 ## Using a different model
 
-The default is `mlx-community/Qwen3.6-27B-4bit`. Any MLX-quantized
-**Qwen3.5-architecture** model (`model_type: qwen3_5`, hybrid GDN + full
-attention) works; the custom GDN backward kernel is required for the fit to
-be tractable.
+The default is `mlx-community/Qwen3.6-27B-4bit`. Any MLX-quantized model in
+the **`qwen3_5` architecture family** (`model_type: qwen3_5`, hybrid GDN +
+full attention) works — that includes Qwen3.6-27B despite the `3_5` name,
+which is the mlx_lm architecture identifier, not the model version. The
+custom GDN backward kernel is required for the fit to be tractable.
 
 ```bash
 uv run python scripts/run_fit.py --model-id mlx-community/Qwen3.6-35B-A3B-4bit

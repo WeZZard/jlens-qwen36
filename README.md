@@ -78,8 +78,9 @@ which is what the lens is meant to surface.
 
 ## Limitations
 
-- **Apple / MLX only**, **Qwen3.5 architecture only** (hybrid GDN + full
-  attention; the custom GDN kernel is arch-specific).
+- **Apple / MLX only**, and only the **`qwen3_5` architecture**
+  (`model_type: qwen3_5` — the hybrid Gated DeltaNet + full-attention family
+  Qwen3.6-27B belongs to; the custom GDN kernel is arch-specific).
 - **Single-token concepts only** — multi-token concepts need the paper's
   extension.
 - **Lens quality scales with prompt count** — 20 prompts is demo-grade,
