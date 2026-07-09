@@ -302,12 +302,21 @@
   .session-item {
     width: 100%; border: 0; background: transparent; color: var(--text);
     border-radius: var(--radius-sm);
+    corner-shape: squircle;
     padding: 9px 10px; cursor: pointer;
     text-align: left;
     display: grid; grid-template-columns: minmax(0, 1fr) 30px;
     align-items: center; gap: 8px;
   }
   .session-item:hover { background: var(--highlight-orange-soft); }
+  /* Follow the panel's continuous bottom corner when the last row is
+     highlighted. The row is inset by the 1px panel border + 6px list
+     padding, so its concentric corner is 24px - 7px = 17px. */
+  #sessions-list > .session-item:last-child,
+  #session-picker-list > .session-item:last-child {
+    border-bottom-left-radius: calc(var(--radius-lg) - 7px);
+    border-bottom-right-radius: calc(var(--radius-lg) - 7px);
+  }
   .session-main { min-width: 0; }
   .session-preview {
     font-size: 13px; line-height: 1.3;
