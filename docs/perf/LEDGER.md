@@ -97,7 +97,7 @@ the H4 change affects prefill only).
 | G1 | Build the decode correctness gate (see Gate) | enables all | — | M | landed | 4 golden-based tests + generator, mutation-checked (2/2 caught); see Gate section |
 | H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | landed | **e2e 131.7→118.1 ms/token (−10.3%); topk 14.7→1.36 ms; prefill readout 110.6→92.6 ms/pt; gate 4/4, golden ids byte-identical**; see decode-03.md |
 | H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | rejected | **falsified on REAL weights: fp16 acts make qmm SLOWER (31.9 vs 29.5 ms at [64,1,D])**; the synthetic stand-in had said 23.7 vs 29.7 — second stand-in-bias instance. No decision needed |
-| H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; matters only at large T/S | high | S | open | in-situ at T=32: emit = 0.3 ms (invisible); the win is long conversations and multi-k-token prompts, not steady-state tok/s |
+| H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token at large T/S | high→— | S | rejected | **mlx_lm `BPEStreamingDetokenizer` is NOT byte-exact**: segment attribution differs (space lands on a different token → breaks UI column alignment) and on random-id cases concatenation ≠ `tok.decode` (drops leading space). AND the quadratic's constant is tiny: 18.6 ms total at T=512, ~0.6 ms/tok averaged at T=8192 (~0.5% of budget), ~1.3 s one-time at 4k-prompt prefill. A custom exact incremental detok isn't justified. Revisit only if generations routinely exceed ~8k tokens |
 | H4 | Prefill readout: lens warm-up at startup + chunk-size amortization | prefill TTFT | high | S | landed | **warm-up landed: prefill readout 92.6 → 39.4 ms/prompt-token** (1.78 s one-time upload moved to startup). **Chunk lever REJECTED**: CHUNK 8→64 sweep on a 265-tok prompt = 35.1→34.3 ms/pt (noise) — readout is kernel-shape-bound, not bandwidth-bound (spawned H11). `READOUT_CHUNK` env knob kept, default 8. See decode-04.md |
 | H4b | Prefill payload: per-chunk SSE snapshot frames + rounded scores in JSON | long-prompt serialization + browser parse (tens of MB at 1k tokens) | medium | M | needs-decision | changes the SSE event shape the client parses — UI contract decision |
 | H11 | Unembed: dense-fp16 W_U or reshaped batching beats the qmm | ~20 ms/token | medium-high | M | rejected | **all variants measured on real weights at [64,1,D]**: 2D reshape 31.2 ms (worse, bit-identical), dense fp16 25.0 ms (−4.6 ms only, +2.5 GB resident, 2.0e-2 drift = 20× golden atol), dense fp32 33.7 ms (worse + a top-10 order flip). Even plain fp16 dense matmul is 2.7× off its 9.3 ms bandwidth floor at skinny M — the op class is kernel-limited on MLX 0.31.2; only a custom kernel changes it (→ H12) |
@@ -175,3 +175,10 @@ Remaining decision items are UI-contract only (H4b, H9).
   boundary gaps to ±0.10 — a product-quality regression, not a tolerance
   call; not presented for approval. Lens int8 also would have halved
   lens RAM (3.30→1.75 GB) — moot. No code changes.
+- 2026-07-09 — H3 REJECTED: mlx_lm's BPEStreamingDetokenizer is not
+  byte-exact vs `tok.decode` (segment attribution shifts; leading space
+  dropped on subsequence cases — concat mismatch on 2/8 torture cases),
+  and the O(T²) constant is immaterial at realistic horizons (18.6 ms
+  total at T=512; ~0.6 ms/tok averaged at T=8192 ≈ 0.5% of budget;
+  ~1.3 s one-time at 4k-prompt prefill). Custom exact incremental detok
+  not justified; revisit above ~8k-token generations. No code changes.
