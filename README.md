@@ -2,7 +2,7 @@
 
 A visual debugger for a local Qwen3.6-27B (4-bit) on Apple Silicon / MLX.
 It fits a **Jacobian lens** and shows which words the model is pushing
-toward at every layer and token position. Most never reach the output.
+toward at every layer and token position.
 
 ![Global-workspace concept readout](assets/screenshot_blackmail.png)
 
