@@ -101,7 +101,7 @@ the H4 change affects prefill only).
 | H4 | Prefill readout: lens warm-up at startup + chunk-size amortization | prefill TTFT | high | S | landed | **warm-up landed: prefill readout 92.6 → 39.4 ms/prompt-token** (1.78 s one-time upload moved to startup). **Chunk lever REJECTED**: CHUNK 8→64 sweep on a 265-tok prompt = 35.1→34.3 ms/pt (noise) — readout is kernel-shape-bound, not bandwidth-bound (spawned H11). `READOUT_CHUNK` env knob kept, default 8. See decode-04.md |
 | H4b | Prefill payload: per-chunk SSE snapshot frames + rounded scores in JSON | long-prompt serialization + browser parse (tens of MB at 1k tokens) | medium | M | needs-decision | changes the SSE event shape the client parses — UI contract decision |
 | H11 | Unembed: dense-fp16 W_U or reshaped batching beats the qmm | ~20 ms/token | medium-high | M | rejected | **all variants measured on real weights at [64,1,D]**: 2D reshape 31.2 ms (worse, bit-identical), dense fp16 25.0 ms (−4.6 ms only, +2.5 GB resident, 2.0e-2 drift = 20× golden atol), dense fp32 33.7 ms (worse + a top-10 order flip). Even plain fp16 dense matmul is 2.7× off its 9.3 ms bandwidth floor at skinny M — the op class is kernel-limited on MLX 0.31.2; only a custom kernel changes it (→ H12) |
-| H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open (USER-PICKED 2026-07-10) | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
+| H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed | ≤6 ms/token ceiling (corrected) | — | L | rejected | **efficiency sweep on real weights: qmm 5.55 TFLOPS at M=64 = its curve's PEAK (degrades to 4.36 at M=4096); dense fp16 7.05 vs 7.22 peak (98%). No skinny-M penalty exists — the op is compute-saturated (163 GFLOP at M=64 ≈ 23 ms at achievable TFLOPS). The prior 'kernel-shape-bound / 9.3 ms floor' analysis compared to a bandwidth floor on a compute-limited op — corrected. Perfect-kernel ceiling ≈ 6 ms/token < stop threshold for L effort** |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Free the event loop during GPU work (`asyncio.to_thread` + GPU lock; MLX releases the GIL — measured max tick 1.1 ms in-thread vs 1063 ms inline) | responsiveness, not tok/s | high | S | landed | **end-to-end during generation: `/api/model` 341.9 → 0.8 ms median (max 589.9 → 3.3), pause round-trip 339.5 → 1.4 ms**; full stream exercised (snapshots, pause+resume, done); lock preserves serialized-GPU semantics across streams |
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | rejected | **re-validated on the REAL lens: speed holds at P=1 (15.9→8.6 ms) but P=8 regresses (21.1→22.3), and rank stability collapses — only 80/192 cells keep top-10 order, 32/192 (17%) change top-10 MEMBERSHIP, worst common-id drift 0.2513 (50× tie-aware EPS), boundary gaps to ±0.10.** The synthetic 0.5%-rel-err estimate measured the tensor, not the decision: real J structure aligns with real activations. Not a tolerance call — a measured product-quality regression for a 6.4% win. Third stand-in-bias instance |
@@ -109,12 +109,12 @@ the H4 change affects prefill only).
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
 | C1 | `/api/slice`: rewire to `_readout_at_positions` (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | landed | rewired to the batched readout + H6 threading pattern, identical response schema (validated end-to-end: 32 tok × 64 layers in 2.98 s; old path ≈ 2k argsorts + ~20k syncs); gate 4/4 |
 
-Suggested order: H3 → H6 → C1 (small hygiene) → then the strategic fork:
-H8 (speculative decode, ~25 ms, L) vs H12 (custom skinny-matmul kernel,
-~20 ms, L) — both week-scale; pick ONE with the user. Every cheap decode
-lever is now exhausted or rejected on evidence; readout floor with
-current kernels ≈ transport 15.9 + unembed 29.5 + topk 1.4 ≈ 47 ms.
-Remaining decision items are UI-contract only (H4b, H9).
+**LOOP CLOSED 2026-07-10 — backlog exhausted above threshold.** The
+unembed is compute-bound at hardware peak (H12 rejected on corrected
+floor); H8 deferred by user decision on correctness grounds; remaining
+items (H4b, H9) are UI-contract decisions, reopenable by the user.
+Decode floor with current kernels ≈ forward 71.8 + transport 15.9 +
+unembed 29.5 (compute-bound) + topk 1.4 ≈ 115 ms/token — where we are.
 
 ### Strategic fork — resolved 2026-07-10
 
@@ -207,3 +207,15 @@ Reopen only with an explicit user decision.
   in 2.98 s vs the old path's ~2k full-vocab argsorts + ~20k per-score
   syncs). Gate 4/4. Backlog now holds only the strategic fork (H8 vs
   H12) and the UI-contract decisions (H4b, H9).
+- 2026-07-10 — H12 REJECTED pre-implementation; LOOP DONE. Efficiency
+  sweep on real weights: qmm 5.55 TFLOPS at M=64 is its curve's peak
+  (4.36 at M=4096), dense fp16 at 98% of peak — no skinny-M penalty; the
+  unembed is compute-saturated (163 GFLOP ≈ 23 ms floor at achievable
+  throughput). Prior 'kernel-shape-bound, 9.3 ms floor' analysis is
+  CORRECTED: it used a bandwidth floor on a compute-limited op, and
+  'flat under batching' is ambiguous between kernel-limited and
+  compute-bound — disambiguate via achieved-vs-peak TFLOPS. Perfect-
+  kernel ceiling ~6 ms/token: below threshold for L effort. Stop check
+  fires: no open items above threshold. Final: 131.7 → ~115 ms/token
+  decode, prefill readout 110.6 → 39.4 ms/pt, pause 340 → 1.4 ms,
+  /api/slice minutes → 2.98 s. Gate green throughout.
