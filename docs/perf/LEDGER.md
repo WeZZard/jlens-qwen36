@@ -104,18 +104,17 @@ the H4 change affects prefill only).
 | H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Run generation on a worker thread (asyncio.Queue → SSE) so `/api/chat_control` (pause) and other endpoints stay responsive | responsiveness, not tok/s | high | M | open | all MLX work blocks the uvicorn event loop; worst during multi-second prefill |
-| H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | needs-decision | measured 14.2→7.7 ms, max rel err 0.5% — **but on SYNTHETIC J matrices; after two stand-in-bias hits (H2, unembed), re-validate speed + top-10 rank stability on the REAL lens before requesting user approval** |
+| H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | rejected | **re-validated on the REAL lens: speed holds at P=1 (15.9→8.6 ms) but P=8 regresses (21.1→22.3), and rank stability collapses — only 80/192 cells keep top-10 order, 32/192 (17%) change top-10 MEMBERSHIP, worst common-id drift 0.2513 (50× tie-aware EPS), boundary gaps to ±0.10.** The synthetic 0.5%-rel-err estimate measured the tensor, not the decision: real J structure aligns with real activations. Not a tolerance call — a measured product-quality regression for a 6.4% win. Third stand-in-bias instance |
 | H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward 72→~45–55 ms effective | low-medium | L | open | **in-situ: forward = 72.2 ms/token** (not ~100 as estimated) — ~1.4× above the ~50 ms pure-bandwidth floor; smaller but still the largest single lever after readout work |
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
 | C1 | `/api/slice`: rewire to `_readout_at_positions` or delete (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | open | web/index.html only calls `/api/chat_stream` |
 
-Suggested order (re-ranked on measured data): H7 re-validation on the
-real lens (→ decision package) → H3 → H6 → H8 vs H12 (both L effort —
-forward amortization ~25 ms vs unembed kernel ~20 ms; pick one). The
-cheap-restructuring well is now dry: remaining decode levers all need
-either a user decision (H7, H4b, H9), a custom kernel (H12), or a draft
-model (H8). Readout floor with current kernels ≈ transport 15.5 +
-unembed 29.5 + topk 1.4 ≈ 46 ms.
+Suggested order: H3 → H6 → C1 (small hygiene) → then the strategic fork:
+H8 (speculative decode, ~25 ms, L) vs H12 (custom skinny-matmul kernel,
+~20 ms, L) — both week-scale; pick ONE with the user. Every cheap decode
+lever is now exhausted or rejected on evidence; readout floor with
+current kernels ≈ transport 15.9 + unembed 29.5 + topk 1.4 ≈ 47 ms.
+Remaining decision items are UI-contract only (H4b, H9).
 
 ## History
 
@@ -169,3 +168,10 @@ unembed 29.5 + topk 1.4 ≈ 46 ms.
   (H12, L effort, GDN-VJP precedent). H7's synthetic-J numbers flagged
   for re-validation on the real lens before the user decision. No code
   changes this iteration.
+- 2026-07-09 — H7 REJECTED on real-lens re-validation (third stand-in
+  hit). Speed holds at P=1 (15.9→8.6 ms) but regresses at P=8
+  (21.1→22.3); rank stability collapses: 80/192 cells identical top-10
+  order, 32/192 change membership, worst common-id drift 0.2513 with
+  boundary gaps to ±0.10 — a product-quality regression, not a tolerance
+  call; not presented for approval. Lens int8 also would have halved
+  lens RAM (3.30→1.75 GB) — moot. No code changes.
