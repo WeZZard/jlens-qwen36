@@ -1,9 +1,8 @@
 # J-lens Qwen3.6
 
-A visual debugger for the hidden, token-level signals inside a local
-Qwen3.6-27B (4-bit) on Apple Silicon / MLX. It fits a **Jacobian lens** and
-shows, for every layer and position, the vocabulary tokens the model is
-leaning toward — including ones that never reach its output.
+A visual debugger for a local Qwen3.6-27B (4-bit) on Apple Silicon / MLX.
+It fits a **Jacobian lens** and shows which words the model is pushing
+toward at every layer and token position. Most never reach the output.
 
 ![Global-workspace concept readout](assets/screenshot_blackmail.png)
 
@@ -52,10 +51,10 @@ run with no lens (logit lens). See [`docs/lenses.md`](docs/lenses.md).
 
 ## How it works
 
-The Jacobian lens at layer ℓ is a matrix `J_ℓ ∈ R^{d×d}` mapping a residual
+The Jacobian lens at layer ℓ is a matrix `J_ℓ ∈ R^{d×d}`: the network's
+average input→output Jacobian over a corpus of prompts. It maps a residual
 `h_ℓ` into the final-layer basis, so `softmax(W_U · norm(J_ℓ h_ℓ))` gives
-token scores — the network's average input→output Jacobian over a corpus.
-Fitting chains per-layer Jacobians: `J_ℓ = J_{ℓ+1} · M_ℓ`.
+token scores. Fitting chains per-layer Jacobians: `J_ℓ = J_{ℓ+1} · M_ℓ`.
 
 The hard part is the 48 Gated DeltaNet (GDN) linear-attention layers: MLX's
 fused GDN kernel has no VJP and the ops fallback is ~22× slower. This
