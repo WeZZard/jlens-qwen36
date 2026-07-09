@@ -21,3 +21,10 @@ data/sessions/
 
 # Wrangler local cache (Cloudflare Pages deploys)
 .wrangler/
+
+# Vim swap files
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
