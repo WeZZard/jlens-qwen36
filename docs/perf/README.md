@@ -10,6 +10,11 @@ docs/perf/{subsystem}-{NN}.md
 `NN` is the iteration ordinal **within that subsystem**. Read a subsystem's
 files in order to see how each change built on the last.
 
+[`LEDGER.md`](LEDGER.md) is the *live* state of ongoing optimization work —
+target, correctness gate, measured baseline, and the ranked hypothesis
+backlog — maintained by the `performance-optimize` skill (one hypothesis
+tested per iteration). This README stays the record of what landed.
+
 ## Subsystems
 
 ### `fit` — the J-lens fitting pipeline
