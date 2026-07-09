@@ -101,7 +101,7 @@ the H4 change affects prefill only).
 | H4 | Prefill readout: lens warm-up at startup + chunk-size amortization | prefill TTFT | high | S | landed | **warm-up landed: prefill readout 92.6 → 39.4 ms/prompt-token** (1.78 s one-time upload moved to startup). **Chunk lever REJECTED**: CHUNK 8→64 sweep on a 265-tok prompt = 35.1→34.3 ms/pt (noise) — readout is kernel-shape-bound, not bandwidth-bound (spawned H11). `READOUT_CHUNK` env knob kept, default 8. See decode-04.md |
 | H4b | Prefill payload: per-chunk SSE snapshot frames + rounded scores in JSON | long-prompt serialization + browser parse (tens of MB at 1k tokens) | medium | M | needs-decision | changes the SSE event shape the client parses — UI contract decision |
 | H11 | Unembed: dense-fp16 W_U or reshaped batching beats the qmm | ~20 ms/token | medium-high | M | rejected | **all variants measured on real weights at [64,1,D]**: 2D reshape 31.2 ms (worse, bit-identical), dense fp16 25.0 ms (−4.6 ms only, +2.5 GB resident, 2.0e-2 drift = 20× golden atol), dense fp32 33.7 ms (worse + a top-10 order flip). Even plain fp16 dense matmul is 2.7× off its 9.3 ms bandwidth floor at skinny M — the op class is kernel-limited on MLX 0.31.2; only a custom kernel changes it (→ H12) |
-| H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
+| H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open (USER-PICKED 2026-07-10) | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Free the event loop during GPU work (`asyncio.to_thread` + GPU lock; MLX releases the GIL — measured max tick 1.1 ms in-thread vs 1063 ms inline) | responsiveness, not tok/s | high | S | landed | **end-to-end during generation: `/api/model` 341.9 → 0.8 ms median (max 589.9 → 3.3), pause round-trip 339.5 → 1.4 ms**; full stream exercised (snapshots, pause+resume, done); lock preserves serialized-GPU semantics across streams |
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | rejected | **re-validated on the REAL lens: speed holds at P=1 (15.9→8.6 ms) but P=8 regresses (21.1→22.3), and rank stability collapses — only 80/192 cells keep top-10 order, 32/192 (17%) change top-10 MEMBERSHIP, worst common-id drift 0.2513 (50× tie-aware EPS), boundary gaps to ±0.10.** The synthetic 0.5%-rel-err estimate measured the tensor, not the decision: real J structure aligns with real activations. Not a tolerance call — a measured product-quality regression for a 6.4% win. Third stand-in-bias instance |
@@ -115,6 +115,17 @@ H8 (speculative decode, ~25 ms, L) vs H12 (custom skinny-matmul kernel,
 lever is now exhausted or rejected on evidence; readout floor with
 current kernels ≈ transport 15.9 + unembed 29.5 + topk 1.4 ≈ 47 ms.
 Remaining decision items are UI-contract only (H4b, H9).
+
+### Strategic fork — resolved 2026-07-10
+
+User constraint: correctness of the J-lens and the decoding must not be
+harmed. Decision: **H12** (user accepted recommendation). H8 (speculative
+decoding) is DEFERRED for this codebase on correctness grounds, not
+effort: batched verification changes the token trajectory at near-ties
+(measured ~1e-3 batch-shape logit drift), readout activations would come
+from batched forwards (~1e-2 measured drift between chunked GDN paths),
+and the 48 GDN layers' recurrent state cannot roll back by truncation.
+Reopen only with an explicit user decision.
 
 ## History
 
