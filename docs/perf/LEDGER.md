@@ -58,34 +58,53 @@ landing either requires a documented tolerance here + golden regen).
 
 ## Baseline
 
-- 141 ms/token = 7.07 tok/s, flat in context length — from `decode-02.md`
-  (commit `59e5add`). **Quoted, not re-measured; Bootstrap must re-measure
-  with per-stage instrumentation before the first land.**
-- Estimated split (microbench evidence, 2026-07-09, MLX 0.31.2): forward
-  ~100 ms; readout ≈ transport ~14 ms + unembed ~24–30 ms (synthetic-weight
-  stand-in, confirm in situ) + top-k ~14.6 ms; CPU-side (tolist/JSON/SSE/
-  detok) a few ms.
+**131.7 ms/token = 7.59 tok/s** @ `d3d7bbe`, 2026-07-09 — measured by
+`uv run python scripts/bench_decode.py` (median of 32 greedy tokens,
+45-tok prompt, 64 layers, top_n 10, full-depth lens, M4 Pro, MLX 0.31.2).
+The bench drives the real production functions in-process; decode-02's
+141 ms/token additionally included SSE/HTTP transport.
+
+Measured split per generated token (call-level, exact; readout stages via
+`JLENS_PERF=1`, medians):
+
+| stage | ms | notes |
+|---|---|---|
+| forward (extend) | 72.2 | was estimated ~100 — headroom over pure-bandwidth floor is smaller than assumed |
+| readout.transport | 15.5 | matches microbench 14.2 |
+| readout.unembed | 29.9 | **largest readout stage**; matches the synthetic stand-in (~24–30) |
+| readout.topk | 14.7 | matches microbench 14.6 |
+| readout.tolist | 0.1 | |
+| sample + emit (detok+json) | 0.5 | CPU-side is negligible at short T |
+| **TOTAL** | **131.7** | 7.59 tok/s |
+
+Prefill readout: **4976 ms for 45 prompt tokens = 110.6 ms/prompt-token**
+(6 chunks ≈ 825 ms avg; the first chunk includes the one-time lens
+fp16 memoization upload, so steady-state per-chunk cost needs a separate
+measurement — see H4). Prefill forward: 637 ms. Instrumentation overhead
+when ON: ~2% (134.0 vs 131.7); zero when off (default).
 
 ## Backlog
 
 | id | hypothesis | expected win | confidence | effort | status | evidence |
 |----|-----------|--------------|------------|--------|--------|----------|
-| H0 | Per-stage instrumentation + in-repo benchmark script; re-measure baseline | enables all | — | S | open | prerequisite; decode-02 numbers are historical |
+| H0 | Per-stage instrumentation + in-repo benchmark script; re-measure baseline | enables all | — | S | landed | `scripts/bench_decode.py` + `jlens_qwen/perf.py` + 4 flag-gated marks in `_readout_at_positions`; baseline 131.7 ms/token measured; gate 4/4 green with marks in place |
 | G1 | Build the decode correctness gate (see Gate) | enables all | — | M | landed | 4 golden-based tests + generator, mutation-checked (2/2 caught); see Gate section |
-| H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~13 ms/token; prefill chunk 112→3.2 ms | high | S | open | measured 14.6→0.7–0.8 ms at [64,1,248k], ids identical; [64,8,248k] 112→3.2 ms; `mx.argpartition`/`mx.topk` are NOT faster (full sort); numpy path 7× slower |
-| H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | open | 29.7→23.7 ms on synthetic 4-bit lm_head stand-in; stand-in bias risk; may flip near-tied ranks → needs tolerance decision |
-| H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; seconds on multi-k-token prompts | high | S | open | serve.py:784, serve.py:333; cumulative-decode cost grows linearly per token |
-| H4 | Prefill: raise CHUNK 8→32 (fp16 logits), per-chunk SSE snapshot frames, round scores in JSON | long-prompt time-to-first-token; MB-scale SSE frames | medium | M | open | [64,8,248k] fp32 = 508 MB/chunk; single prefill snapshot JSON can hit tens of MB at 1k tokens |
-| H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~5–10 ms/token | medium | M | open | loop is fully serial today (serve.py:764–808); mlx_lm generate_step pattern |
+| H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | open | **in-situ: topk = 14.7 ms/token median**; microbench 14.6→0.7–0.8 ms at [64,1,248k], ids identical; [64,8,248k] 112→3.2 ms; `mx.argpartition`/`mx.topk` are NOT faster (full sort); numpy 7× slower |
+| H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | needs-decision | **in-situ: unembed = 29.9 ms/token — largest readout stage**; 29.7→23.7 ms on synthetic stand-in; may flip near-tied ranks → tolerance decision + golden regen required |
+| H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; matters only at large T/S | high | S | open | in-situ at T=32: emit = 0.3 ms (invisible); the win is long conversations and multi-k-token prompts, not steady-state tok/s |
+| H4 | Prefill readout: measure steady-state chunk cost (exclude one-time lens upload), raise CHUNK, fp16 logits, per-chunk SSE frames | prefill TTFT: measured 110.6 ms/prompt-token | medium→high | M | open | **in-situ: 4976 ms readout for a 45-tok prompt** (6 chunks ≈ 825 ms avg incl. one-time lens fp16 memoization in chunk 1); at 1k-tok prompts this extrapolates to ~2 min — top UX pain |
+| H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Run generation on a worker thread (asyncio.Queue → SSE) so `/api/chat_control` (pause) and other endpoints stay responsive | responsiveness, not tok/s | high | M | open | all MLX work blocks the uvicorn event loop; worst during multi-second prefill |
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | needs-decision | measured 14.2→7.7 ms, max rel err 0.5% (int4: 4.1 ms but 7.5% err — likely too lossy); needs rank-stability gate + user tolerance approval |
-| H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward ~100→60–80 ms effective | low-medium | L | open | forward is ~2× above the ~50 ms pure-bandwidth floor on M4 Pro; largest lift, acceptance-rate dependent |
+| H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward 72→~45–55 ms effective | low-medium | L | open | **in-situ: forward = 72.2 ms/token** (not ~100 as estimated) — ~1.4× above the ~50 ms pure-bandwidth floor; smaller but still the largest single lever after readout work |
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
 | C1 | `/api/slice`: rewire to `_readout_at_positions` or delete (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | open | web/index.html only calls `/api/chat_stream` |
 
-Suggested order: H0 → G1 → H1 → H3 → H2 → H4 → H5 → H6 → H7 → H8.
-Projected after H1–H7: ~100–110 ms/token (~9–10 tok/s), prefill readout
-~10× faster. Past 10 tok/s requires H8.
+Suggested order (re-ranked on measured data): H1 → H4 → H7 → H3 → H6 →
+H2 (pending decision) → H8. Projected: H1 lands ~117 ms/token
+(~8.5 tok/s); +H7 ≈ ~110 ms (~9.1 tok/s); +H2 (if approved) ≈ ~104 ms
+(~9.6 tok/s). Prefill readout is now the top UX pain (110.6 ms/prompt-
+token) — H1 + H4 attack it directly. Past ~10 tok/s requires H8.
 
 ## History
 
@@ -102,3 +121,14 @@ Projected after H1–H7: ~100–110 ms/token (~9–10 tok/s), prefill readout
   Also: server default `JLENS_PATH=data/lens/lens.npz` does not exist on
   this machine — the real lens is `full_depth_analytic.npz` (gate honors
   `JLENS_PATH`). pytest added as dev dep. No hot-path changes.
+- 2026-07-09 — H0 landed: `scripts/bench_decode.py` (in-repo benchmark)
+  + `jlens_qwen/perf.py` (flag-gated stage timers) + 4 marks in
+  `_readout_at_positions`. Baseline re-measured: **131.7 ms/token =
+  7.59 tok/s** @ d3d7bbe (forward 72.2, readout 59.0 = transport 15.5 +
+  unembed 29.9 + topk 14.7, CPU-side 0.5). Prefill readout 110.6 ms/
+  prompt-token — top UX pain. Re-ranked backlog on data: H5 REJECTED
+  (premise falsified: CPU-side is 0.5 ms, not 5–10), H2 → needs-decision
+  and rank up (unembed is largest readout stage), H8 win revised down
+  (forward 72 not 100), H3 deprioritized for tok/s (invisible at T=32).
+  Gate 4/4 green with marks in place; instrumentation overhead 0 when
+  off, ~2% when on.

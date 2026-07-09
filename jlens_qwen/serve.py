@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from jlens_qwen.model import load as load_model
 from jlens_qwen.lens import JacobianLens
+from jlens_qwen import perf
 
 # Globals (loaded once at startup).
 _model = None
@@ -151,6 +152,7 @@ def _readout_at_positions(
     for c0 in range(0, len(positions), CHUNK):
         chunk = positions[c0:c0 + CHUNK]
         pos_idx = mx.array(chunk)
+        t = perf.begin()
         hs = []
         for layer in layers:
             h = acts[layer][0][pos_idx].astype(mx.float32)  # [P, D]
@@ -158,11 +160,15 @@ def _readout_at_positions(
                 h = _lens.transport(h, layer)
             hs.append(h)
         hstack = mx.stack(hs)  # [L, P, D]
+        t = perf.mark(t, "readout.transport", hstack)
         logits = _model.unembed(_model.final_norm(hstack)).astype(mx.float32)
+        t = perf.mark(t, "readout.unembed", logits)
         order = mx.argsort(logits, axis=-1)[..., -top_n:][..., ::-1]  # [L, P, n]
         vals = mx.take_along_axis(logits, order, axis=-1)
+        t = perf.mark(t, "readout.topk", order, vals)
         ids_l = order.tolist()
         vals_l = vals.tolist()
+        perf.mark(t, "readout.tolist")
         for li, layer in enumerate(layers):
             o = out[layer]
             for pi in range(len(chunk)):
