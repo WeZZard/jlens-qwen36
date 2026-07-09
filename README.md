@@ -9,8 +9,6 @@ leaning toward — including ones that never reach its output.
 
 Inspired by Anthropic's [*Verbalizable Representations Form a Global
 Workspace in Language Models*](https://transformer-circuits.pub/2026/workspace/index.html).
-Demo-grade with the bundled 20-prompt lens; **research-grade with
-[Neuronpedia's n=1000 lens](docs/lenses.md)** — fit at the paper's scale.
 
 ## What you're looking at
 
@@ -71,9 +69,9 @@ See [`docs/perf/`](docs/perf/) for how it was made fast.
 Fit on 20 prompts across all 63 layers. Readouts are interpretable but
 noisy; interventions are causal (swapping France→China redirects the answer
 to Beijing) but concept-dependent. For research-grade quality, load
-[Neuronpedia's n=1000 lens](docs/lenses.md) (the paper's fitting scale, no
-fitting needed) or fit 100+ prompts yourself — the analytic pipeline makes
-that affordable.
+[Neuronpedia's n=1000 lens](https://neuronpedia.org/jlens) (the paper's
+fitting scale — [setup](docs/lenses.md)) or fit 100+ prompts yourself — the
+analytic pipeline makes that affordable.
 
 Chat runs with thinking disabled (`enable_thinking=False`) so the model
 computes in the latent stream rather than in a visible `<think>` trace,
