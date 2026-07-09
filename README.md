@@ -8,8 +8,9 @@ leaning toward — including ones that never reach its output.
 ![Global-workspace concept readout](assets/screenshot_blackmail.png)
 
 Inspired by Anthropic's [*Verbalizable Representations Form a Global
-Workspace in Language Models*](https://transformer-circuits.pub/2026/workspace/index.html)
-— a practical tool in that spirit, not a research-grade reproduction.
+Workspace in Language Models*](https://transformer-circuits.pub/2026/workspace/index.html).
+Demo-grade with the bundled 20-prompt lens; **research-grade with
+[Neuronpedia's n=1000 lens](docs/lenses.md)** — fit at the paper's scale.
 
 ## What you're looking at
 
@@ -69,8 +70,10 @@ See [`docs/perf/`](docs/perf/) for how it was made fast.
 
 Fit on 20 prompts across all 63 layers. Readouts are interpretable but
 noisy; interventions are causal (swapping France→China redirects the answer
-to Beijing) but concept-dependent. For research-grade quality, fit 100+
-prompts — the analytic pipeline makes that affordable.
+to Beijing) but concept-dependent. For research-grade quality, load
+[Neuronpedia's n=1000 lens](docs/lenses.md) (the paper's fitting scale, no
+fitting needed) or fit 100+ prompts yourself — the analytic pipeline makes
+that affordable.
 
 Chat runs with thinking disabled (`enable_thinking=False`) so the model
 computes in the latent stream rather than in a visible `<think>` trace,
@@ -93,10 +96,11 @@ Based on Anthropic's
 implementation (Apache-2.0) and
 [paper](https://transformer-circuits.pub/2026/workspace/index.html). The GDN
 forward kernel is from [mlx-lm](https://github.com/ml-explore/mlx-lm); the
-backward kernel is original to this project. Thanks to
-[Neuronpedia](https://neuronpedia.org/jlens) and **@mntss (Mateusz
-Piotrowski, Anthropic Interpretability)** for the public pre-fitted
-Qwen3.6-27B lens weights.
+backward kernel is original to this project.
+
+Thanks to [Neuronpedia](https://neuronpedia.org/jlens) and
+**@mntss (Mateusz Piotrowski, Anthropic Interpretability)** for the public
+pre-fitted Qwen3.6-27B lens weights.
 
 ## License
 
