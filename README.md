@@ -314,11 +314,15 @@ The Jacobian lens (J-lens) at layer ℓ is a matrix `J_ℓ ∈ R^{d_model × d_m
 - **Single-token concepts** — like the reference, the J-lens only
   identifies concepts that correspond to single vocabulary tokens.
   Multi-token concepts need the paper's extension (§App-multi-token).
-- **Interventions are subtle with a 20-prompt lens** — the J-lens vectors
-  `v_t = J_ℓᵀ @ W_U[t]` are small with a noisy lens, so steering barely
-  changes the output. With a 100+ prompt lens or the analytic attention
-  branch (see [`docs/perf/fit-04.md`](docs/perf/fit-04.md)), interventions
-  become reliable.
+- **Interventions are causal but concept-dependent with a 20-prompt lens** —
+  the J-lens vectors `v_t = J_ℓᵀ @ W_U[t]` are genuinely causal, not just
+  readout directions: swapping France→China at L30/L40/L48 cleanly redirects
+  the answer to **Beijing** (the capital of the *swapped* country — a
+  multi-hop edit, not a token injection). But strength tracks how strongly a
+  concept is fit: the harder, sparser spider→ant→6 edit does **not** flip
+  with 20 prompts (it stays "8 legs"). A 100+ prompt lens is needed before
+  interventions are reliable *across the board*. Reproduce with
+  `scripts/intervention_sanity.py`.
 
 ## Acknowledgements
 
