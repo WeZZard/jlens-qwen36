@@ -27,7 +27,7 @@ The grid is **position × layer**; each cell is the top J-lens token there.
 In chat mode it streams live, one row per generated token. Click a cell to
 pin its top-10 readout.
 
-## Quick start (~5 min)
+## Quick start
 
 ```bash
 git clone https://github.com/WeZZard/jlens-qwen36.git
