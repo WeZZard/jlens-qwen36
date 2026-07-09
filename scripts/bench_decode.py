@@ -54,6 +54,11 @@ def main() -> None:
     model = load(model_id)
     set_inference_mode(True)
     lens = JacobianLens.load(LENS_PATH) if os.path.exists(LENS_PATH) else None
+    if lens is not None:
+        t0 = time.perf_counter()
+        lens.warm()
+        print(f"lens warmed in {time.perf_counter() - t0:.1f}s "
+              "(one-time; excluded from prefill numbers)", flush=True)
     serve._model = model
     serve._lens = lens
 

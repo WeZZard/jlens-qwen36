@@ -15,6 +15,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,9 @@ async def load():
         print(f"Loading lens from {_lens_path}...", flush=True)
         _lens = JacobianLens.load(_lens_path)
         print(f"  {_lens}", flush=True)
+        _t0 = time.perf_counter()
+        _lens.warm()
+        print(f"  lens warmed (fp16 GPU upload) in {time.perf_counter() - _t0:.1f}s", flush=True)
     else:
         print(f"  no lens at {_lens_path}; using logit lens (J=I)", flush=True)
         print(f"  (fit one with: uv run python scripts/run_fit.py)", flush=True)
@@ -149,6 +153,9 @@ def _blocked_topk(logits: mx.array, k: int) -> tuple[mx.array, mx.array]:
     return ids, vals
 
 
+# Position-chunk size for the batched readout (see the loop below).
+READOUT_CHUNK = int(os.environ.get("JLENS_READOUT_CHUNK", "8"))
+
 _tok_str_cache: dict[int, str] = {}
 
 
@@ -183,11 +190,13 @@ def _readout_at_positions(
     if not positions:
         return out
 
-    # Chunk positions so the [L, P_chunk, vocab] logits tensor stays small
-    # (64 layers x 8 positions x 248k vocab fp32 ~= 0.5GB).
-    CHUNK = 8
-    for c0 in range(0, len(positions), CHUNK):
-        chunk = positions[c0:c0 + CHUNK]
+    # Chunk positions to bound the [L, P_chunk, vocab] logits tensor.
+    # Each chunk pays one full read of the ~3.3GB J stack + ~636MB lm_head
+    # REGARDLESS of how many positions it carries, so larger chunks
+    # amortize weight traffic across positions; the transient fp32 logits
+    # tensor is the ceiling (P=32 -> ~2GB).
+    for c0 in range(0, len(positions), READOUT_CHUNK):
+        chunk = positions[c0:c0 + READOUT_CHUNK]
         pos_idx = mx.array(chunk)
         t = perf.begin()
         hs = []

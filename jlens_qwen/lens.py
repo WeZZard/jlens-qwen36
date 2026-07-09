@@ -69,6 +69,20 @@ class JacobianLens:
                 jacobians[l] = data[key].astype(np.float32)
         return cls(jacobians, n_prompts=n_prompts, d_model=d_model)
 
+    def warm(self) -> None:
+        """Materialize the fp16 GPU copies of all J matrices now.
+
+        The first transport of each layer otherwise pays a one-time
+        fp32->fp16 conversion + upload (~3.3GB total across 63 layers,
+        measured ~2s) — which lands inside the first request's prefill
+        readout. Call this at server startup instead.
+        """
+        for l in self.source_layers:
+            if l not in self._mx_jacobians:
+                J = mx.array(self.jacobians[l].astype(np.float16))
+                mx.eval(J)
+                self._mx_jacobians[l] = J
+
     def transport(self, residual: mx.array, layer: int) -> mx.array:
         """Map a residual at `layer` into the final-layer basis: J_l @ h.
 

@@ -78,13 +78,16 @@ Measured split per generated token (call-level, exact; readout stages via
 | sample + emit (detok+json) | 0.5 | CPU-side negligible at short T |
 | **TOTAL** | **118.1** | 8.47 tok/s (was 131.7 @ d3d7bbe) |
 
-Prefill readout: **4169 ms for 45 prompt tokens = 92.6 ms/prompt-token**
-(was 110.6; first chunk still carries the one-time lens fp16 memoization
-upload — steady-state per-chunk cost needs isolating, see H4). Prefill
-forward: 662 ms. Instrumentation overhead when ON ~2%; zero when off.
+Prefill readout: **1772 ms for 45 prompt tokens = 39.4 ms/prompt-token**
+(was 110.6 → 92.6; the one-time lens fp16 upload — measured 1.78 s cold —
+now happens at server startup via `JacobianLens.warm()`, excluded from
+request latency). Steady-state prefill cost is ~35 ms/prompt-token on a
+265-token prompt, **~30 ms of which is the unembed per position** — see
+H11. Prefill forward: 677 ms. Instrumentation overhead when ON ~2%.
 
 History of the headline number: 131.7 @ `d3d7bbe` (H0 re-measure) →
-118.1 (H1).
+118.1 (H1) → 114.5 (H4 run; decode Δ vs H1 is run-to-run variance —
+the H4 change affects prefill only).
 
 ## Backlog
 
@@ -95,7 +98,9 @@ History of the headline number: 131.7 @ `d3d7bbe` (H0 re-measure) →
 | H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | landed | **e2e 131.7→118.1 ms/token (−10.3%); topk 14.7→1.36 ms; prefill readout 110.6→92.6 ms/pt; gate 4/4, golden ids byte-identical**; see decode-03.md |
 | H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | needs-decision | **in-situ: unembed = 29.9 ms/token — largest readout stage**; 29.7→23.7 ms on synthetic stand-in; may flip near-tied ranks → tolerance decision + golden regen required |
 | H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; matters only at large T/S | high | S | open | in-situ at T=32: emit = 0.3 ms (invisible); the win is long conversations and multi-k-token prompts, not steady-state tok/s |
-| H4 | Prefill readout: measure steady-state chunk cost (exclude one-time lens upload), raise CHUNK, fp16 logits, per-chunk SSE frames | prefill TTFT: measured 110.6 ms/prompt-token | medium→high | M | open | **in-situ: 4976 ms readout for a 45-tok prompt** (6 chunks ≈ 825 ms avg incl. one-time lens fp16 memoization in chunk 1); at 1k-tok prompts this extrapolates to ~2 min — top UX pain |
+| H4 | Prefill readout: lens warm-up at startup + chunk-size amortization | prefill TTFT | high | S | landed | **warm-up landed: prefill readout 92.6 → 39.4 ms/prompt-token** (1.78 s one-time upload moved to startup). **Chunk lever REJECTED**: CHUNK 8→64 sweep on a 265-tok prompt = 35.1→34.3 ms/pt (noise) — readout is kernel-shape-bound, not bandwidth-bound (spawned H11). `READOUT_CHUNK` env knob kept, default 8. See decode-04.md |
+| H4b | Prefill payload: per-chunk SSE snapshot frames + rounded scores in JSON | long-prompt serialization + browser parse (tens of MB at 1k tokens) | medium | M | needs-decision | changes the SSE event shape the client parses — UI contract decision |
+| H11 | Unembed is kernel-shape-bound: ~30 ms/position at [64·P, 5120] × 4-bit [248k, 5120] regardless of P — try dense-fp16 W_U (+2.5 GB resident, bandwidth-bound ~9 ms est.) or reshaped batching | ~20 ms/token (17%) AND ~20 ms/prompt-token | medium-high | M | open | CHUNK sweep showed no amortization (35.1→34.3 ms/pt); 30 ms is ~4× the compute floor (~8 ms) and ~13× the bandwidth floor (~2.3 ms); biggest non-forward lever on the board |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Run generation on a worker thread (asyncio.Queue → SSE) so `/api/chat_control` (pause) and other endpoints stay responsive | responsiveness, not tok/s | high | M | open | all MLX work blocks the uvicorn event loop; worst during multi-second prefill |
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | needs-decision | measured 14.2→7.7 ms, max rel err 0.5% (int4: 4.1 ms but 7.5% err — likely too lossy); needs rank-stability gate + user tolerance approval |
@@ -103,11 +108,12 @@ History of the headline number: 131.7 @ `d3d7bbe` (H0 re-measure) →
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
 | C1 | `/api/slice`: rewire to `_readout_at_positions` or delete (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | open | web/index.html only calls `/api/chat_stream` |
 
-Suggested order (re-ranked on measured data): H1 → H4 → H7 → H3 → H6 →
-H2 (pending decision) → H8. Projected: H1 lands ~117 ms/token
-(~8.5 tok/s); +H7 ≈ ~110 ms (~9.1 tok/s); +H2 (if approved) ≈ ~104 ms
-(~9.6 tok/s). Prefill readout is now the top UX pain (110.6 ms/prompt-
-token) — H1 + H4 attack it directly. Past ~10 tok/s requires H8.
+Suggested order (re-ranked on measured data): H11 → H7 (pending decision)
+→ H3 → H6 → H2 (pending decision; partially subsumed by H11 if dense-fp16
+W_U lands) → H8. H11 is the biggest non-forward lever: ~20 ms off every
+generated token AND every prefill position. Projected: H11 ≈ ~95 ms/token
+(~10.5 tok/s) + prefill ≈ ~15 ms/pt; +H7 ≈ ~88 ms (~11.4 tok/s). Past
+that requires H8 (forward).
 
 ## History
 
@@ -142,3 +148,11 @@ token) — H1 + H4 attack it directly. Past ~10 tok/s requires H8.
   Gate 4/4 — golden top-10 ids byte-identical across all 192 cells
   (exactness proof held on real data, including near-ties). Iteration
   doc: decode-03.md.
+- 2026-07-09 — H4 landed (warm-up) + chunk lever rejected: lens fp16
+  upload (measured 1.78 s) moved to startup (`JacobianLens.warm()`);
+  **prefill readout 92.6 → 39.4 ms/prompt-token**. CHUNK 8→64 sweep on a
+  265-tok prompt: 35.1→34.3 ms/pt = noise → amortization premise
+  falsified; readout is kernel-shape-bound in the unembed (~30 ms/position
+  at any P) → spawned H11 (dense-fp16 W_U / reshaped batching), now the
+  top open item. Decode 114.5 ms/token this run (Δ vs 118.1 = variance).
+  Gate 4/4. Iteration doc: decode-04.md.
