@@ -436,25 +436,13 @@
        overflow yet, so the sticky TOKEN column never shifts. */
     scrollbar-gutter: stable;
   }
-  /* Firefox-only fallback: setting scrollbar-width/color in Chromium would
-     DISABLE the ::-webkit-scrollbar styling below, so scope it away. */
-  @supports not selector(::-webkit-scrollbar) {
-    #grid-body { scrollbar-width: thin; scrollbar-color: rgba(60,50,30,0.28) transparent; }
-  }
-  /* Custom-styled scrollbars are CLASSIC (space-taking) in WebKit/Blink:
-     the vertical bar gets its own gutter to the right of the sticky TOKEN
-     column — it never overlays the header or the token labels. The TOKEN
-     cells' own 12px right padding keeps their text clear of the bar. */
-  #grid-body::-webkit-scrollbar { width: 10px; height: 10px; }
-  #grid-body::-webkit-scrollbar-track { background: transparent; }
-  #grid-body::-webkit-scrollbar-corner { background: transparent; }
-  #grid-body::-webkit-scrollbar-thumb {
-    background-color: rgba(60,50,30,0.22);
-    border-radius: 5px;
-    border: 2px solid transparent;
-    background-clip: padding-box;
-  }
-  #grid-body::-webkit-scrollbar-thumb:hover { background-color: rgba(60,50,30,0.34); }
+  /* NATIVE scrollbars on purpose — do not add ::-webkit-scrollbar rules
+     here: ANY use of that pseudo-element switches WebKit/Blink to classic
+     always-visible, space-taking scrollbars, forfeiting macOS overlay
+     auto-hide (the old behavior, which read as a permanently stuck bar).
+     Overlay bars take no layout space, so the sticky TOKEN column cannot
+     shift; on classic-scrollbar platforms the scrollbar-gutter above
+     still reserves the gutter. */
   /* Full-height J-Space surface: sits behind the grid table (z-index 0 vs
      the scroller's 1) and extends the per-column tint to the bottom of
      #grid-col even when the table has few rows. Its gradient is rebuilt
