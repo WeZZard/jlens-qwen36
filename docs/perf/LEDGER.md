@@ -96,24 +96,26 @@ the H4 change affects prefill only).
 | H0 | Per-stage instrumentation + in-repo benchmark script; re-measure baseline | enables all | — | S | landed | `scripts/bench_decode.py` + `jlens_qwen/perf.py` + 4 flag-gated marks in `_readout_at_positions`; baseline 131.7 ms/token measured; gate 4/4 green with marks in place |
 | G1 | Build the decode correctness gate (see Gate) | enables all | — | M | landed | 4 golden-based tests + generator, mutation-checked (2/2 caught); see Gate section |
 | H1 | Replace full-vocab `argsort` with exact two-stage blocked top-k (block-max → top-K blocks → sort ~2.5k candidates) | ~14 ms/token (11%); big prefill win | high | S | landed | **e2e 131.7→118.1 ms/token (−10.3%); topk 14.7→1.36 ms; prefill readout 110.6→92.6 ms/pt; gate 4/4, golden ids byte-identical**; see decode-03.md |
-| H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | needs-decision | **in-situ: unembed = 29.9 ms/token — largest readout stage**; 29.7→23.7 ms on synthetic stand-in; may flip near-tied ranks → tolerance decision + golden regen required |
+| H2 | fp16 unembed activations + kill bf16→fp32→fp16 cast chain in `_readout_at_positions` | ~6 ms/token | medium | S | rejected | **falsified on REAL weights: fp16 acts make qmm SLOWER (31.9 vs 29.5 ms at [64,1,D])**; the synthetic stand-in had said 23.7 vs 29.7 — second stand-in-bias instance. No decision needed |
 | H3 | Incremental streaming detokenizer (mlx_lm's) replacing per-token `tok.decode(gen_ids)` (O(T²)) and `_token_segments` (O(S²)) | O(1)/token; matters only at large T/S | high | S | open | in-situ at T=32: emit = 0.3 ms (invisible); the win is long conversations and multi-k-token prompts, not steady-state tok/s |
 | H4 | Prefill readout: lens warm-up at startup + chunk-size amortization | prefill TTFT | high | S | landed | **warm-up landed: prefill readout 92.6 → 39.4 ms/prompt-token** (1.78 s one-time upload moved to startup). **Chunk lever REJECTED**: CHUNK 8→64 sweep on a 265-tok prompt = 35.1→34.3 ms/pt (noise) — readout is kernel-shape-bound, not bandwidth-bound (spawned H11). `READOUT_CHUNK` env knob kept, default 8. See decode-04.md |
 | H4b | Prefill payload: per-chunk SSE snapshot frames + rounded scores in JSON | long-prompt serialization + browser parse (tens of MB at 1k tokens) | medium | M | needs-decision | changes the SSE event shape the client parses — UI contract decision |
-| H11 | Unembed is kernel-shape-bound: ~30 ms/position at [64·P, 5120] × 4-bit [248k, 5120] regardless of P — try dense-fp16 W_U (+2.5 GB resident, bandwidth-bound ~9 ms est.) or reshaped batching | ~20 ms/token (17%) AND ~20 ms/prompt-token | medium-high | M | open | CHUNK sweep showed no amortization (35.1→34.3 ms/pt); 30 ms is ~4× the compute floor (~8 ms) and ~13× the bandwidth floor (~2.3 ms); biggest non-forward lever on the board |
+| H11 | Unembed: dense-fp16 W_U or reshaped batching beats the qmm | ~20 ms/token | medium-high | M | rejected | **all variants measured on real weights at [64,1,D]**: 2D reshape 31.2 ms (worse, bit-identical), dense fp16 25.0 ms (−4.6 ms only, +2.5 GB resident, 2.0e-2 drift = 20× golden atol), dense fp32 33.7 ms (worse + a top-10 order flip). Even plain fp16 dense matmul is 2.7× off its 9.3 ms bandwidth floor at skinny M — the op class is kernel-limited on MLX 0.31.2; only a custom kernel changes it (→ H12) |
+| H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
 | H6 | Run generation on a worker thread (asyncio.Queue → SSE) so `/api/chat_control` (pause) and other endpoints stay responsive | responsiveness, not tok/s | high | M | open | all MLX work blocks the uvicorn event loop; worst during multi-second prefill |
-| H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | needs-decision | measured 14.2→7.7 ms, max rel err 0.5% (int4: 4.1 ms but 7.5% err — likely too lossy); needs rank-stability gate + user tolerance approval |
+| H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | needs-decision | measured 14.2→7.7 ms, max rel err 0.5% — **but on SYNTHETIC J matrices; after two stand-in-bias hits (H2, unembed), re-validate speed + top-10 rank stability on the REAL lens before requesting user approval** |
 | H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward 72→~45–55 ms effective | low-medium | L | open | **in-situ: forward = 72.2 ms/token** (not ~100 as estimated) — ~1.4× above the ~50 ms pure-bandwidth floor; smaller but still the largest single lever after readout work |
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
 | C1 | `/api/slice`: rewire to `_readout_at_positions` or delete (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | open | web/index.html only calls `/api/chat_stream` |
 
-Suggested order (re-ranked on measured data): H11 → H7 (pending decision)
-→ H3 → H6 → H2 (pending decision; partially subsumed by H11 if dense-fp16
-W_U lands) → H8. H11 is the biggest non-forward lever: ~20 ms off every
-generated token AND every prefill position. Projected: H11 ≈ ~95 ms/token
-(~10.5 tok/s) + prefill ≈ ~15 ms/pt; +H7 ≈ ~88 ms (~11.4 tok/s). Past
-that requires H8 (forward).
+Suggested order (re-ranked on measured data): H7 re-validation on the
+real lens (→ decision package) → H3 → H6 → H8 vs H12 (both L effort —
+forward amortization ~25 ms vs unembed kernel ~20 ms; pick one). The
+cheap-restructuring well is now dry: remaining decode levers all need
+either a user decision (H7, H4b, H9), a custom kernel (H12), or a draft
+model (H8). Readout floor with current kernels ≈ transport 15.5 +
+unembed 29.5 + topk 1.4 ≈ 46 ms.
 
 ## History
 
@@ -156,3 +158,14 @@ that requires H8 (forward).
   at any P) → spawned H11 (dense-fp16 W_U / reshaped batching), now the
   top open item. Decode 114.5 ms/token this run (Δ vs 118.1 = variance).
   Gate 4/4. Iteration doc: decode-04.md.
+- 2026-07-09 — H11 REJECTED + H2 REJECTED (collateral), H12 spawned.
+  Six unembed variants measured on the REAL lm_head at [64,1,D]:
+  current qmm 29.5 ms; 2D reshape 31.2 (bit-identical, slower); fp16
+  acts 31.9 (**falsifies H2 — synthetic stand-in had promised 23.7**);
+  dense fp16 W_U 25.0 (−4.6 ms for +2.5 GB resident and 2.0e-2 drift —
+  bad trade); dense fp32 33.7. Even plain fp16 dense matmul is 2.7× off
+  its 9.3 ms bandwidth floor at skinny M → the op class is
+  kernel-limited on MLX 0.31.2; a custom Metal kernel is the only path
+  (H12, L effort, GDN-VJP precedent). H7's synthetic-J numbers flagged
+  for re-validation on the real lens before the user decision. No code
+  changes this iteration.
