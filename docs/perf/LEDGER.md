@@ -107,7 +107,7 @@ the H4 change affects prefill only).
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | rejected | **re-validated on the REAL lens: speed holds at P=1 (15.9→8.6 ms) but P=8 regresses (21.1→22.3), and rank stability collapses — only 80/192 cells keep top-10 order, 32/192 (17%) change top-10 MEMBERSHIP, worst common-id drift 0.2513 (50× tie-aware EPS), boundary gaps to ±0.10.** The synthetic 0.5%-rel-err estimate measured the tensor, not the decision: real J structure aligns with real activations. Not a tolerance call — a measured product-quality regression for a 6.4% win. Third stand-in-bias instance |
 | H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward 72→~45–55 ms effective | low-medium | L | open | **in-situ: forward = 72.2 ms/token** (not ~100 as estimated) — ~1.4× above the ~50 ms pure-bandwidth floor; smaller but still the largest single lever after readout work |
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
-| C1 | `/api/slice`: rewire to `_readout_at_positions` or delete (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | open | web/index.html only calls `/api/chat_stream` |
+| C1 | `/api/slice`: rewire to `_readout_at_positions` (old per-position argsort + per-score `.tolist()` syncs; UI never calls it) | cleanup | high | S | landed | rewired to the batched readout + H6 threading pattern, identical response schema (validated end-to-end: 32 tok × 64 layers in 2.98 s; old path ≈ 2k argsorts + ~20k syncs); gate 4/4 |
 
 Suggested order: H3 → H6 → C1 (small hygiene) → then the strategic fork:
 H8 (speculative decode, ~25 ms, L) vs H12 (custom skinny-matmul kernel,
@@ -190,3 +190,9 @@ Remaining decision items are UI-contract only (H4b, H9).
   fully (snapshots, pause+resume, done). Gate 4/4; decode 117.6 ms/token
   (within variance; bench bypasses the server — prefill numbers that run
   thermally tainted by prior server boots). Iteration doc: decode-05.md.
+- 2026-07-10 — C1 landed: /api/slice rewired to the batched
+  `_readout_at_positions` + the H6 threading pattern; response schema
+  unchanged (validated end-to-end on the live server: 32 tok x 64 layers
+  in 2.98 s vs the old path's ~2k full-vocab argsorts + ~20k per-score
+  syncs). Gate 4/4. Backlog now holds only the strategic fork (H8 vs
+  H12) and the UI-contract decisions (H4b, H9).

@@ -250,53 +250,31 @@ async def slice_endpoint(req: SliceRequest):
     max_seq_len = req.max_seq_len
     top_n = req.top_n
 
-    # Run forward, get lens logits at all source layers (+ final).
+    # Same batched readout as the chat stream (one forward, one
+    # transport/unembed/top-k pass over [L, P, vocab] chunks) — replaces
+    # the original per-layer, per-position argsort loop that did
+    # seq_len x n_layers full-vocab sorts with per-score GPU syncs.
     layers = list(_lens.source_layers) if _lens is not None else [_model.n_layers - 1]
-    final_layer = _model.n_layers - 1
-    record = sorted(set(layers) | {final_layer})
+    record = sorted(set(layers) | {_model.n_layers - 1})
 
     input_ids = _model.encode(prompt, max_length=max_seq_len)
-    final, acts = _model.forward(input_ids, capture_layers=record)
-    for l in record:
-        mx.eval(acts[l])
+    seq_len = int(input_ids.shape[1])
 
-    # Token strings for the prompt.
+    def _forward_acts():
+        _, acts = _model.forward(input_ids, capture_layers=record)
+        for l in record:
+            mx.eval(acts[l])
+        return acts
+
+    async with _gpu_lock:
+        acts = await asyncio.to_thread(_forward_acts)
+        cells = await asyncio.to_thread(
+            _readout_at_positions, acts, list(range(seq_len)), record, top_n)
+
     token_strs = [_model.tokenizer.decode([int(t)]) for t in input_ids[0].tolist()]
-    seq_len = len(token_strs)
-
-    # For each layer, compute top-n tokens at each position.
-    # lens_logits[layer] = [seq_len, vocab]
-    slice_data = {"layers": record, "seq_len": seq_len, "token_strs": token_strs,
-                  "top_n": top_n, "cells": {}}
-
-    for layer in record:
-        h = acts[layer][0].astype(mx.float32)  # [seq_len, D]
-        if _lens is not None and layer in _lens.jacobians:
-            h = _lens.transport(h, layer)
-        logits = _model.unembed(_model.final_norm(h))  # [seq_len, vocab]
-        lf = logits.astype(mx.float32)
-        # Top-n per position. mx.topk is buggy on large vocab; use argsort.
-        # For memory, process per position.
-        top_ids = []
-        top_scores = []
-        for pos in range(seq_len):
-            v = lf[pos]
-            sorted_idx = mx.argsort(v)
-            top = [int(t) for t in sorted_idx[-top_n:][::-1].tolist()]
-            scores = [float(mx.take(v, t).tolist()) for t in top]
-            top_ids.append(top)
-            top_scores.append(scores)
-            top_tokens = [_model.tokenizer.decode([t]) for t in top]
-        # Actually store as top_tokens for the response.
-        top_tokens = [[_model.tokenizer.decode([t]) for t in pos_ids] for pos_ids in top_ids]
-        slice_data["cells"][layer] = {
-            "top_ids": top_ids,
-            "top_tokens": top_tokens,
-            "top_scores": top_scores,
-        }
-        del logits, lf
-
-    return JSONResponse(slice_data)
+    return JSONResponse({"layers": record, "seq_len": seq_len,
+                         "token_strs": token_strs, "top_n": top_n,
+                         "cells": cells})
 
 
 class GenerateRequest(BaseModel):
