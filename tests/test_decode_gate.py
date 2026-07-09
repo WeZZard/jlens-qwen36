@@ -216,6 +216,60 @@ def test_readout_batched_vs_naive_tie_aware(readout, model, lens):
     )
 
 
+def test_readout_token_display(model):
+    """Band-cell display strings (_tok_str) for pathological tokens.
+
+    Reproducer for the '悖' bug: byte-level BPE splits multi-byte UTF-8
+    chars across tokens; decoding a fragment token alone yields U+FFFD,
+    which the band rendered as black diamonds. _tok_str must render
+    fragments as their raw bytes ("⟨E6 82⟩"), pure-whitespace tokens as
+    visible glyphs, and everything else as its plain decode.
+    """
+    import re
+
+    from jlens_qwen import serve
+
+    serve._model = model
+    serve._tok_str_cache.clear()
+    tok = model.tokenizer
+
+    hexpat = re.compile(r"^⟨([0-9A-F]{2}( [0-9A-F]{2})*)⟩$")
+
+    for text in ("悖论", "😄", "🧑‍🚀", "巍峨"):
+        ids = tok.encode(text, add_special_tokens=False)
+        recovered = b""
+        for tid in ids:
+            plain = tok.decode([tid])
+            shown = serve._tok_str(tid)
+            assert "�" not in shown, (
+                f"replacement char leaked for token {tid} of {text!r}: {shown!r}"
+            )
+            if "�" in plain:
+                m = hexpat.match(shown)
+                assert m, f"fragment token {tid} not rendered as bytes: {shown!r}"
+            # accumulate the true bytes for the round-trip property
+            b = serve._token_bytes(tid)
+            assert b is not None, f"byte recovery failed for token {tid}"
+            recovered += b
+        assert recovered == text.encode(), (
+            f"byte round-trip mismatch for {text!r}: {recovered!r}"
+        )
+
+    # whitespace tokens render visibly
+    for text, want in (("\n\n", "⏎⏎"), (" ", "␣"), ("\n", "⏎")):
+        ids = tok.encode(text, add_special_tokens=False)
+        if len(ids) == 1:  # only assert when it is a single token
+            assert serve._tok_str(ids[0]) == want, (
+                f"{text!r} rendered {serve._tok_str(ids[0])!r}, want {want!r}"
+            )
+
+    # normal tokens pass through unchanged
+    for tid in tok.encode("hello world, this is plain text.", add_special_tokens=False):
+        plain = tok.decode([tid])
+        if "�" not in plain and plain.strip():
+            assert serve._tok_str(tid) == plain
+
+
 def test_streaming_detok_identity(model):
     """Per-token segments concatenate to the exact full decode."""
     from jlens_qwen.serve import _token_segments
