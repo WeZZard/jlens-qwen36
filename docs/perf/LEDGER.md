@@ -103,7 +103,7 @@ the H4 change affects prefill only).
 | H11 | Unembed: dense-fp16 W_U or reshaped batching beats the qmm | ~20 ms/token | medium-high | M | rejected | **all variants measured on real weights at [64,1,D]**: 2D reshape 31.2 ms (worse, bit-identical), dense fp16 25.0 ms (−4.6 ms only, +2.5 GB resident, 2.0e-2 drift = 20× golden atol), dense fp32 33.7 ms (worse + a top-10 order flip). Even plain fp16 dense matmul is 2.7× off its 9.3 ms bandwidth floor at skinny M — the op class is kernel-limited on MLX 0.31.2; only a custom kernel changes it (→ H12) |
 | H12 | Custom Metal skinny-matmul (M≈64) kernel for the unembed — same class of work as the shipped GDN VJP kernel | up to ~20 ms/token AND ~20 ms/prompt-token (floor 9.3 ms vs 29.5 measured) | medium | L | open | H11 experiment: MLX's qmm and dense matmul both kernel-limited at M=64; project precedent: `custom_gdn_vjp.py`. Numerics: exact-dequant fp32 accumulate can match qmm within tie-aware EPS; verify via gate |
 | H5 | Pipeline: sample on-GPU, `mx.async_eval` next `extend`, overlap current token's tolist/JSON/SSE with GPU | ~0.5 ms/token | — | M | rejected | in-situ: CPU-side (sample+emit) = 0.5 ms/token — there is nothing to hide; GPU work is serial on one queue regardless. Premise falsified by H0's measurement |
-| H6 | Run generation on a worker thread (asyncio.Queue → SSE) so `/api/chat_control` (pause) and other endpoints stay responsive | responsiveness, not tok/s | high | M | open | all MLX work blocks the uvicorn event loop; worst during multi-second prefill |
+| H6 | Free the event loop during GPU work (`asyncio.to_thread` + GPU lock; MLX releases the GIL — measured max tick 1.1 ms in-thread vs 1063 ms inline) | responsiveness, not tok/s | high | S | landed | **end-to-end during generation: `/api/model` 341.9 → 0.8 ms median (max 589.9 → 3.3), pause round-trip 339.5 → 1.4 ms**; full stream exercised (snapshots, pause+resume, done); lock preserves serialized-GPU semantics across streams |
 | H7 | int8-quantize J transport (`mx.quantized_matmul`) | ~7 ms/token; lens RAM 3.3→1.7 GB | medium | M | rejected | **re-validated on the REAL lens: speed holds at P=1 (15.9→8.6 ms) but P=8 regresses (21.1→22.3), and rank stability collapses — only 80/192 cells keep top-10 order, 32/192 (17%) change top-10 MEMBERSHIP, worst common-id drift 0.2513 (50× tie-aware EPS), boundary gaps to ±0.10.** The synthetic 0.5%-rel-err estimate measured the tensor, not the decision: real J structure aligns with real activations. Not a tolerance call — a measured product-quality regression for a 6.4% win. Third stand-in-bias instance |
 | H8 | Speculative decoding: small draft model + batched verification (capture-aware); amortizes 13.5 GB weight read AND readout J/lm_head traffic across accepted tokens | forward 72→~45–55 ms effective | low-medium | L | open | **in-situ: forward = 72.2 ms/token** (not ~100 as estimated) — ~1.4× above the ~50 ms pure-bandwidth floor; smaller but still the largest single lever after readout work |
 | H9 | Top-1-only streaming band + lazy top-10 on cell click | prefill readout ~30× (argmax 0.47 ms vs 14.6) | high | L | needs-decision | changes SSE/UI contract; superseded in part by H1 |
@@ -182,3 +182,11 @@ Remaining decision items are UI-contract only (H4b, H9).
   total at T=512; ~0.6 ms/tok averaged at T=8192 ≈ 0.5% of budget;
   ~1.3 s one-time at 4k-prompt prefill). Custom exact incremental detok
   not justified; revisit above ~8k-token generations. No code changes.
+- 2026-07-10 — H6 landed: GPU work moved off the event loop
+  (`asyncio.to_thread` + module `_gpu_lock`; MLX releases the GIL —
+  measured loop tick 1063 ms inline → 1.1 ms in-thread). End-to-end on
+  the real server during generation: `/api/model` 341.9 → 0.8 ms median
+  (max 589.9 → 3.3), pause round-trip 339.5 → 1.4 ms; stream exercised
+  fully (snapshots, pause+resume, done). Gate 4/4; decode 117.6 ms/token
+  (within variance; bench bypasses the server — prefill numbers that run
+  thermally tainted by prior server boots). Iteration doc: decode-05.md.

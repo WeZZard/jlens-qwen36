@@ -43,6 +43,7 @@ enough to feel live.
 | [decode-02](decode-02.md) | Batched per-token readout | one unembed for all 63 layers; → ~7 tok/s |
 | [decode-03](decode-03.md) | Exact blocked top-k selection | full argsort was 14.7 ms/token; → 8.5 tok/s |
 | [decode-04](decode-04.md) | Prefill lens warm-up; chunk lever rejected | first-request readout 92.6 → 39.4 ms/prompt-token |
+| [decode-05](decode-05.md) | GPU work off the event loop | pause latency 340 → 1.4 ms during generation |
 
 ### `ui` — the web front-end
 

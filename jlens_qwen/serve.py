@@ -10,6 +10,7 @@ Endpoints:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -58,6 +59,13 @@ _sessions_dir = _repo_root / "data" / "sessions"
 # Pause/resume control for the active generation stream.
 # The generation loop checks this event before each token.
 _pause_events: dict[str, asyncio.Event] = {}
+
+# GPU work runs on worker threads (MLX releases the GIL during compute,
+# measured: event-loop max tick 1.1 ms under to_thread vs 1063 ms inline)
+# so the event loop stays responsive during generation. The lock
+# serializes GPU access across concurrent streams, preserving the
+# pre-thread semantics.
+_gpu_lock = asyncio.Lock()
 
 app = FastAPI(title="J-Space Visualizer")
 
@@ -157,6 +165,14 @@ def _blocked_topk(logits: mx.array, k: int) -> tuple[mx.array, mx.array]:
 READOUT_CHUNK = int(os.environ.get("JLENS_READOUT_CHUNK", "8"))
 
 _tok_str_cache: dict[int, str] = {}
+
+
+def _sample_tok(logits: mx.array, temp: float) -> int:
+    lf = logits.astype(mx.float32)
+    if temp == 0:
+        return int(mx.argmax(lf).tolist())
+    # categorical() takes unnormalized logits, NOT probabilities.
+    return int(mx.random.categorical(lf / temp).tolist())
 
 
 def _tok_str(tid: int) -> str:
@@ -739,11 +755,13 @@ async def chat_stream(req: ChatStreamRequest):
                 delta = formatted_ids_list[chunk_start:]
                 if not delta:
                     continue
-                _, acts = session.extend(delta)
                 positions = list(range(start_pos, end_pos))
-                # acts cover only the delta chunk -> chunk-local indices.
-                local = [p - chunk_start for p in positions]
-                row = _readout_at_positions(acts, local, layers, top_n)
+                async with _gpu_lock:
+                    _, acts = await asyncio.to_thread(session.extend, delta)
+                    # acts cover only the delta chunk -> chunk-local indices.
+                    local = [p - chunk_start for p in positions]
+                    row = await asyncio.to_thread(
+                        _readout_at_positions, acts, local, layers, top_n)
                 new_token_strs = _token_segments(tok, content_ids)
 
                 snapshot_id += 1
@@ -779,19 +797,14 @@ async def chat_stream(req: ChatStreamRequest):
                 # Feed the generation-prefix delta; readout at the frontier.
                 chunk_start = session.n_consumed
                 delta = gen_prefix_list[chunk_start:]
-                logits, acts = session.extend(delta) if delta else (None, {})
-                prefill_positions = [global_pos - 1] if global_pos > 0 else []
-                prefill_row = _readout_at_positions(
-                    acts, [len(delta) - 1], layers, top_n
-                ) if (prefill_positions and delta) else {l: {"top_ids": [], "top_tokens": [], "top_scores": []} for l in layers}
-
-                lf = logits.astype(mx.float32)
-                if temp == 0:
-                    next_tok = int(mx.argmax(lf).tolist())
-                else:
-                    # categorical() takes unnormalized logits, NOT probabilities.
-                    next_tok = int(mx.random.categorical(lf / temp).tolist())
-                del logits, lf
+                async with _gpu_lock:
+                    logits, acts = (await asyncio.to_thread(session.extend, delta)) if delta else (None, {})
+                    prefill_positions = [global_pos - 1] if global_pos > 0 else []
+                    prefill_row = (await asyncio.to_thread(
+                        _readout_at_positions, acts, [len(delta) - 1], layers, top_n
+                    )) if (prefill_positions and delta) else {l: {"top_ids": [], "top_tokens": [], "top_scores": []} for l in layers}
+                    next_tok = await asyncio.to_thread(_sample_tok, logits, temp)
+                del logits
 
                 snapshot_id += 1
                 yield _sse("snapshot", {
@@ -818,15 +831,12 @@ async def chat_stream(req: ChatStreamRequest):
 
                     # One-token cached step: acts cover just this token.
                     new_pos = global_pos
-                    logits, acts = session.extend([next_tok])
-                    row = _readout_at_positions(acts, [0], layers, top_n)
-                    lf = logits.astype(mx.float32)
-                    if temp == 0:
-                        new_next_tok = int(mx.argmax(lf).tolist())
-                    else:
-                        # categorical() takes unnormalized logits, NOT probabilities.
-                        new_next_tok = int(mx.random.categorical(lf / temp).tolist())
-                    del logits, lf
+                    async with _gpu_lock:
+                        logits, acts = await asyncio.to_thread(session.extend, [next_tok])
+                        row = await asyncio.to_thread(
+                            _readout_at_positions, acts, [0], layers, top_n)
+                        new_next_tok = await asyncio.to_thread(_sample_tok, logits, temp)
+                    del logits
 
                     # Cumulative decode: emit only the newly-stabilized text
                     # so UTF-8 chars split across BPE tokens survive (a lone
