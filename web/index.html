@@ -57,6 +57,9 @@
     --glass-control-filter: blur(24px) saturate(110%);
     --glass-shadow: 0 16px 44px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06);
     --glass-control-shadow: 0 6px 18px rgba(0,0,0,0.10), 0 1px 4px rgba(0,0,0,0.05);
+    --bottom-control-inset: 16px;
+    --bottom-dimming-height: calc(var(--bottom-control-inset) + 22px);
+    --bottom-dimming-end: rgba(0,0,0,0.10);
     --settings-glass:
       linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.02) 42%, rgba(255,255,255,0) 100%),
       linear-gradient(rgba(248,248,250,0.82), rgba(248,248,250,0.82));
@@ -75,10 +78,16 @@
     --radius-sm: 8px;
     --radius-xs: 6px;
     --radius-lg: 24px;
+    --grid-left-inset: 8px;
+    --grid-token-padding: 12px;
+    --grid-scrollbar-clearance: 12px;
     --grid-bottom-clearance: 120px;
     --chat-bottom-clearance: 120px;
     --detail-bottom: 100px;
     --detail-clearance-gap: 16px;
+    /* 20px header + five 18px rows + four 4px gaps. */
+    --detail-readout-max-height: 126px;
+    --corner-button-bar-divider-inset: 10px;
     --visible-band-edge-color: var(--paper-bg);
   }
   * { box-sizing: border-box; }
@@ -90,6 +99,17 @@
     background-color: var(--paper-bg);
     background-image: none;
     -webkit-font-smoothing: antialiased;
+  }
+  /* A shared background scrim begins at the 44px corner bars' midpoint:
+     22px of lower bar half + the 16px viewport inset = 38px total. */
+  body::after {
+    content: '';
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--bottom-dimming-height);
+    z-index: 8;
+    pointer-events: none;
+    background: linear-gradient(to bottom, rgba(0,0,0,0), var(--bottom-dimming-end));
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
 
@@ -136,14 +156,25 @@
     transition: background 0.12s;
   }
   .msg .bubble .tok:hover { background: rgba(0,0,0,0.08); }
-  .msg .bubble .tok.selected { background: var(--highlight-orange-soft); box-shadow: 0 0 0 1px var(--highlight-orange); font-weight: 700; }
+  .msg .bubble .tok.selected {
+    border: 0;
+    border-radius: 0;
+    background: var(--highlight-orange-soft);
+    color: var(--highlight-orange);
+    box-shadow: none;
+    font-weight: 700;
+    text-decoration-line: underline;
+    text-decoration-color: var(--highlight-orange);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 2px;
+  }
   .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); font-weight: 700; }
   .msg .bubble .placeholder { color: var(--text-3); font-style: italic; }
 
   /* ===== Bottom: floating message input (fixed, light glass) ===== */
   #chat-input {
     position: fixed; left: 50%; transform: translateX(-50%);
-    bottom: 16px; z-index: 10;
+    bottom: var(--bottom-control-inset); z-index: 10;
     width: min(640px, 92vw);
     display: flex; flex-direction: column; gap: 8px;
     padding: 12px 16px 10px;
@@ -211,13 +242,11 @@
   }
   #stop-btn:hover { background: #e87900; border-color: #e87900; }
   #stop-btn:active { transform: scale(0.96); }
-  /* clear + settings + session buttons — floating controls, matching
-     send-btn style. The bottom-right buttons live in a flex row
-     (#corner-actions) so hiding one (e.g. Clear in presentation mode)
-     automatically slides the rest into the corner. */
+  /* The two fixed corner wrappers become shared joined button bars below.
+     Hiding a mode-specific button automatically collapses its bar. */
   #corner-actions {
-    position: fixed; right: 16px; bottom: 16px; z-index: 10;
-    display: flex; gap: 14px;
+    position: fixed; right: 16px; bottom: var(--bottom-control-inset); z-index: 10;
+    display: flex; gap: 0;
   }
   #clear-btn, #settings-btn, #sessions-btn {
     height: 44px; border: 1px solid var(--border-2); border-radius: 22px;
@@ -230,19 +259,18 @@
     -webkit-backdrop-filter: var(--glass-control-filter);
     transition: background 0.12s, transform 0.1s;
   }
-  #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; }
+  #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; font-size: 13px; }
   #clear-btn:hover, #settings-btn:hover, #sessions-btn:hover { background: var(--glass-hover); }
-  /* Bottom-left row: settings (active mode only) + the GitHub capsule.
-     Hiding settings in presentation mode slides the capsule into the
-     corner automatically. */
+  /* Bottom-left bar: icon-only settings (active mode) + GitHub. */
   #corner-actions-left {
-    position: fixed; left: 16px; bottom: 16px; z-index: 10;
-    display: flex; gap: 14px;
+    position: fixed; left: 16px; bottom: var(--bottom-control-inset); z-index: 10;
+    display: flex; gap: 0;
   }
   #settings-btn {
     width: 44px; padding: 0;
     border-radius: 50%; justify-content: center;
   }
+  #settings-btn svg { width: 19px; height: 19px; }
   #github-btn {
     height: 44px; padding: 0 18px;
     display: flex; align-items: center; gap: 8px;
@@ -266,6 +294,10 @@
   }
   .github-stars-wrap .star-icon { width: 14px; height: 14px; fill: #eac54f; }
   .github-stars-wrap[hidden] { display: none; }
+  /* Compact laptop layouts omit the owner prefix but retain the repository. */
+  @media (max-width: 1600px) {
+    .github-owner { display: none; }
+  }
   #clear-btn:active, #settings-btn:active, #sessions-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
   #sessions-menu {
@@ -532,7 +564,7 @@
   #grid-body {
     position: relative; z-index: 1;
     flex: 1; overflow: auto;
-    padding: 0 0 var(--grid-bottom-clearance) 8px;
+    padding: 0 0 var(--grid-bottom-clearance) var(--grid-left-inset);
     scroll-padding-bottom: var(--grid-bottom-clearance);
     background: transparent;
     /* Keep the vertical-scrollbar gutter reserved even when rows don't
@@ -595,6 +627,18 @@
     z-index: 4;
   }
   #grid th.layer-header { top: 28px; z-index: 6; }
+  /* Keep the cell content inset while bleeding both sticky header surfaces
+     through the scroller's left padding to the viewport edge. */
+  #grid th.band-guide-cell:first-child::before,
+  #grid th.layer-header:first-child::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: calc(0px - var(--grid-left-inset));
+    width: var(--grid-left-inset);
+    pointer-events: none;
+    background: var(--grid-left-bleed, var(--paper-bg));
+  }
   #grid th.pos-band-guide {
     position: sticky; right: 0; top: 0; z-index: 7;
     min-width: 140px; height: 28px; padding: 0;
@@ -604,7 +648,8 @@
   #grid th.pos-header {
     position: sticky; right: 0; top: 28px; z-index: 8;
     min-width: 140px; text-align: right;
-    padding: 0 12px;
+    font-weight: 700;
+    padding: 0 calc(var(--grid-token-padding) + var(--grid-scrollbar-clearance)) 0 var(--grid-token-padding);
     box-sizing: border-box;
     text-transform: uppercase;
     border-left: none;
@@ -617,7 +662,8 @@
     background: linear-gradient(to right, var(--visible-band-edge-color), var(--paper-bg));
     position: sticky; right: 0; z-index: 1;
     border-left: none;
-    text-align: right; padding: 4px 12px;
+    text-align: right;
+    padding: 4px calc(var(--grid-token-padding) + var(--grid-scrollbar-clearance)) 4px var(--grid-token-padding);
     min-width: 140px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -630,7 +676,9 @@
     text-underline-offset: 4px;
   }
   #grid td.pos-label.gen .tok-text { color: var(--accent); font-weight: 600; }
+  #grid td.pos-label.user .tok-text { font-weight: 700; }
   #grid td.pos-label.selected-token .tok-text {
+    background: var(--highlight-orange-soft);
     color: var(--highlight-orange);
     font-weight: 700;
     text-decoration: underline;
@@ -718,7 +766,7 @@
     --readout-cols: 28px minmax(72px, 1.2fr) minmax(54px, 0.65fr) minmax(96px, 2fr) 46px;
     font-family: ui-monospace, Menlo, monospace;
     font-size: 12px;
-    max-height: 240px; overflow-y: auto; overscroll-behavior: contain;
+    max-height: var(--detail-readout-max-height); overflow-y: auto; overscroll-behavior: contain;
     scrollbar-gutter: stable;
     padding-inline: 0 28px;
   }
@@ -878,6 +926,76 @@
     display: none !important;
   }
 
+  /* Both deployment modes use the same joined button-bar component. Mode
+     rules only decide which buttons are visible; a one-button bar naturally
+     collapses to a standalone capsule with no divider. */
+  .corner-button-bar {
+    height: 44px;
+    gap: 0;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--glass-border);
+    border-radius: 22px;
+    corner-shape: squircle;
+    background: var(--glass-control);
+    box-shadow: var(--glass-control-shadow);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+  }
+  .corner-button-bar > #settings-btn,
+  .corner-button-bar > #github-btn,
+  .corner-button-bar > #sessions-btn,
+  .corner-button-bar > #clear-btn {
+    position: relative;
+    height: 100%;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .corner-button-bar > #settings-btn:hover,
+  .corner-button-bar > #github-btn:hover,
+  .corner-button-bar > #sessions-btn:hover,
+  .corner-button-bar > #clear-btn:hover {
+    background: var(--glass-hover);
+  }
+  .corner-button-bar > #settings-btn:focus-visible,
+  .corner-button-bar > #github-btn:focus-visible,
+  .corner-button-bar > #sessions-btn:focus-visible,
+  .corner-button-bar > #clear-btn:focus-visible {
+    z-index: 1;
+    outline: 2px solid var(--highlight-orange);
+    outline-offset: -3px;
+  }
+  .corner-button-bar > #settings-btn:active,
+  .corner-button-bar > #github-btn:active,
+  .corner-button-bar > #sessions-btn:active,
+  .corner-button-bar > #clear-btn:active {
+    transform: none;
+  }
+  .corner-button-bar > #clear-btn:disabled {
+    background: var(--text-3);
+  }
+  .corner-button-bar > * + *::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: var(--corner-button-bar-divider-inset);
+    bottom: var(--corner-button-bar-divider-inset);
+    width: 1px;
+    background: var(--border-2);
+    pointer-events: none;
+  }
+  /* Settings is the first left-bar item, so its hidden presentation state
+     also suppresses the divider carried by the remaining GitHub button. */
+  html.presentation #corner-actions-left > #github-btn::before { display: none; }
+
   /* ----- Presentation entry: wide centered session picker ----- */
   /* First screen of presentation mode. The corner Saved Sessions button
      stays hidden until a session is chosen; picking one morphs this card
@@ -889,8 +1007,9 @@
     align-items: center; justify-content: center;
   }
   html.picker-open #session-picker { display: flex; }
-  html.picker-open #sessions-btn,
-  html.picker-open #github-btn { display: none !important; }
+  html.picker-open body::after { display: none; }
+  html.picker-open #corner-actions,
+  html.picker-open #corner-actions-left { display: none !important; }
   /* GitHub repo line, bottom center of the first screen: icon · name ·
      stars. Out of the flex flow, so the card's morph never moves it; it
      fades away as the picker closes. */
@@ -969,9 +1088,8 @@
     transition: transform 300ms cubic-bezier(0.55, 0, 0.85, 0.4),
                 opacity 260ms ease;
   }
-  /* The corner buttons pop in as the collapse lands. */
-  #sessions-btn.pop-in,
-  #github-btn.pop-in {
+  /* The shared corner bars pop in as the collapse lands. */
+  .corner-button-bar.pop-in {
     animation: sessions-btn-pop 340ms cubic-bezier(0.2, 0.8, 0.3, 1.15) both;
   }
   @keyframes sessions-btn-pop {
@@ -987,9 +1105,9 @@
     <div id="grid-col">
       <div id="grid-underlay" aria-hidden="true"></div>
       <div id="band-floating-labels" aria-hidden="true">
-        <div class="band-floating-label" data-band="surface">Sensory / Surface Processing</div>
+        <div class="band-floating-label" data-band="early">Sensory / Surface Processing</div>
         <div class="band-floating-label" data-band="workspace">Workspace Band</div>
-        <div class="band-floating-label" data-band="motor">Motor / Output Band</div>
+        <div class="band-floating-label" data-band="late">Motor / Output Band</div>
       </div>
       <div id="grid-body"></div>
       <div id="detail"></div>
@@ -1009,21 +1127,21 @@
     </div>
   </div>
 
-  <!-- ===== Bottom-left: settings + GitHub capsule ===== -->
-  <div id="corner-actions-left">
+  <!-- ===== Bottom-left: icon-only settings + GitHub button bar ===== -->
+  <div id="corner-actions-left" class="corner-button-bar">
   <button id="settings-btn" title="Generation settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
   <a id="github-btn" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
     <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-    <span class="github-name">WeZZard/jlens-qwen36</span>
+    <span class="github-name"><span class="github-owner">WeZZard/</span>jlens-qwen36</span>
     <span class="github-stars-wrap" hidden>
       <svg class="star-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
       <span class="github-stars"></span>
     </span>
   </a>
   </div>
-  <div id="corner-actions">
+  <div id="corner-actions" class="corner-button-bar">
     <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
     <button id="clear-btn" title="Clear conversation">Clear</button>
   </div>
@@ -1048,7 +1166,7 @@
     </div>
     <a id="picker-github" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
       <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
-      <span class="github-name">WeZZard/jlens-qwen36</span>
+      <span class="github-name"><span class="github-owner">WeZZard/</span>jlens-qwen36</span>
       <span class="github-stars-wrap" hidden>
         <svg class="star-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.751.751 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25Z"/></svg>
         <span class="github-stars"></span>
@@ -1640,6 +1758,8 @@ async function loadInfo() {
     const meta = await apiGetMeta();
     state.modelId = (meta.model && meta.model.model_id) || 'unknown model';
     state.lensInfo = meta.lens || null;
+    applyLayerBands(state.lensInfo, meta.model || null);
+    if (state.gridRows.length) renderGrid({ keepScroll: true });
   } catch (e) {
     console.warn('loadInfo failed:', e);
   }
@@ -1909,13 +2029,64 @@ function cellIntensity(cell) {
   return t;
 }
 
-const LAYER_BANDS = [
-  { id: 'surface', label: 'Sensory / Surface Processing', coreStart: 0, coreEnd: 18, color: [82, 164, 190] },
+let LAYER_BANDS = [
+  { id: 'early', label: 'Sensory / Surface Processing', coreStart: 0, coreEnd: 18, color: [82, 164, 190] },
   { id: 'workspace', label: 'Workspace Band', coreStart: 25, coreEnd: 53, color: [224, 174, 72] },
-  { id: 'motor', label: 'Motor / Output Band', coreStart: 59, coreEnd: 63, color: [174, 164, 146] },
+  { id: 'late', label: 'Motor / Output Band', coreStart: 59, coreEnd: 63, color: [174, 164, 146] },
 ];
 const PAPER_RGB = [255, 255, 246];
 const FREQ_BLUE_RGB = [36, 135, 222];
+const BAND_COLORS = {
+  early: [82, 164, 190],
+  surface: [82, 164, 190],
+  workspace: [224, 174, 72],
+  late: [174, 164, 146],
+  motor: [174, 164, 146],
+};
+const BAND_LABELS = {
+  early: 'Sensory / Surface Processing',
+  surface: 'Sensory / Surface Processing',
+  workspace: 'Workspace Band',
+  late: 'Motor / Output Band',
+  motor: 'Motor / Output Band',
+};
+
+function applyLayerBands(lensInfo, modelInfo) {
+  const raw = lensInfo && Array.isArray(lensInfo.bands) ? lensInfo.bands : [];
+  if (raw.length) {
+    LAYER_BANDS = raw.map((band, index) => {
+      const id = ({ surface: 'early', motor: 'late' })[band.name] || band.name;
+      return {
+        id,
+        label: BAND_LABELS[id] || id,
+        coreStart: +band.start_layer,
+        coreEnd: +band.end_layer,
+        color: BAND_COLORS[id] || [174, 164, 146],
+      };
+    }).sort((a, b) => a.coreStart - b.coreStart);
+  } else if (modelInfo && Number.isFinite(+modelInfo.n_layers)) {
+    // Old static exports have no band metadata. Scale the legacy proportions
+    // to the actual depth and keep the result visibly provisional.
+    const n = Math.max(3, +modelInfo.n_layers);
+    const earlyEnd = Math.max(0, Math.floor(n * 0.25) - 1);
+    const lateStart = Math.max(earlyEnd + 2, Math.floor(n * 0.75));
+    LAYER_BANDS = [
+      { id: 'early', label: BAND_LABELS.early, coreStart: 0, coreEnd: earlyEnd, color: BAND_COLORS.early },
+      { id: 'workspace', label: BAND_LABELS.workspace, coreStart: earlyEnd + 1, coreEnd: lateStart - 1, color: BAND_COLORS.workspace },
+      { id: 'late', label: BAND_LABELS.late, coreStart: lateStart, coreEnd: n - 1, color: BAND_COLORS.late },
+    ];
+  }
+  const fallback = !lensInfo || lensInfo.bands_are_fallback;
+  const host = $('band-floating-labels');
+  if (!host) return;
+  host.replaceChildren(...LAYER_BANDS.map((band) => {
+    const label = document.createElement('div');
+    label.className = 'band-floating-label';
+    label.dataset.band = band.id;
+    label.textContent = band.label + (fallback && band.id === 'workspace' ? ' (provisional)' : '');
+    return label;
+  }));
+}
 
 function lerp(a, b, t) {
   return a + (b - a) * t;
@@ -1945,15 +2116,24 @@ function smoothstep(edge0, edge1, x) {
 }
 
 function bandRgbAtLayer(layer) {
-  const surface = LAYER_BANDS[0].color;
-  const workspace = LAYER_BANDS[1].color;
-  const motor = LAYER_BANDS[2].color;
-  const surfaceToWorkspace = smoothstep(16, 28, layer);
-  const workspaceToMotor = smoothstep(50, 61, layer);
-  const motorToPaper = smoothstep(60, 63, layer);
-  const early = mixRgb(surface, workspace, surfaceToWorkspace);
-  const late = mixRgb(early, motor, workspaceToMotor);
-  return mixRgb(late, PAPER_RGB, motorToPaper);
+  if (!LAYER_BANDS.length) return PAPER_RGB;
+  const centers = LAYER_BANDS.map((band) => (band.coreStart + band.coreEnd) / 2);
+  if (layer <= centers[0]) return LAYER_BANDS[0].color;
+  for (let i = 1; i < LAYER_BANDS.length; i++) {
+    if (layer <= centers[i]) {
+      return mixRgb(
+        LAYER_BANDS[i - 1].color,
+        LAYER_BANDS[i].color,
+        smoothstep(centers[i - 1], centers[i], layer),
+      );
+    }
+  }
+  const last = LAYER_BANDS[LAYER_BANDS.length - 1];
+  return mixRgb(
+    last.color,
+    PAPER_RGB,
+    smoothstep(Math.max(centers[centers.length - 1], last.coreEnd - 2), last.coreEnd, layer),
+  );
 }
 
 function layerGuideBackground(layer) {
@@ -2167,7 +2347,12 @@ function updateGridUnderlay() {
     const left = Math.max(rect.left - colRect.left, cursor, 0);
     const right = Math.min(rect.right - colRect.left, stickyLeft, colRect.width);
     if (right <= left) return;
-    if (left > cursor) stops.push(`transparent ${px(cursor)} ${px(left)}`);
+    if (left > cursor) {
+      // The first layer's table surface bleeds through #grid-body's left
+      // content inset; later gaps remain transparent as before.
+      const gapColor = cursor === 0 ? layerCellGutterBackground(layer) : 'transparent';
+      stops.push(`${gapColor} ${px(cursor)} ${px(left)}`);
+    }
     stops.push(`${layerCellGutterBackground(layer)} ${px(left)} ${px(right)}`);
     cursor = right;
   });
@@ -2273,6 +2458,7 @@ function gridRowHtml(pos, selectedTokenKey, activePos) {
   const tokStr = state.gridTokenStrs[pos] || '·';
   const meta = state.gridTokenMsgs[pos];
   const isGen = !!(meta && meta.isGen);
+  const isUser = !!(meta && state.messages[meta.msgIdx]?.role === 'user');
   const rowData = state.gridRows[pos];
   const selRow = !!(state.selectedCell && state.selectedCell.pos === pos);
   let html = `<tr data-pos="${pos}">`;
@@ -2303,6 +2489,7 @@ function gridRowHtml(pos, selectedTokenKey, activePos) {
   // Right: position label (sticky right) — token text, right-aligned.
   let plCls = 'pos-label';
   if (isGen) plCls += ' gen';
+  if (isUser) plCls += ' user';
   if (activePos === pos) plCls += ' selected-token';
   if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) plCls += ' clickable-token';
   html += `<td class="${plCls}" data-pos="${pos}" title="${escapeAttr(`position ${pos}: ${JSON.stringify(tokStr)}`)}">` +
@@ -2408,6 +2595,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     th.className = 'band-guide-cell';
     th.dataset.layer = l;
     th.style.background = bandHeaderGradient(l, state.layers[i - 1], state.layers[i + 1], 0.46);
+    if (i === 0) th.style.setProperty('--grid-left-bleed', layerGuideBackground(l));
     bandRow.appendChild(th);
   });
   const posBand = document.createElement('th');
@@ -2422,6 +2610,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     th.className = 'layer-header';
     th.dataset.layer = l;
     th.style.background = bandHeaderGradient(l, state.layers[i - 1], state.layers[i + 1], 0.28);
+    if (i === 0) th.style.setProperty('--grid-left-bleed', layerHeaderBackground(l));
     th.textContent = 'L' + l;
     hrow.appendChild(th);
   });
@@ -2479,14 +2668,15 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     gridGlide.farFlight = farFlight;
     // Horizontal axis: when a layer cell is selected and its column is not
     // fully visible (in the area left of the sticky token column), center
-    // it. Fixed column geometry (8px gutter + GRID_CELL_W per layer)
+    // it. Fixed column geometry (configured gutter + GRID_CELL_W per layer)
     // makes the target exact without measuring rects.
     let targetLeft = null;
     if (state.selectedCell) {
       const li = state.layers.indexOf(state.selectedCell.layer);
       if (li !== -1) {
         const usableW = Math.max(GRID_CELL_W, body.clientWidth - GRID_POS_W);
-        const colLeft = 8 + li * GRID_CELL_W;
+        const gridLeftInset = parseFloat(getComputedStyle(body).paddingLeft) || 0;
+        const colLeft = gridLeftInset + li * GRID_CELL_W;
         const fullyVisible = colLeft >= body.scrollLeft &&
           colLeft + GRID_CELL_W <= body.scrollLeft + usableW;
         if (!fullyVisible) {
@@ -3356,7 +3546,7 @@ function pickSessionFromPicker(sessionId, itemEl) {
 }
 
 function _animatePickerAway(card) {
-  const btn = $('sessions-btn');
+  const cornerBars = [$('corner-actions'), $('corner-actions-left')];
   const finish = () => {
     document.documentElement.classList.remove('picker-open');
     $('session-picker').classList.remove('closing');
@@ -3364,9 +3554,9 @@ function _animatePickerAway(card) {
     card.classList.remove('morphing', 'collapsing');
     card.removeAttribute('style');
     _pickerBusy = false;
-    [btn, $('github-btn')].forEach((b) => {
-      b.classList.add('pop-in');
-      setTimeout(() => b.classList.remove('pop-in'), 420);
+    cornerBars.forEach((bar) => {
+      bar.classList.add('pop-in');
+      setTimeout(() => bar.classList.remove('pop-in'), 420);
     });
   };
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
