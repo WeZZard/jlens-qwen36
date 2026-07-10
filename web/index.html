@@ -2079,7 +2079,12 @@ function applyLayerBands(lensInfo, modelInfo) {
       { id: 'late', label: BAND_LABELS.late, coreStart: lateStart, coreEnd: n - 1, color: BAND_COLORS.late },
     ];
   }
-  const fallback = !lensInfo || lensInfo.bands_are_fallback;
+  // loadInfo is asynchronous and can land after an initial restored-session
+  // render. Invalidate every color derived from the former band geometry.
+  _bandRgbCache.clear();
+  _gutterCssCache.clear();
+  _appliedBandEdgeColor = null;
+  const fallback = raw.length === 0 || !lensInfo || lensInfo.bands_are_fallback;
   const host = $('band-floating-labels');
   if (!host) return;
   host.replaceChildren(...LAYER_BANDS.map((band) => {
