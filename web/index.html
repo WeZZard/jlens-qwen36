@@ -47,8 +47,9 @@
       linear-gradient(180deg, rgba(255,255,255,0.12) 0%, rgba(255,255,255,0.02) 44%, rgba(255,255,255,0) 100%),
       linear-gradient(rgba(248,248,250,0.68), rgba(248,248,250,0.68));
     --light-material-hover:
-      linear-gradient(180deg, rgba(255,255,255,0.14) 0%, rgba(255,255,255,0.03) 44%, rgba(255,255,255,0) 100%),
-      linear-gradient(rgba(248,248,250,0.78), rgba(248,248,250,0.78));
+      linear-gradient(180deg, rgba(255,255,255,0.16) 0%, rgba(255,255,255,0.05) 44%, rgba(255,255,255,0) 100%),
+      linear-gradient(rgba(118,118,128,0.08), rgba(118,118,128,0.08)),
+      var(--light-material);
     --glass-panel: var(--light-material);
     --glass-control: var(--light-material);
     --glass-hover: var(--light-material-hover);
@@ -88,8 +89,6 @@
     /* 20px header + five 18px rows + four 4px gaps. */
     --detail-readout-max-height: 126px;
     --corner-button-bar-divider-inset: 10px;
-    --corner-button-hover-fill: #f2f2f7;
-    --corner-button-hover-edge: rgba(255,255,255,0.72);
     --visible-band-edge-color: var(--paper-bg);
   }
   * { box-sizing: border-box; }
@@ -251,18 +250,13 @@
     display: flex; gap: 0;
   }
   #clear-btn, #settings-btn, #sessions-btn {
-    height: 44px; border: 1px solid var(--border-2); border-radius: 22px;
+    height: 44px;
     font-size: 14px; font-weight: 500; cursor: pointer;
     display: flex; align-items: center; gap: 6px;
-    background: var(--glass-control); color: var(--text);
-    border-color: var(--glass-border);
-    box-shadow: var(--glass-control-shadow);
-    backdrop-filter: var(--glass-control-filter);
-    -webkit-backdrop-filter: var(--glass-control-filter);
+    color: var(--text);
     transition: background 0.12s, transform 0.1s;
   }
   #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; font-size: 13px; }
-  #clear-btn:hover, #settings-btn:hover, #sessions-btn:hover { background: var(--glass-hover); }
   /* Bottom-left bar: icon-only settings (active mode) + GitHub. */
   #corner-actions-left {
     position: fixed; left: 16px; bottom: var(--bottom-control-inset); z-index: 10;
@@ -270,24 +264,17 @@
   }
   #settings-btn {
     width: 44px; padding: 0;
-    border-radius: 50%; justify-content: center;
+    justify-content: center;
   }
   #settings-btn svg { width: 19px; height: 19px; }
   #github-btn {
     height: 44px; padding: 0 18px;
     display: flex; align-items: center; gap: 8px;
-    border: 1px solid var(--border-2); border-radius: 22px;
-    background: var(--glass-control); color: var(--text);
+    color: var(--text);
     text-decoration: none;
     font-size: 13px; font-weight: 500;
-    border-color: var(--glass-border);
-    box-shadow: var(--glass-control-shadow);
-    backdrop-filter: var(--glass-control-filter);
-    -webkit-backdrop-filter: var(--glass-control-filter);
     transition: background 0.12s, transform 0.1s;
   }
-  #github-btn:hover { background: var(--glass-hover); }
-  #github-btn:active { transform: scale(0.97); }
   .github-mark { width: 18px; height: 18px; fill: currentColor; flex-shrink: 0; }
   .github-stars-wrap {
     display: flex; align-items: center; gap: 4px;
@@ -300,7 +287,6 @@
   @media (max-width: 1600px) {
     .github-owner { display: none; }
   }
-  #clear-btn:active, #settings-btn:active, #sessions-btn:active { transform: scale(0.97); }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
   #sessions-menu {
     position: fixed; right: 16px; bottom: 72px; z-index: 20;
@@ -884,7 +870,6 @@
     cursor: pointer;
     transition: background 0.12s, border-color 0.12s, color 0.12s, transform 0.1s;
   }
-  .markup-btn:hover { background: var(--glass-hover); }
   .markup-btn:active { transform: scale(0.97); }
   .markup-item.active .markup-btn {
     border-color: var(--highlight-orange);
@@ -944,10 +929,7 @@
     backdrop-filter: var(--glass-control-filter);
     -webkit-backdrop-filter: var(--glass-control-filter);
   }
-  .corner-button-bar > #settings-btn,
-  .corner-button-bar > #github-btn,
-  .corner-button-bar > #sessions-btn,
-  .corner-button-bar > #clear-btn {
+  .corner-button-bar > .corner-action {
     position: relative;
     height: 100%;
     font-family: inherit;
@@ -961,31 +943,21 @@
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
-  .corner-button-bar > #settings-btn:hover,
-  .corner-button-bar > #github-btn:hover,
-  .corner-button-bar > #sessions-btn:hover,
-  .corner-button-bar > #clear-btn:hover {
-    background: var(--corner-button-hover-fill);
-    box-shadow: inset 0 0 0 0.5px var(--corner-button-hover-edge);
+  .glass-hoverable:hover:not(:disabled):not([aria-disabled="true"]) {
+    background: var(--glass-hover);
   }
-  .corner-button-bar > #settings-btn:focus-visible,
-  .corner-button-bar > #github-btn:focus-visible,
-  .corner-button-bar > #sessions-btn:focus-visible,
-  .corner-button-bar > #clear-btn:focus-visible {
+  .corner-button-bar > .corner-action:focus-visible {
     z-index: 1;
     outline: 2px solid var(--highlight-orange);
     outline-offset: -3px;
   }
-  .corner-button-bar > #settings-btn:active,
-  .corner-button-bar > #github-btn:active,
-  .corner-button-bar > #sessions-btn:active,
-  .corner-button-bar > #clear-btn:active {
+  .corner-button-bar > .corner-action:active {
     transform: none;
   }
-  .corner-button-bar > #clear-btn:disabled {
+  .corner-button-bar > .corner-action:disabled {
     background: var(--text-3);
   }
-  .corner-button-bar > * + *::before {
+  .corner-button-bar > * + *::after {
     content: '';
     position: absolute;
     left: 0;
@@ -994,10 +966,11 @@
     width: 1px;
     background: var(--border-2);
     pointer-events: none;
+    z-index: 1;
   }
   /* Settings is the first left-bar item, so its hidden presentation state
      also suppresses the divider carried by the remaining GitHub button. */
-  html.presentation #corner-actions-left > #github-btn::before { display: none; }
+  html.presentation #corner-actions-left > #github-btn::after { display: none; }
 
   /* ----- Presentation entry: wide centered session picker ----- */
   /* First screen of presentation mode. The corner Saved Sessions button
@@ -1132,10 +1105,10 @@
 
   <!-- ===== Bottom-left: icon-only settings + GitHub button bar ===== -->
   <div id="corner-actions-left" class="corner-button-bar">
-  <button id="settings-btn" title="Generation settings" aria-label="Settings">
+  <button id="settings-btn" class="corner-action glass-hoverable" title="Generation settings" aria-label="Settings">
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
-  <a id="github-btn" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
+  <a id="github-btn" class="corner-action glass-hoverable" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
     <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
     <span class="github-name"><span class="github-owner">WeZZard/</span>jlens-qwen36</span>
     <span class="github-stars-wrap" hidden>
@@ -1145,8 +1118,8 @@
   </a>
   </div>
   <div id="corner-actions" class="corner-button-bar">
-    <button id="sessions-btn" title="Saved sessions">Saved Sessions</button>
-    <button id="clear-btn" title="Clear conversation">Clear</button>
+    <button id="sessions-btn" class="corner-action glass-hoverable" title="Saved sessions"><span>Saved Sessions</span></button>
+    <button id="clear-btn" class="corner-action glass-hoverable" title="Clear conversation"><span>Clear</span></button>
   </div>
   <div id="sessions-menu" aria-live="polite">
     <div class="sessions-head">
@@ -2091,7 +2064,7 @@ function applyLayerBands(lensInfo, modelInfo) {
     const label = document.createElement('div');
     label.className = 'band-floating-label';
     label.dataset.band = band.id;
-    label.textContent = band.label + (fallback && band.id === 'workspace' ? ' (provisional)' : '');
+    label.textContent = band.label;
     return label;
   }));
 }
@@ -2925,13 +2898,15 @@ function renderMarkups() {
     item.className = 'markup-item';
     if (isActiveMarkup(m)) item.classList.add('active');
     const btn = document.createElement('button');
-    btn.className = 'markup-btn';
+    btn.className = 'markup-btn glass-hoverable';
     btn.type = 'button';
     // Prefer the live block word (also corrects markups saved before the
     // block-word fix); fall back to the stored token if the grid row is
     // not available (e.g. trimmed session).
     const word = markupBlockWord(m.pos, m.layer) || m.token || '';
-    btn.textContent = word.trim() || '·';
+    const label = document.createElement('span');
+    label.textContent = word.trim() || '·';
+    btn.appendChild(label);
     btn.title = `${JSON.stringify(word)} · position ${m.pos} (${JSON.stringify(state.gridTokenStrs[m.pos] || '')}) · layer L${m.layer}`;
     btn.onclick = () => selectCell(m.pos, m.layer);
     item.appendChild(btn);
