@@ -88,6 +88,7 @@
     /* 20px header + five 18px rows + four 4px gaps. */
     --detail-readout-max-height: 126px;
     --corner-button-bar-divider-inset: 10px;
+    --corner-button-hover-fill: rgba(60,50,30,0.07);
     --visible-band-edge-color: var(--paper-bg);
   }
   * { box-sizing: border-box; }
@@ -963,7 +964,7 @@
   .corner-button-bar > #github-btn:hover,
   .corner-button-bar > #sessions-btn:hover,
   .corner-button-bar > #clear-btn:hover {
-    background: var(--glass-hover);
+    background: var(--corner-button-hover-fill);
   }
   .corner-button-bar > #settings-btn:focus-visible,
   .corner-button-bar > #github-btn:focus-visible,
