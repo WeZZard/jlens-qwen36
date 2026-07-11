@@ -170,6 +170,25 @@
     text-underline-offset: 2px;
   }
   .msg .bubble .tok.frontier { box-shadow: 0 0 0 1.5px var(--frontier); font-weight: 700; }
+  /* Baseline-vs-intervened token diff: tokens that differ from the OTHER
+     run get a wavy underline — green on the intervened run (new), red on
+     the baseline (what the intervention displaced). */
+  .msg .bubble .tok.diff-new {
+    background: rgba(90,138,58,0.12);
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: var(--frontier);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  .msg .bubble .tok.diff-old {
+    background: rgba(224,72,62,0.10);
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: #e0483e;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
   .msg .bubble .placeholder { color: var(--text-3); font-style: italic; }
 
   /* ===== Bottom: floating message input (fixed, light glass) ===== */
@@ -392,7 +411,7 @@
   }
 
   /* settings modal (centered, with a neutral dimming backdrop) */
-  #settings-backdrop {
+  :is(#settings-backdrop, #intervene-backdrop) {
     position: fixed; inset: 0; z-index: 100;
     display: flex;
     align-items: center; justify-content: center;
@@ -408,7 +427,7 @@
                 -webkit-backdrop-filter 240ms ease,
                 visibility 0s linear 240ms;
   }
-  #settings-backdrop.visible {
+  :is(#settings-backdrop, #intervene-backdrop).visible {
     background-color: rgba(0,0,0,0.24);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
@@ -417,7 +436,7 @@
     pointer-events: auto;
     transition-delay: 0s;
   }
-  #settings-popup {
+  :is(#settings-popup, #intervene-popup) {
     width: min(380px, 92vw);
     color-scheme: light;
     background: var(--settings-glass);
@@ -436,21 +455,21 @@
                 transform 220ms cubic-bezier(0.2, 0.8, 0.3, 1);
     will-change: opacity, transform;
   }
-  #settings-backdrop.visible #settings-popup { opacity: 1; transform: translateY(0) scale(1); }
-  #settings-popup h3 {
+  :is(#settings-backdrop, #intervene-backdrop).visible :is(#settings-popup, #intervene-popup) { opacity: 1; transform: translateY(0) scale(1); }
+  :is(#settings-popup, #intervene-popup) h3 {
     margin: 0 0 14px; font-size: 14px; font-weight: 600; color: var(--settings-text);
   }
-  #settings-popup .field { margin-bottom: 14px; }
-  #settings-popup .field label {
+  :is(#settings-popup, #intervene-popup) .field { margin-bottom: 14px; }
+  :is(#settings-popup, #intervene-popup) .field label {
     display: block; font-size: 12px; color: var(--settings-text-secondary); margin-bottom: 4px;
   }
-  #settings-popup .field label .value {
+  :is(#settings-popup, #intervene-popup) .field label .value {
     float: right;
     color: var(--settings-accent);
     font-variant-numeric: tabular-nums;
     font-weight: 600;
   }
-  #settings-popup .field input[type="number"] {
+  :is(#settings-popup, #intervene-popup) .field input[type="number"] {
     width: 100%; font: inherit; font-size: 13px; padding: 6px 10px;
     border: 1px solid var(--glass-recessed-border); border-radius: 12px;
     corner-shape: squircle;
@@ -462,12 +481,12 @@
     -webkit-appearance: none;
     caret-color: var(--settings-accent);
   }
-  #settings-popup .field input[type="number"]:focus {
+  :is(#settings-popup, #intervene-popup) .field input[type="number"]:focus {
     border-color: var(--settings-accent);
     outline: 3px solid rgba(255,159,10,0.24);
     outline-offset: 1px;
   }
-  #settings-popup .field input[type="range"] {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"] {
     width: 100%;
     --range-progress: 0%;
     height: 18px;
@@ -477,14 +496,14 @@
     accent-color: var(--settings-accent);
     cursor: pointer;
   }
-  #settings-popup .field input[type="range"]::-webkit-slider-runnable-track {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"]::-webkit-slider-runnable-track {
     height: 6px;
     border-radius: 999px;
     border: 0;
     background: linear-gradient(to right, var(--settings-accent) 0 var(--range-progress), var(--glass-track) var(--range-progress) 100%);
     box-shadow: none;
   }
-  #settings-popup .field input[type="range"]::-webkit-slider-thumb {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"]::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
     width: 20px; height: 20px;
@@ -494,30 +513,30 @@
     background: var(--glass-accent);
     box-shadow: 0 4px 10px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.30);
   }
-  #settings-popup .field input[type="range"]::-moz-range-track {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"]::-moz-range-track {
     height: 6px;
     border-radius: 999px;
     border: 0;
     background: var(--glass-track);
     box-shadow: none;
   }
-  #settings-popup .field input[type="range"]::-moz-range-progress {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"]::-moz-range-progress {
     height: 6px;
     border-radius: 999px;
     background: var(--settings-accent);
   }
-  #settings-popup .field input[type="range"]::-moz-range-thumb {
+  :is(#settings-popup, #intervene-popup) .field input[type="range"]::-moz-range-thumb {
     width: 20px; height: 20px;
     border: 1px solid rgba(255,255,255,0.34);
     border-radius: 50%;
     background: var(--glass-accent);
     box-shadow: 0 4px 10px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.30);
   }
-  #settings-popup .field .hint { font-size: 11px; color: var(--settings-text-tertiary); margin-top: 3px; }
-  #settings-popup .actions {
+  :is(#settings-popup, #intervene-popup) .field .hint { font-size: 11px; color: var(--settings-text-tertiary); margin-top: 3px; }
+  :is(#settings-popup, #intervene-popup) .actions {
     display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px;
   }
-  #settings-popup .actions button {
+  :is(#settings-popup, #intervene-popup) .actions button {
     min-width: 76px; padding: 7px 18px; border-radius: 12px;
     corner-shape: squircle;
     font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--glass-recessed-border);
@@ -529,22 +548,458 @@
     -webkit-appearance: none;
     transition: background 0.12s, transform 0.1s;
   }
-  #settings-popup .actions button.ok {
+  :is(#settings-popup, #intervene-popup) .actions button.ok {
     background: var(--settings-accent); color: white;
     border-color: transparent;
     box-shadow: none;
   }
-  #settings-popup .actions button.ok:hover { background: var(--settings-accent-hover); }
-  #settings-popup .actions button.cancel:hover { background: var(--settings-control-fill-hover); }
-  #settings-popup .actions button:focus-visible {
+  :is(#settings-popup, #intervene-popup) .actions button.ok:hover { background: var(--settings-accent-hover); }
+  :is(#settings-popup, #intervene-popup) .actions button.cancel:hover { background: var(--settings-control-fill-hover); }
+  :is(#settings-popup, #intervene-popup) .actions button:focus-visible {
     outline: 3px solid rgba(255,159,10,0.34);
     outline-offset: 2px;
   }
-  #settings-popup .actions button:active { transform: scale(0.97); }
+  :is(#settings-popup, #intervene-popup) .actions button:active { transform: scale(0.97); }
   @media (prefers-reduced-motion: reduce) {
-    #settings-backdrop,
-    #settings-popup { transition: none; }
+    :is(#settings-backdrop, #intervene-backdrop),
+    :is(#settings-popup, #intervene-popup) { transition: none; }
   }
+
+  /* Intervention editor specifics: segmented controls, token-preview
+     chips, mono text inputs. Everything else reuses the settings modal
+     rules via the :is() selectors above. */
+  .seg {
+    display: flex; gap: 0;
+    border: 1px solid var(--glass-recessed-border);
+    border-radius: 999px;
+    background: var(--settings-control-fill);
+    overflow: hidden;
+  }
+  .seg button {
+    flex: 1;
+    border: 0; background: transparent;
+    padding: 6px 4px;
+    font: inherit; font-size: 12px; font-weight: 500;
+    color: var(--settings-text-secondary);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+  }
+  .seg button.active {
+    background: var(--settings-accent);
+    color: #ffffff;
+    font-weight: 600;
+  }
+  .seg button:not(.active):hover { background: var(--settings-control-fill-hover); }
+  .token-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+  .token-chips:empty { display: none; }
+  .token-chip {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--glass-recessed-border);
+    color: var(--settings-text-tertiary);
+    background: var(--settings-control-fill);
+    white-space: pre;
+  }
+  .token-chip.used {
+    border-color: var(--settings-accent);
+    color: var(--settings-accent);
+    font-weight: 600;
+  }
+  #intervene-popup .field input[type="text"] {
+    width: 100%; font-size: 13px; padding: 6px 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    border: 1px solid var(--glass-recessed-border); border-radius: 12px;
+    corner-shape: squircle;
+    background: var(--settings-control-fill); color: var(--settings-text); outline: none;
+    box-shadow: none;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    appearance: none;
+    -webkit-appearance: none;
+    caret-color: var(--settings-accent);
+  }
+  #intervene-popup .field input[type="text"]:focus {
+    border-color: var(--settings-accent);
+    outline: 3px solid rgba(255,159,10,0.24);
+    outline-offset: 1px;
+  }
+  /* Panel header: title + aim line; Save/Cancel live at the BOTTOM.
+     ONE vertical rhythm everywhere: every block boundary is 12px, so all
+     four purposes share identical spacing. */
+  #iv-head { margin-bottom: 16px; }
+  #iv-head h3 { margin: 0 0 3px; }
+  #iv-actions.actions { margin-top: 16px; }
+  /* The purpose chooser sits at the TOP (above the pickers) with a fixed
+     ONE-LINE description — the panel never grows/shrinks from wrapping
+     text. It is width-capped so switching purposes is a short mouse hop. */
+  #intervene-popup #iv-mode-field { margin: 0 0 16px; }
+  #iv-mode-field .seg {
+    max-width: 380px;
+    margin: 0 auto;
+  }
+  #iv-mode-hint {
+    height: 16px;
+    line-height: 16px;
+    margin-top: 6px;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #iv-layers-hint {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  /* ===== Session-view statuses =====
+     1. NORMAL         — chat input + corner bars at the bottom, detail
+                         card floats above the input on cell selection.
+     2. CONFIGURATION  — the settings modal dims + blurs the whole page.
+     3. INTERVENING    — html.intervening: the bottom chrome (input box,
+        both corner bars) sinks below the page edge, the intervene panel
+        takes over the detail card's slot and extends down into the space
+        the input occupied, and the page stays FULLY LIVE behind it: the
+        grid and chat scroll, clicking a cell re-aims the intervention,
+        and in Pick… mode clicking layer columns toggles them. */
+  #chat-input, #corner-actions, #corner-actions-left {
+    transition: transform 340ms cubic-bezier(0.4, 0, 0.2, 1), opacity 340ms ease;
+  }
+  html.intervening #chat-input {
+    transform: translateX(-50%) translateY(calc(100% + 48px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  html.intervening #corner-actions,
+  html.intervening #corner-actions-left {
+    transform: translateY(calc(100% + 48px));
+    opacity: 0;
+    pointer-events: none;
+  }
+  html.intervening #detail,
+  html.iv-restoring #detail { display: none !important; }
+  html.intervening body::after { display: none; }
+
+  /* The intervene panel previews its target cells live on the J-Space
+     grid, so — unlike the settings modal — it neither dims, blurs, nor
+     blocks the page: the backdrop lets every pointer event through and
+     only the panel itself is interactive. Close via Save/Cancel/Esc. */
+  #intervene-backdrop.visible {
+    background-color: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    pointer-events: none;
+  }
+  /* The panel lives on the RIGHT, over the chat column (the message
+     bubbles keep scrolling above it via the chat clearance): full chat
+     width, bottom-anchored, never full height. */
+  #intervene-popup {
+    pointer-events: auto;
+    position: fixed;
+    right: var(--bottom-control-inset);
+    /* Directly above the minimap (which sits in the true corner while
+       intervening): inset + map height (132 + 20 padding + 2 border) +
+       12px gap. */
+    bottom: calc(var(--bottom-control-inset) + 154px + 12px);
+    width: min(418px, calc(100vw - 32px));
+    max-height: calc(100vh - 214px);
+    overflow-y: auto;
+    margin: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  #intervene-backdrop.visible #intervene-popup {
+    transform: translateY(0) scale(1);
+  }
+  /* Bottom-panel layout: the "what" (thought + strength) and the "where"
+     (layers + tokens) side by side. The tracks are ANIMATABLE: Erase all
+     needs no "what", so its column collapses to 0fr and the pickers
+     glide toward the center of the panel. */
+  /* Single vertical stack (the 418px panel has no room for a split
+     view): purpose seg on top, then the layer/token pickers, the glow
+     summary, the thought/strength block, and Save/Cancel at the bottom. */
+  #intervene-popup .iv-where,
+  #intervene-popup .iv-what-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  #intervene-popup .iv-where { margin-bottom: 16px; }
+  /* Spacing to the pickers lives INSIDE the foldable block so it folds
+     away with the fields in Erase all. */
+  #intervene-popup .iv-what-inner { padding-bottom: 16px; }
+  /* Each control is ONE visual group — title label, control body, and
+     the description under the body. Groups are separated by the
+     containers' constant 16px gap; inside a group the body gets 6px of
+     air above (after the label) and below (before its description). A
+     group without a description simply ends at its body, so the
+     between-group spacing stays equal everywhere. */
+  #intervene-popup .iv-where .field,
+  #intervene-popup .iv-what-inner .field {
+    margin-bottom: 0;
+    min-width: 0;
+  }
+  #intervene-popup .iv-where .field > label,
+  #intervene-popup .iv-what-inner .field > label {
+    margin-bottom: 6px;
+  }
+  #intervene-popup .iv-what-inner .field .token-chips {
+    margin-top: 6px;
+    flex-wrap: nowrap;
+    max-height: 22px;
+    overflow: hidden;
+  }
+  #intervene-popup .iv-where .field .hint { margin-top: 6px; }
+  /* Labels contain their floated value chip (flow-root = BFC), so the
+     chip rides ON the label line instead of overflowing into the body. */
+  #intervene-popup .field > label { display: flow-root; }
+  /* Uniform 32px control bodies (text inputs are 29px, segs 30px, the
+     bare range input 18px), so every group — and the whole panel — has
+     one height in every purpose. */
+  #intervene-popup .field input[type="text"] { height: 32px; display: block; }
+  #intervene-popup .seg { height: 32px; }
+  #intervene-popup #iv-alpha { height: 32px; display: block; margin: 0; }
+  /* Control titles: the detail card's small-caps convention. The value
+     chip inside the strength label is a READING, not a title — keep it
+     lowercase. */
+  #intervene-popup .field > label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  #intervene-popup .field > label .value {
+    text-transform: none;
+    letter-spacing: normal;
+  }
+  /* The layers distribution line: bolder, sitting lower in its slot for
+     extra clearance from the segmented control above it. */
+  #intervene-popup #iv-layers-hint {
+    font-weight: 600;
+  }
+  /* Erase all needs no thought/strength: fold the block vertically.
+     Width never changes, so nothing re-wraps — the fold animates the
+     row track only and is symmetric in both directions. */
+  #iv-what {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    visibility: visible;
+    transition: grid-template-rows 320ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 220ms ease, visibility 0s linear 0s;
+  }
+  #iv-what > .iv-what-inner {
+    min-height: 0;
+    overflow: hidden;
+  }
+  #intervene-popup.iv-erase #iv-what {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 320ms cubic-bezier(0.4, 0, 0.2, 1),
+                opacity 220ms ease, visibility 0s linear 320ms;
+  }
+  #iv-anchor {
+    font-size: 12px;
+    color: var(--settings-text-secondary);
+  }
+  #iv-anchor b {
+    color: var(--settings-accent);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-weight: 600;
+  }
+  #iv-anchor .dim { color: var(--settings-text-tertiary); }
+  /* Pick… mode description states: the picked layers in the highlight
+     color, or — when nothing is picked yet — a glowing highlighted
+     guidance line asking the user to pick on the grid. */
+  #iv-layers-hint .picked-layers {
+    color: var(--settings-accent);
+    font-weight: 600;
+  }
+  #iv-layers-hint .pick-guidance {
+    color: var(--settings-accent);
+    font-weight: 600;
+    animation: iv-pick-glow 1.4s ease-in-out infinite;
+  }
+  @keyframes iv-pick-glow {
+    0%, 100% { text-shadow: 0 0 2px rgba(255, 159, 10, 0.2); opacity: 0.8; }
+    50%      { text-shadow: 0 0 10px rgba(255, 159, 10, 0.85); opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #iv-layers-hint .pick-guidance { animation: none; }
+  }
+  #iv-preview-summary { margin: 0; min-height: 16px; }
+  /* Layer columns currently in the edit's target set. */
+  #grid th.layer-header.iv-picked {
+    color: var(--highlight-orange);
+    font-weight: 700;
+  }
+  /* Aiming cursors: crosshair to re-aim; copy while picking layers. */
+  html.intervening #grid td.cell.selectable,
+  html.intervening #grid td.pos-label.clickable-token { cursor: crosshair; }
+  html.iv-picking #grid td.cell,
+  html.iv-picking #grid th.layer-header,
+  html.iv-picking #grid th.band-guide-cell { cursor: copy; }
+  /* Cursor tooltip while intervening: names the active picking mode and
+     previews the result of clicking the hovered cell. Best-practice
+     mechanics: offset from the pointer (never underneath it), flips at
+     viewport edges, never intercepts events, high-contrast chip. */
+  #iv-cursor-tip {
+    position: fixed;
+    z-index: 300;
+    pointer-events: none;
+    max-width: 300px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    corner-shape: squircle;
+    background: rgba(48, 42, 30, 0.94);
+    color: #fffdf4;
+    font-size: 11px;
+    line-height: 1.45;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28), 0 1px 4px rgba(0, 0, 0, 0.18);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #iv-cursor-tip[hidden] { display: none; }
+  #iv-cursor-tip .tip-mode {
+    display: block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #ffc46b;
+    margin-bottom: 1px;
+  }
+  /* ===== Minimap: whole-grid intervention overview =====
+     Bottom-right of the GRID column (left of the chat column, so it
+     stays visible while the intervene panel occupies the right rail).
+     Shows every cell the current setup touches over a band-tinted map
+     of the entire grid; when the conversation is too long to fit, it
+     windows around the viewport at a readable scale and ▲/▼ chips count
+     the highlighted rows outside. Click anywhere (or a chip) to glide. */
+  #minimap {
+    position: fixed;
+    right: var(--bottom-control-inset);
+    /* Normal mode: ride above the Saved Sessions / Clear bar; while
+       intervening the bar is sunk, so glide down into the true corner
+       with the intervene panel directly above. */
+    bottom: calc(var(--bottom-control-inset) + 44px + 12px);
+    z-index: 9;
+    width: min(418px, calc(100vw - 32px));
+    /* Same corner geometry as the intervene panel (28px squircle) with a
+       clearly visible outline. The band BACKGROUND runs edge to edge
+       (cropped by the container's own continuous corner); the CONTENT is
+       inset 10px in-canvas, past the corner curve's deepest cut, so no
+       ingredient is ever cropped and no second corner curve exists. */
+    border: 1px solid rgba(60, 50, 30, 0.22);
+    border-radius: 28px;
+    corner-shape: squircle;
+    background: var(--glass-control);
+    box-shadow: var(--glass-control-shadow);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+    overflow: hidden;
+    transition: bottom 340ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* The panel (inside its z-100 backdrop) and the minimap are cards at
+     the SAME elevation, so neither may cast its shadow ON the other.
+     Resolved at the paint-order level: while intervening the minimap
+     paints ABOVE the panel, so the panel's big downward shadow passes
+     BEHIND the minimap card (masked by its glass) rather than landing on
+     top of it; the minimap's own small shadow falls downward, away from
+     the panel. No shadow is clipped or cropped anywhere. */
+  html.intervening #minimap {
+    bottom: var(--bottom-control-inset);
+    z-index: 101;
+  }
+  #minimap[hidden] { display: none; }
+  #minimap canvas {
+    display: block;
+    cursor: pointer;
+    /* The tile's rounding is painted in-canvas (a clip around the map
+       artwork only) so the viewport indicator is never corner-cropped. */
+  }
+  .minimap-more {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 0;
+    border-radius: 999px;
+    background: var(--highlight-orange);
+    color: #ffffff;
+    font: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.5;
+    padding: 1px 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255, 138, 0, 0.45);
+  }
+  .minimap-more:hover { background: #e87900; }
+  .minimap-more[hidden] { display: none; }
+  #minimap-up { top: 14px; }
+  #minimap-down { bottom: 14px; }
+  .iv-preview-summary {
+    font-size: 12px; font-weight: 600;
+    color: var(--settings-accent);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .iv-preview-summary::before { content: '◈'; font-size: 11px; }
+  .iv-preview-summary.empty { color: var(--settings-text-tertiary); font-weight: 500; }
+  /* Live target preview: the cells this edit will write to glow and pulse
+     while the editor is open; every other cell dims so the target region
+     is unmistakable. Distinct from the static dashed ring of an
+     already-applied intervention. */
+  #grid td.cell.iv-preview .cell-block {
+    box-shadow: 0 0 0 2px #ff8a00, 0 0 10px 2px rgba(255,138,0,0.55);
+    animation: iv-preview-pulse 1.3s ease-in-out infinite;
+  }
+  @keyframes iv-preview-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(255,138,0,0.55), 0 0 6px 1px rgba(255,138,0,0.3); }
+    50%      { box-shadow: 0 0 0 2px rgba(255,138,0,1), 0 0 12px 3px rgba(255,138,0,0.65); }
+  }
+  html.intervening #grid td.cell:not(.iv-preview) .cell-block { opacity: 0.4; }
+  /* Token-rail highlight: rows inside the edit's TOKEN scope get a full
+     block-ring around their token label. The ring box is a grid block,
+     geometrically: 124px wide (GRID_CELL_W − 4), 32px tall, inset 2px —
+     so its distance to the last layer's block (and to its vertical
+     neighbors) is exactly the grid's 4px block gap, and the label's
+     leading/trailing padding sits inside the border. */
+  /* NOTE: no `position` override here — the label cells are sticky, and
+     sticky is itself a containing block for the absolute ::before ring.
+     Forcing `relative` broke the stickiness: ringed labels scrolled away
+     with the table and left holes in the rail. */
+  #grid td.pos-label.iv-preview-tok::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    bottom: 2px;
+    width: 124px;
+    border-radius: 7px;
+    corner-shape: squircle;
+    pointer-events: none;
+    box-shadow: 0 0 0 1px #ff8a00, 0 0 8px 1px rgba(255, 138, 0, 0.5);
+    animation: iv-preview-pulse-tok 1.3s ease-in-out infinite;
+  }
+  @keyframes iv-preview-pulse-tok {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(255, 138, 0, 0.55), 0 0 5px 1px rgba(255, 138, 0, 0.3); }
+    50%      { box-shadow: 0 0 0 1px rgba(255, 138, 0, 1), 0 0 9px 2px rgba(255, 138, 0, 0.6); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #grid td.pos-label.iv-preview-tok::before { animation: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #grid td.cell.iv-preview .cell-block { animation: none; }
+  }
+  #intervene-popup .actions .spacer { flex: 1; min-width: 0; }
+  #intervene-popup .actions button.danger {
+    border-color: rgba(224,72,62,0.5);
+    color: #e0483e;
+  }
+  #intervene-popup .actions button.danger:hover { background: rgba(224,72,62,0.12); }
+  #intervene-popup .actions button.danger[hidden] { display: none; }
 
   /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
   /* No top padding so the sticky layer-header aligns with the very top of the
@@ -705,6 +1160,22 @@
   #grid td.cell.selected-row { }
   #grid td.cell.gen-row { }
   #grid td.cell.gen-row.selected-row { }
+  /* Intervened cells: dashed orange ring marking J-space write sites of
+     the ACTIVE run's applied interventions. */
+  #grid td.cell.intervened .cell-block {
+    outline: 1.5px dashed var(--highlight-orange);
+    outline-offset: -2px;
+  }
+  #grid td.cell.selected.intervened .cell-block { outline-color: #ffffff; }
+  /* Compare dot: the cell's top-1 readout differs from the other run. */
+  #grid td.cell.diff-cell { position: relative; }
+  #grid td.cell.diff-cell::after {
+    content: '';
+    position: absolute; top: 4px; right: 4px;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--highlight-orange);
+    pointer-events: none;
+  }
 
   /* ----- Detail panel (floating, centered, stacked above the input box) ----- */
   /* Width matches the input box. Sits just above it. */
@@ -831,6 +1302,42 @@
     opacity: 0.58;
     cursor: default;
   }
+  /* Intervene button, left of the Markup button. */
+  #detail .intervene-save { right: 118px; }
+  /* Per-row quick actions on the readout list (hover-revealed, overlay
+     the score column so the fixed grid template stays untouched). */
+  #detail .readout .row { position: relative; }
+  #detail .readout .row .row-actions {
+    position: absolute; right: -24px; top: 50%;
+    transform: translateY(-50%);
+    display: none; gap: 4px;
+    padding-left: 8px;
+  }
+  #detail .readout .row:hover .row-actions { display: inline-flex; }
+  .row-action {
+    width: 20px; height: 20px;
+    border: 1px solid var(--border-2);
+    border-radius: 50%;
+    background: var(--glass-control); color: var(--text-2);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+    font: inherit; font-size: 12px; line-height: 1;
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .row-action:hover { border-color: var(--highlight-orange); color: var(--highlight-orange); }
+  /* Compare affordances: other-run note under the context line, and
+     per-row rank deltas appended to the token-id column. */
+  #detail .compare-note { font-size: 11px; color: var(--text-3); margin: -6px 0 10px; }
+  #detail .compare-note b { color: var(--text-2); font-family: ui-monospace, Menlo, monospace; }
+  #detail .readout .rank-delta {
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    margin-left: 5px; color: var(--text-3);
+  }
+  #detail .readout .rank-delta.up { color: var(--frontier); }
+  #detail .readout .rank-delta.down { color: #e0483e; }
+  #detail .readout .rank-delta.new { color: var(--highlight-orange); font-weight: 700; }
 
   /* ----- Markups: floating column on the left edge of the screen -----
      The buttons form one group whose vertical center stays aligned to the
@@ -895,6 +1402,89 @@
     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
   }
 
+  /* ----- Interventions: floating column on the top-left edge -----
+     Same pill language as the markups rail; a leading toggle dot shows
+     enabled state, the primary Re-run pill sits on top. */
+  #interventions {
+    position: fixed; left: 0; top: 68px; z-index: 9;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+    padding: 4px 20px 20px 16px;
+    max-height: calc(50vh - 130px);
+    overflow-y: auto;
+    scrollbar-width: none;
+    pointer-events: none;
+  }
+  #interventions::-webkit-scrollbar { display: none; }
+  .intervention-item { display: flex; align-items: center; gap: 6px; max-width: 300px; pointer-events: auto; }
+  .intervention-item.disabled .markup-btn { opacity: 0.55; }
+  .intervention-item .iv-toggle {
+    width: 22px; height: 22px; flex-shrink: 0;
+    border: 1px solid var(--border-2);
+    border-radius: 50%;
+    background: var(--glass-control);
+    box-shadow: var(--glass-control-shadow);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; padding: 0;
+    transition: border-color 0.12s;
+  }
+  .intervention-item .iv-toggle::after {
+    content: '';
+    width: 10px; height: 10px; border-radius: 50%;
+    border: 1.5px solid var(--highlight-orange);
+    background: var(--highlight-orange);
+    box-sizing: border-box;
+    transition: background 0.12s;
+  }
+  .intervention-item.disabled .iv-toggle::after { background: transparent; }
+  .intervention-item .markup-delete { display: none; }
+  .intervention-item:hover .markup-delete { display: inline-flex; }
+  #rerun-btn {
+    pointer-events: auto;
+    border: 1px solid var(--highlight-orange);
+    border-radius: 999px;
+    background: var(--highlight-orange); color: #ffffff;
+    height: 30px; padding: 0 16px;
+    font: inherit; font-size: 12px; font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(255,138,0,0.35), 0 1px 4px rgba(60,50,30,0.10);
+    transition: background 0.12s, transform 0.1s, opacity 0.12s;
+  }
+  #rerun-btn:hover:not(:disabled) { background: #e87900; }
+  #rerun-btn:active:not(:disabled) { transform: scale(0.96); }
+  #rerun-btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+
+  /* ----- A/B variant toggle (baseline vs intervened), top right ----- */
+  #variant-toggle {
+    position: fixed; top: 12px; right: 16px;
+    z-index: 12;
+    display: flex;
+    height: 36px;
+    border-radius: 18px;
+  }
+  #variant-toggle[hidden] { display: none; }
+  #variant-toggle > .corner-action {
+    padding: 0 16px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+    color: var(--text-2);
+  }
+  #variant-toggle > .corner-action.active {
+    color: var(--highlight-orange);
+    font-weight: 700;
+  }
+  #variant-toggle > .corner-action:disabled { color: var(--text-3); cursor: default; }
+  #variant-toggle .diff-chip {
+    font-size: 10px; font-weight: 700;
+    color: #ffffff;
+    background: var(--highlight-orange);
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+  #variant-toggle .diff-chip[hidden] { display: none; }
+
   .status { color: var(--text-3); font-size: 13px; }
   .loading { color: var(--accent); }
   .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
@@ -909,7 +1499,11 @@
   html.presentation #save-current-session,
   html.presentation .session-delete,
   html.presentation .markup-delete,
-  html.presentation #detail .markup-save {
+  html.presentation #detail .markup-save,
+  html.presentation #detail .intervene-save,
+  html.presentation #detail .row-actions,
+  html.presentation #rerun-btn,
+  html.presentation #interventions .iv-toggle {
     display: none !important;
   }
 
@@ -1081,9 +1675,9 @@
     <div id="grid-col">
       <div id="grid-underlay" aria-hidden="true"></div>
       <div id="band-floating-labels" aria-hidden="true">
-        <div class="band-floating-label" data-band="early">Sensory / Surface Processing</div>
-        <div class="band-floating-label" data-band="workspace">Workspace Band</div>
-        <div class="band-floating-label" data-band="late">Motor / Output Band</div>
+        <div class="band-floating-label" data-band="early">Sensory / Surface Processing · L0–L18</div>
+        <div class="band-floating-label" data-band="workspace">Workspace Band · L25–L53</div>
+        <div class="band-floating-label" data-band="late">Motor / Output Band · L59–L63</div>
       </div>
       <div id="grid-body"></div>
       <div id="detail"></div>
@@ -1134,6 +1728,25 @@
   <!-- ===== Markups: floating column, left edge ===== -->
   <div id="markups" aria-label="Saved markups"></div>
 
+  <!-- ===== Interventions: floating column, top-left edge ===== -->
+  <div id="interventions" aria-label="Active interventions"></div>
+
+  <!-- ===== A/B variant toggle (baseline vs intervened) ===== -->
+  <div id="variant-toggle" class="corner-button-bar" hidden>
+    <button id="variant-baseline" class="corner-action glass-hoverable" type="button" title="Show the baseline run"><span>Baseline</span></button>
+    <button id="variant-intervened" class="corner-action glass-hoverable" type="button" title="Show the intervened run"><span>Intervened</span><span class="diff-chip" hidden></span></button>
+  </div>
+
+  <!-- ===== Cursor tooltip for the intervening status ===== -->
+  <div id="iv-cursor-tip" hidden></div>
+
+  <!-- ===== Minimap: whole-grid intervention overview ===== -->
+  <div id="minimap" hidden aria-label="Intervention minimap">
+    <canvas id="minimap-canvas"></canvas>
+    <button id="minimap-up" class="minimap-more" type="button" hidden></button>
+    <button id="minimap-down" class="minimap-more" type="button" hidden></button>
+  </div>
+
   <!-- ===== Presentation entry: centered session picker ===== -->
   <div id="session-picker" role="dialog" aria-label="Choose a saved session">
     <div id="session-picker-card">
@@ -1175,6 +1788,69 @@
       </div>
     </div>
   </div>
+
+  <!-- ===== Intervention editor modal (structural twin of settings) ===== -->
+  <div id="intervene-backdrop" aria-hidden="true" inert>
+    <div id="intervene-popup" role="dialog" aria-modal="false" aria-labelledby="intervene-title">
+      <div id="iv-head">
+        <h3 id="intervene-title">Intervene</h3>
+        <div id="iv-anchor"></div>
+      </div>
+      <div class="field" id="iv-mode-field">
+        <div class="seg" id="iv-mode">
+          <button type="button" data-mode="swap" title="Swap one thought for another at the same strength. Self-calibrating — the most reliable edit.">Replace</button>
+          <button type="button" data-mode="steer" title="Push a thought into the workspace that isn't there, or boost one that is.">Add</button>
+          <button type="button" data-mode="suppress" title="Push a thought out of the workspace.">Remove</button>
+          <button type="button" data-mode="ablate" title="Blank out everything the aimed cell is thinking. Thoughts the model is about to say out loud are spared.">Erase all</button>
+        </div>
+        <div class="hint" id="iv-mode-hint"></div>
+      </div>
+      <div id="iv-what">
+        <div class="iv-what-inner">
+          <div class="field" id="iv-token-field">
+            <label for="iv-token" id="iv-token-label">Thought to replace</label>
+            <input id="iv-token" type="text" spellcheck="false" autocomplete="off" placeholder=" France">
+            <div class="token-chips" id="iv-token-preview"></div>
+          </div>
+          <div class="field" id="iv-target-field">
+            <label for="iv-target" id="iv-target-label">New thought</label>
+            <input id="iv-target" type="text" spellcheck="false" autocomplete="off" placeholder=" China">
+            <div class="token-chips" id="iv-target-preview"></div>
+          </div>
+          <div class="field" id="iv-alpha-field">
+            <label for="iv-alpha" title="Too soft does nothing; too hard garbles the text. This demo lens usually needs 50–800.">How hard to push <span class="value" id="iv-alpha-value">200</span></label>
+            <input id="iv-alpha" type="range" min="0" max="1000" step="1">
+          </div>
+        </div>
+      </div>
+      <div class="iv-where">
+        <div class="field">
+          <label>Layers <span style="font-weight:400; color:var(--settings-text-tertiary);">grid columns</span></label>
+          <div class="seg" id="iv-layer-scope">
+            <button type="button" data-scope="this">This one</button>
+            <button type="button" data-scope="band">Whole band</button>
+            <button type="button" data-scope="custom" title="Pick layers by clicking their columns on the grid">Pick…</button>
+          </div>
+          <div class="hint" id="iv-layers-hint"></div>
+        </div>
+        <div class="field">
+          <label>Tokens <span style="font-weight:400; color:var(--settings-text-tertiary);">grid rows</span></label>
+          <div class="seg" id="iv-pos-scope">
+            <button type="button" data-scope="at" title="Edit only the aimed token. The change still influences everything after it.">Just this one</button>
+            <button type="button" data-scope="from" title="Edit the aimed token and every token after it, to the end.">This + after</button>
+            <button type="button" data-scope="gen" title="Edit every token of the model's reply — nothing in the prompt.">The reply</button>
+          </div>
+        </div>
+      </div>
+      <div id="iv-preview-summary" class="iv-preview-summary"></div>
+      <div class="actions" id="iv-actions">
+        <button class="danger" id="iv-delete" type="button" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button class="cancel" id="iv-cancel" type="button">Cancel</button>
+        <button class="ok" id="iv-ok" type="button">Save</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1206,6 +1882,18 @@ let state = {
   snapshotByMsgToken: new Map(),
   // Token markups: [{pos, layer, token}] bookmarks into the J-Space grid.
   markups: [],
+  // J-space intervention specs authored in the UI (persisted):
+  // [{id, enabled, mode, token, tokenId, target, targetId, alpha,
+  //   layers:[int], scope:{type:'at'|'from'|'gen', pos?}, origin,
+  //   ablateTokenIds}].
+  interventions: [],
+  // Frozen copies of the specs actually APPLIED to the current run's last
+  // stream (drives the grid's dashed-ring badges; persisted).
+  appliedInterventions: [],
+  // Baseline-vs-intervened compare. The top-level run fields above always
+  // hold the ACTIVE variant; the inactive one lives in compare.other and
+  // setActiveVariant() swaps the references. Null when no compare exists.
+  compare: null,
   // Server session id holding the full-fidelity copy of THIS conversation
   // (set on session load, manual save, and stream-end autosave). Used to
   // recover the quota-trimmed localStorage cache on reload.
@@ -1232,6 +1920,23 @@ function firstUserMessagePreview() {
   return first ? first.content.replace(/\s+/g, ' ').trim().slice(0, 160) : 'Untitled session';
 }
 
+function persistSpec(s) {
+  return {
+    id: s.id,
+    enabled: !!s.enabled,
+    mode: s.mode,
+    token: s.token ?? null,
+    tokenId: s.tokenId ?? null,
+    target: s.target ?? null,
+    targetId: s.targetId ?? null,
+    alpha: s.alpha,
+    layers: (s.layers || []).slice(),
+    scope: s.scope ? { ...s.scope } : null,
+    origin: s.origin ? { ...s.origin } : null,
+    ablateTokenIds: s.ablateTokenIds ? s.ablateTokenIds.slice() : null,
+  };
+}
+
 function serializableConversation({ trimForLocalStorage = false } = {}) {
   const persistable = {
     schema: 1,
@@ -1243,9 +1948,31 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
       tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
       prefillSnapshotId: m.prefillSnapshotId,
     })),
-    snapshots: state.snapshots,
+    // The other (inactive) run's snapshots ride along tagged
+    // variant:'other' — ALL of them, because prompt-position interventions
+    // change prefill readouts too, so nothing is shared across variants.
+    snapshots: state.compare
+      ? state.snapshots.concat(
+          state.compare.other.snapshots.map(sn =>
+            sn.variant === 'other' ? sn : { ...sn, variant: 'other' }))
+      : state.snapshots,
     layers: state.layers,
     markups: state.markups.map(m => ({ pos: m.pos, layer: m.layer, token: m.token })),
+    interventions: state.interventions.map(persistSpec),
+    appliedInterventions: state.appliedInterventions.map(persistSpec),
+    compare: state.compare ? {
+      msgIdx: state.compare.msgIdx,
+      activeIsIntervened: !!state.compare.activeIsIntervened,
+      specs: (state.compare.specs || []).map(persistSpec),
+      baselineHadInterventions: !!state.compare.baselineHadInterventions,
+      otherApplied: (state.compare.other.appliedInterventions || []).map(persistSpec),
+      otherMessages: state.compare.other.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+        tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
+        prefillSnapshotId: m.prefillSnapshotId,
+      })),
+    } : null,
     sourceSessionId: state.sourceSessionId,
   };
   if (trimForLocalStorage) {
@@ -1253,11 +1980,18 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     if (json.length > 4_200_000) {
       // Keep ALL prefill snapshots (token_idx === -1): each carries an
       // entire message's grid rows and cannot be reconstructed. Drop the
-      // OLDEST per-token snapshots first. (The server-side autosave keeps
-      // the full state regardless — this trim only bounds localStorage.)
-      const prefills = persistable.snapshots.filter(sn => sn.token_idx === -1);
-      let toks = persistable.snapshots.filter(sn => sn.token_idx !== -1);
+      // COMPARE's tagged snapshots first (the whole other run is the
+      // marginal cost), then the OLDEST per-token snapshots. (The
+      // server-side autosave keeps the full state regardless — this trim
+      // only bounds localStorage.)
+      const hadCompare = !!persistable.compare;
+      const prefills = persistable.snapshots.filter(sn => sn.token_idx === -1 && !sn.variant);
+      let toks = persistable.snapshots.filter(sn => sn.token_idx !== -1 && !sn.variant);
       const fullTokCount = toks.length;
+      persistable.snapshots = prefills.concat(toks)
+        .sort((a, b) => a.snapshot_id - b.snapshot_id);
+      persistable.compare = null;
+      json = JSON.stringify(persistable);
       while (json.length > 4_200_000 && toks.length > 8) {
         toks = toks.slice(Math.ceil(toks.length / 4));
         persistable.snapshots = prefills.concat(toks)
@@ -1267,7 +2001,7 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
       // Mark lossy payloads so the next page load knows to upgrade from
       // the full-fidelity server autosave instead of silently carrying
       // (and eventually re-saving) a hollowed-out conversation.
-      if (toks.length < fullTokCount) persistable.trimmed = true;
+      if (toks.length < fullTokCount || hadCompare) persistable.trimmed = true;
     }
   }
   return persistable;
@@ -1297,6 +2031,27 @@ function flushSaveState() {
 }
 window.addEventListener('beforeunload', flushSaveState);
 
+function reviveSpec(s) {
+  return persistSpec(s);
+}
+
+function validSpecShape(s) {
+  return !!(s && typeof s.mode === 'string' && Array.isArray(s.layers) &&
+    s.layers.length && s.scope && typeof s.scope.type === 'string');
+}
+
+function newRunState() {
+  return {
+    messages: [],
+    snapshots: [],
+    gridRows: [],
+    gridTokenStrs: [],
+    gridTokenMsgs: [],
+    snapshotByMsgToken: new Map(),
+    appliedInterventions: [],
+  };
+}
+
 function restoreConversation(saved) {
   if (!saved || !saved.messages || saved.messages.length === 0) return false;
   state.messages = saved.messages.map(m => ({
@@ -1307,12 +2062,21 @@ function restoreConversation(saved) {
     })),
     prefillSnapshotId: m.prefillSnapshotId || null,
   }));
-  state.snapshots = saved.snapshots || [];
+  const allSnaps = saved.snapshots || [];
+  // Variant-tagged snapshots belong to the compare's OTHER run; they are
+  // replayed into compare.other below, never into the live run.
+  state.snapshots = allSnaps.filter(sn => !sn.variant);
   state.layers = saved.layers || [];
   state.markups = Array.isArray(saved.markups)
     ? saved.markups
         .filter(m => m && Number.isFinite(m.pos) && Number.isFinite(m.layer))
         .map(m => ({ pos: m.pos, layer: m.layer, token: m.token || '' }))
+    : [];
+  state.interventions = Array.isArray(saved.interventions)
+    ? saved.interventions.filter(validSpecShape).map(reviveSpec)
+    : [];
+  state.appliedInterventions = Array.isArray(saved.appliedInterventions)
+    ? saved.appliedInterventions.filter(validSpecShape).map(reviveSpec)
     : [];
   state.sourceSessionId = saved.sourceSessionId || null;
   if (saved.settings) {
@@ -1330,6 +2094,38 @@ function restoreConversation(saved) {
   for (const snap of state.snapshots) {
     _applyRestoredSnapshot(snap);
   }
+  state.compare = null;
+  if (saved.compare && Array.isArray(saved.compare.otherMessages)) {
+    try {
+      const other = newRunState();
+      other.messages = saved.compare.otherMessages.map(m => ({
+        role: m.role,
+        content: m.content,
+        tokens: (m.tokens || []).map(t => ({
+          id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
+        })),
+        prefillSnapshotId: m.prefillSnapshotId || null,
+      }));
+      other.appliedInterventions = (saved.compare.otherApplied || [])
+        .filter(validSpecShape).map(reviveSpec);
+      for (const snap of allSnaps) {
+        if (snap.variant !== 'other') continue;
+        other.snapshots.push(snap);
+        _applyRestoredSnapshot(snap, other);
+      }
+      state.compare = {
+        msgIdx: saved.compare.msgIdx,
+        activeIsIntervened: !!saved.compare.activeIsIntervened,
+        specs: (saved.compare.specs || []).filter(validSpecShape).map(reviveSpec),
+        baselineHadInterventions: !!saved.compare.baselineHadInterventions,
+        other,
+        diff: null,
+      };
+    } catch (e) {
+      console.warn('compare restore failed; dropping the compare:', e);
+      state.compare = null;
+    }
+  }
   // Initial view for a restored session: first token, last layer, chat
   // at the first user message.
   pendingGridView = { vertical: 'top', horizontal: 'end' };
@@ -1340,10 +2136,12 @@ function restoreConversation(saved) {
 
 // Index one restored snapshot into grid/message state. Shared by the full
 // restore above and the progressive chunk loader (which appends chunks of
-// snapshots to an already-restored conversation).
-function _applyRestoredSnapshot(snap) {
-  state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
-  const m = state.messages[snap.msg_idx];
+// snapshots to an already-restored conversation). `run` defaults to the
+// live state; the compare's other run passes its own run object (state
+// itself duck-types as a run — same field names).
+function _applyRestoredSnapshot(snap, run = state) {
+  run.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+  const m = run.messages[snap.msg_idx];
   if (!m) return;
   m.role = snap.role;
   if (snap.token_idx === -1) {
@@ -1358,30 +2156,30 @@ function _applyRestoredSnapshot(snap) {
       }
       strs.forEach((str, i) => {
         const globalPos = snap.prefill_pos + i;
-        while (state.gridRows.length <= globalPos) {
-          state.gridRows.push(null);
-          state.gridTokenStrs.push('');
-          state.gridTokenMsgs.push(null);
+        while (run.gridRows.length <= globalPos) {
+          run.gridRows.push(null);
+          run.gridTokenStrs.push('');
+          run.gridTokenMsgs.push(null);
         }
-        state.gridTokenStrs[globalPos] = str;
-        state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
-        state.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
+        run.gridTokenStrs[globalPos] = str;
+        run.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: snap.role === 'assistant' };
+        run.snapshotByMsgToken.set(`${snap.msg_idx}:${i}`, snap.snapshot_id);
       });
     }
     if (snap.grid && snap.grid.positions) {
-      snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i));
+      snap.grid.positions.forEach((pos, i) => writeGridRow(pos, snap.grid.cells, i, run));
     }
   } else {
     const globalPos = snap.pos;
     const tokStr = snap.token;
-    while (state.gridRows.length <= globalPos) {
-      state.gridRows.push(null);
-      state.gridTokenStrs.push('');
-      state.gridTokenMsgs.push(null);
+    while (run.gridRows.length <= globalPos) {
+      run.gridRows.push(null);
+      run.gridTokenStrs.push('');
+      run.gridTokenMsgs.push(null);
     }
-    state.gridTokenStrs[globalPos] = tokStr;
-    state.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
-    const m2 = state.messages[snap.msg_idx];
+    run.gridTokenStrs[globalPos] = tokStr;
+    run.gridTokenMsgs[globalPos] = { msgIdx: snap.msg_idx, isGen: true };
+    const m2 = run.messages[snap.msg_idx];
     if (m2) {
       while (m2.tokens.length <= snap.token_idx) {
         m2.tokens.push({ id: 0, text: '', globalPos: -1, snapshotId: -1 });
@@ -1392,7 +2190,7 @@ function _applyRestoredSnapshot(snap) {
       m2.content = m2.tokens.map(t => t.text).join('');
     }
     if (snap.grid && snap.grid.positions && snap.grid.positions.length) {
-      writeGridRow(globalPos, snap.grid.cells, 0);
+      writeGridRow(globalPos, snap.grid.cells, 0, run);
     }
   }
 }
@@ -1406,8 +2204,11 @@ function snapshotsAreLossy(saved) {
   const byMsg = new Map();
   for (const sn of saved.snapshots || []) {
     if (sn.token_idx === -1) continue;
-    if (!byMsg.has(sn.msg_idx)) byMsg.set(sn.msg_idx, []);
-    byMsg.get(sn.msg_idx).push(sn.token_idx);
+    // The two variants' snapshot_ids collide (each stream restarts at 1);
+    // group per (variant, message) so a compare never reads as holes.
+    const key = `${sn.variant || ''}:${sn.msg_idx}`;
+    if (!byMsg.has(key)) byMsg.set(key, []);
+    byMsg.get(key).push(sn.token_idx);
   }
   for (const idxs of byMsg.values()) {
     idxs.sort((a, b) => a - b);
@@ -1470,6 +2271,9 @@ function clearState() {
   state.gridTokenMsgs = [];
   state.layers = [];
   state.markups = [];
+  state.interventions = [];
+  state.appliedInterventions = [];
+  state.compare = null;
   state.sourceSessionId = null;
   state.selectedSnapshotId = null;
   state.selectedCell = null;
@@ -1699,12 +2503,23 @@ async function _streamRemainingChunks(sessionId, totalChunks, gen) {
     if (gen !== _sessionLoadGen) return;  // superseded by another load
     const snaps = chunk.snapshots || [];
     for (const snap of snaps) {
+      if (snap.variant === 'other') {
+        // Compare payload: replay into the inactive run, not live state.
+        if (state.compare) {
+          state.compare.other.snapshots.push(snap);
+          _applyRestoredSnapshot(snap, state.compare.other);
+          state.compare.diff = null;
+        }
+        continue;
+      }
       state.snapshots.push(snap);
       _applyRestoredSnapshot(snap);
     }
     scheduleSaveState();
     // Extend in place: no view movement, no follow-mode.
     renderMarkups();
+    renderInterventions();
+    renderVariantToggle();
     renderChat();
     renderGrid({ keepScroll: true });
   }
@@ -1749,9 +2564,15 @@ function updateFloatingOffsets() {
   // which would push the detail card off-screen — anchor 16px from the
   // bottom instead.
   const hidden = getComputedStyle(input).display === 'none';
+  // TRANSFORM-INDEPENDENT anchor: height + the bottom inset gives the
+  // input's RESTING stack height. Measuring rect.top here made the detail
+  // card track the intervene sink/restore transition mid-flight and then
+  // jump when the input landed.
+  const inset = parseFloat(getComputedStyle(document.documentElement)
+    .getPropertyValue('--bottom-control-inset')) || 16;
   const inputStackHeight = hidden
     ? 16
-    : Math.max(0, window.innerHeight - input.getBoundingClientRect().top);
+    : input.getBoundingClientRect().height + inset;
   const detailBottom = Math.ceil(inputStackHeight + detailClearanceGap());
   document.documentElement.style.setProperty('--detail-bottom', detailBottom + 'px');
 }
@@ -1760,7 +2581,7 @@ function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail', ids = 
   let blockerTop = window.innerHeight;
   let detailVisible = false;
   let blockerVisible = false;
-  (ids || ['chat-input', 'detail', 'settings-btn', 'clear-btn', 'sessions-btn']).forEach((id) => {
+  (ids || ['chat-input', 'detail', 'intervene-popup', 'settings-btn', 'clear-btn', 'sessions-btn']).forEach((id) => {
     if (id === 'detail' && ignoreDetail) return;
     const el = $(id);
     if (!el) return;
@@ -1789,8 +2610,11 @@ function updateScrollClearance(opts = {}) {
   const root = document.documentElement;
   // In presentation mode the grid runs to the true bottom of the screen —
   // the corner buttons float over the chat column, not the grid — so only
-  // an open detail card creates grid clearance there.
-  const gridIds = isPresentation() ? ['detail'] : null;
+  // an open detail card creates grid clearance there. The intervene panel
+  // floats over the CHAT column only, so it pads the chat, never the grid.
+  const gridIds = isPresentation()
+    ? ['detail']
+    : ['chat-input', 'detail', 'settings-btn', 'clear-btn', 'sessions-btn'];
   const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always', ids: gridIds });
   // The chat also always gets the breathing gap above whatever floats at
   // the bottom (input box, or just the corner buttons in presentation
@@ -1939,6 +2763,14 @@ function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
     log.scrollTop = 0;
     return;
   }
+  // Token-level compare diff for the compared turn (skipped mid-stream —
+  // the intervened run is still growing).
+  const cmp = state.compare;
+  const diff = cmp && !state.streaming ? computeCompareDiff() : null;
+  const diffSet = diff
+    ? (cmp.activeIsIntervened ? diff.changedInt : diff.changedBase)
+    : null;
+  const diffClass = cmp && cmp.activeIsIntervened ? 'diff-new' : 'diff-old';
   state.messages.forEach((m, mi) => {
     const wrap = document.createElement('div');
     wrap.className = 'msg ' + m.role;
@@ -1960,6 +2792,9 @@ function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
         span.title = `msg ${mi} tok ${ti} pos ${t.globalPos}`;
         span.dataset.msgIdx = mi;
         span.dataset.tokenIdx = ti;
+        if (diffSet && mi === cmp.msgIdx && diffSet.has(ti)) {
+          span.classList.add(diffClass);
+        }
         if (isSelectedChatToken(mi, ti)) {
           span.classList.add('selected');
         } else if (state.selectedSnapshotId !== null) {
@@ -2064,7 +2899,9 @@ function applyLayerBands(lensInfo, modelInfo) {
     const label = document.createElement('div');
     label.className = 'band-floating-label';
     label.dataset.band = band.id;
-    label.textContent = band.label;
+    // Name the band AND its layer range, so the grid says exactly which
+    // columns belong to it.
+    label.textContent = `${band.label} · L${band.coreStart}–L${band.coreEnd}`;
     return label;
   }));
 }
@@ -2430,12 +3267,68 @@ function updateGridBandChrome() {
   });
 }
 
+// Global position of the first generated (last assistant) token, or null.
+function firstGeneratedPos() {
+  const last = state.messages[state.messages.length - 1];
+  if (last && last.role === 'assistant' && last.tokens.length &&
+      last.tokens[0].globalPos >= 0) {
+    return last.tokens[0].globalPos;
+  }
+  return null;
+}
+
+// Does a position scope cover this row?
+function scopeMatchesPos(scope, firstGenPos, pos) {
+  if (scope.type === 'at') return pos === scope.pos;
+  if (scope.type === 'from') return pos >= scope.pos;
+  if (scope.type === 'gen') return firstGenPos != null && pos >= firstGenPos;
+  return false;
+}
+
+// Does an intervention mark (layer set + position scope) cover this cell?
+function markMatchesCell(mark, firstGenPos, pos, layer) {
+  return mark.layerSet.has(layer) && scopeMatchesPos(mark.scope, firstGenPos, pos);
+}
+
+// Per-render context for intervention badges + live editor preview +
+// compare dots: precomputed once per window rebuild so the per-cell work
+// stays a couple of Set lookups (zero when nothing is active).
+function buildGridRowCtx() {
+  const marks = [];
+  let needGenPos = false;
+  for (const s of state.appliedInterventions || []) {
+    if (!s.layers || !s.layers.length || !s.scope) continue;
+    marks.push({ layerSet: new Set(s.layers), scope: s.scope });
+    if (s.scope.type === 'gen') needGenPos = true;
+  }
+  const previewMarks = _ivPreview ? _ivPreview.marks : null;
+  if (previewMarks && previewMarks.some(m => m.scope.type === 'gen')) needGenPos = true;
+  const firstGenPos = needGenPos ? firstGeneratedPos() : null;
+  const otherRows = state.compare ? state.compare.other.gridRows : null;
+  if (!marks.length && !previewMarks && !otherRows) return null;
+  return { marks, previewMarks, firstGenPos, otherRows };
+}
+
+function cellIsIntervened(ctx, pos, layer) {
+  return ctx.marks.some(m => markMatchesCell(m, ctx.firstGenPos, pos, layer));
+}
+function cellIsPreview(ctx, pos, layer) {
+  return !!ctx.previewMarks &&
+    ctx.previewMarks.some(m => markMatchesCell(m, ctx.firstGenPos, pos, layer));
+}
+// Is this ROW inside the edit's token scope (layer-independent)? Drives
+// the token-rail block-ring while the intervene panel is open.
+function rowIsPreviewToken(ctx, pos) {
+  return !!ctx.previewMarks &&
+    ctx.previewMarks.some(m => scopeMatchesPos(m.scope, ctx.firstGenPos, pos));
+}
+
 // Row markup is built as an HTML string, not via createElement: a window
 // rebuild touches ~5k cells (~15k nodes), and one innerHTML parse is
 // several times faster than that many DOM calls. Clicks are DELEGATED to
 // #grid-body (see listener below) via data-pos/data-layer, so no per-cell
 // handler closures exist at all.
-function gridRowHtml(pos, selectedTokenKey, activePos) {
+function gridRowHtml(pos, selectedTokenKey, activePos, rowCtx = null) {
   const tokStr = state.gridTokenStrs[pos] || '·';
   const meta = state.gridTokenMsgs[pos];
   const isGen = !!(meta && meta.isGen);
@@ -2447,7 +3340,7 @@ function gridRowHtml(pos, selectedTokenKey, activePos) {
     const cell = rowData && rowData[layer];
     const gutter = layerCellGutterBackground(layer);
     if (!cell) {
-      html += `<td class="cell" style="background:${gutter}"></td>`;
+      html += `<td class="cell" data-layer="${layer}" style="background:${gutter}"></td>`;
       continue;
     }
     const top1 = cell.top_tokens[0] || '·';
@@ -2464,6 +3357,14 @@ function gridRowHtml(pos, selectedTokenKey, activePos) {
     }
     if (selRow) cls += ' selected-row';
     if (isGen) cls += ' gen-row';
+    if (rowCtx) {
+      if (rowCtx.marks.length && cellIsIntervened(rowCtx, pos, layer)) cls += ' intervened';
+      if (rowCtx.previewMarks && cellIsPreview(rowCtx, pos, layer)) cls += ' iv-preview';
+      if (rowCtx.otherRows) {
+        const oc = rowCtx.otherRows[pos] && rowCtx.otherRows[pos][layer];
+        if (oc && oc.top_ids && oc.top_ids[0] !== cell.top_ids[0]) cls += ' diff-cell';
+      }
+    }
     html += `<td class="${cls}" data-pos="${pos}" data-layer="${layer}" style="background:${gutter}">` +
       `<span class="cell-block" style="background:${bg}"><span class="word">${escapeHtml(top1)}</span></span></td>`;
   }
@@ -2473,6 +3374,7 @@ function gridRowHtml(pos, selectedTokenKey, activePos) {
   if (isUser) plCls += ' user';
   if (activePos === pos) plCls += ' selected-token';
   if (normalizeTokenText(tokStr) && tokenRefForPosition(pos)) plCls += ' clickable-token';
+  if (rowCtx && rowIsPreviewToken(rowCtx, pos)) plCls += ' iv-preview-tok';
   html += `<td class="${plCls}" data-pos="${pos}" title="${escapeAttr(`position ${pos}: ${JSON.stringify(tokStr)}`)}">` +
     `<span class="tok-text">${escapeHtml(tokStr)}</span></td></tr>`;
   return html;
@@ -2503,6 +3405,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     body.innerHTML = '';
     body.classList.remove('scrolled-y', 'covering-x');
     updateGridBandChrome();
+    renderMinimap();
     return;
   }
   const visibleN = visiblePositionsForSnapshot(state.selectedSnapshotId);
@@ -2593,6 +3496,10 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     th.style.background = bandHeaderGradient(l, state.layers[i - 1], state.layers[i + 1], 0.28);
     if (i === 0) th.style.setProperty('--grid-left-bleed', layerHeaderBackground(l));
     th.textContent = 'L' + l;
+    // While the intervene panel is open, mark the target layer columns.
+    if (_ivPreview && _ivPreview.marks.some(m => m.layerSet.has(l))) {
+      th.classList.add('iv-picked');
+    }
     hrow.appendChild(th);
   });
   const posHeader = document.createElement('th');
@@ -2604,6 +3511,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
 
   const selectedTokenKey = selectedCellTokenKey();
   const activePos = selectedPosition();
+  const rowCtx = buildGridRowCtx();
   const nCols = state.layers.length + 1;
   // Spacers are emitted unconditionally (height 0 allowed): the
   // incremental shiftGridWindow() fast path relies on the first and last
@@ -2614,7 +3522,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
   for (const [r0, r1] of rowRanges) {
     tbodyHtml += _gridSpacerHtml((r0 - rowCursor) * rowH, nCols);
     for (let pos = r0; pos < r1; pos++) {
-      tbodyHtml += gridRowHtml(pos, selectedTokenKey, activePos);
+      tbodyHtml += gridRowHtml(pos, selectedTokenKey, activePos, rowCtx);
     }
     rowCursor = r1;
   }
@@ -2699,6 +3607,7 @@ function renderGrid({ focusSelection = false, keepScroll = false } = {}) {
     body.scrollTop = body.scrollHeight;
     updateGridHeaderShadows();
   }
+  renderMinimap();
 }
 
 // rAF-driven glide animator for #grid-body. Unlike native smooth
@@ -2793,6 +3702,7 @@ function onGridBodyScroll() {
   _gridScrollRaf = requestAnimationFrame(() => {
     _gridScrollRaf = null;
     updateGridHeaderShadows();
+    renderMinimap();
     // A far focus flight crosses spacer on purpose — its settle callback
     // normalizes the window; rebuilding mid-flight would fight the spring.
     if (gridGlide.farFlight) return;
@@ -2831,24 +3741,260 @@ function shiftGridWindow() {
   }
   const selectedTokenKey = selectedCellTokenKey();
   const activePos = selectedPosition();
+  const rowCtx = buildGridRowCtx();
   for (const tr of tbody.querySelectorAll('tr[data-pos]')) {
     const p = +tr.dataset.pos;
     if (p < n0 || p >= n1) tr.remove();
   }
   if (n0 < w0) {
     let html = '';
-    for (let p = n0; p < Math.min(w0, n1); p++) html += gridRowHtml(p, selectedTokenKey, activePos);
+    for (let p = n0; p < Math.min(w0, n1); p++) html += gridRowHtml(p, selectedTokenKey, activePos, rowCtx);
     spacers[0].insertAdjacentHTML('afterend', html);
   }
   if (n1 > w1) {
     let html = '';
-    for (let p = Math.max(n0, w1); p < n1; p++) html += gridRowHtml(p, selectedTokenKey, activePos);
+    for (let p = Math.max(n0, w1); p < n1; p++) html += gridRowHtml(p, selectedTokenKey, activePos, rowCtx);
     spacers[1].insertAdjacentHTML('beforebegin', html);
   }
   spacers[0].firstElementChild.style.height = (n0 * rowH) + 'px';
   spacers[1].firstElementChild.style.height = (Math.max(0, visibleN - n1) * rowH) + 'px';
   t.dataset.w0 = n0;
   t.dataset.w1 = n1;
+}
+
+// ----- Minimap: whole-grid intervention overview -----
+// The local viewport can't show where a scoped edit lands across a long
+// conversation; the minimap paints EVERY affected cell (live preview
+// while the intervene panel is open, applied edits otherwise) over a
+// band-tinted map of the whole grid, with the current viewport outlined.
+// When the grid is too long to fit at a readable scale it windows around
+// the viewport and ▲/▼ chips count the highlighted rows outside; clicks
+// glide the grid there via the existing spring.
+const MINIMAP_W = 168;
+const MINIMAP_H = 132;      // CONTENT height; the canvas adds 2× the pad
+const MINIMAP_PAD = 10;     // content inset from the card edges
+const MINIMAP_MIN_ROW_PX = 2;
+let _minimapView = null;
+
+function markRowRange(scope, firstGenPos, nRows) {
+  if (scope.type === 'at') return [scope.pos, scope.pos];
+  if (scope.type === 'from') return [Math.max(0, scope.pos), nRows - 1];
+  if (scope.type === 'gen') {
+    return firstGenPos != null ? [firstGenPos, nRows - 1] : null;
+  }
+  return null;
+}
+
+function _mergedRowRanges(marks, firstGenPos, nRows) {
+  const ranges = [];
+  for (const m of marks) {
+    const r = markRowRange(m.scope, firstGenPos, nRows);
+    if (r && r[0] <= r[1]) ranges.push([...r]);
+  }
+  ranges.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1] + 1) last[1] = Math.max(last[1], r[1]);
+    else merged.push(r);
+  }
+  return merged;
+}
+
+function renderMinimap() {
+  const wrap = $('minimap');
+  const canvas = $('minimap-canvas');
+  if (!wrap || !canvas) return;
+  const nRows = state.gridRows.length;
+  const nCols = state.layers.length;
+  const ctx = buildGridRowCtx();
+  const marks = [];
+  if (ctx) {
+    if (ctx.previewMarks) marks.push(...ctx.previewMarks);
+    marks.push(...(ctx.marks || []));
+  }
+  // While the intervene panel is open the minimap is part of the right
+  // rail (the panel docks directly above it) — keep it up even before
+  // any cells are targeted, so the rail never reshuffles mid-edit.
+  const intervening = document.documentElement.classList.contains('intervening');
+  if (!nRows || !nCols || (!marks.length && !intervening)) {
+    wrap.hidden = true;
+    _minimapView = null;
+    return;
+  }
+  wrap.hidden = false;
+
+  const PAD = MINIMAP_PAD;
+  const boxW = Math.max(120, wrap.clientWidth || (MINIMAP_W + PAD * 2));
+  const boxH = MINIMAP_H + PAD * 2;
+  const W = boxW - PAD * 2;   // content width (layer space)
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(boxW * dpr) || canvas.height !== boxH * dpr) {
+    canvas.width = Math.round(boxW * dpr);
+    canvas.height = boxH * dpr;
+    canvas.style.width = boxW + 'px';
+    canvas.style.height = boxH + 'px';
+  }
+  const g = canvas.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, boxW, boxH);
+
+  // Row scale: fit the whole grid when readable, else a fixed readable
+  // scale windowed around the grid viewport.
+  const body = $('grid-body');
+  const rowH = state.gridRowH || 36;
+  const fullFit = MINIMAP_H / nRows >= 1;
+  const rScale = fullFit ? MINIMAP_H / nRows : MINIMAP_MIN_ROW_PX;
+  const winRows = Math.floor(MINIMAP_H / rScale);
+  let r0 = 0;
+  if (!fullFit) {
+    const centerRow = (body.scrollTop + body.clientHeight / 2) / rowH;
+    r0 = Math.round(Math.max(0, Math.min(nRows - winRows, centerRow - winRows / 2)));
+  }
+  const r1 = fullFit ? nRows : Math.min(nRows, r0 + winRows);
+  // The TOKEN rail is drawn as ONE more column, same width as the layer
+  // cells, so the columns count is nCols + 1. layerW is the layer area
+  // (the scrollable columns the viewport indicator frames); the token
+  // column sits just past it at the same cScale.
+  const totalCols = nCols + 1;
+  const cScale = W / totalCols;
+  const layerW = nCols * cScale;
+
+  // The map artwork (bands + highlights) is clipped to the rounded tile;
+  // the viewport indicator is drawn AFTER restore() so the tile's corners
+  // can never crop its border.
+  // BACKGROUND, edge to edge: the band tints cover the entire card —
+  // full-bleed vertically, with the first/last band colors extended into
+  // the side margins — and the container's continuous corner crops them.
+  // CONTENT below is inset by PAD and never meets the corners.
+  for (let ci = 0; ci < nCols; ci++) {
+    const x = ci === 0 ? 0 : PAD + ci * cScale;
+    // First column bleeds into the left margin; the LAST band extends all
+    // the way to the right edge (covering the token strip + right margin),
+    // so the background stays edge to edge.
+    const right = ci === nCols - 1 ? boxW : PAD + (ci + 1) * cScale;
+    g.fillStyle = layerCellGutterBackground(state.layers[ci]);
+    g.fillRect(x, 0, Math.ceil(right - x) + 0.5, boxH);
+  }
+
+  g.translate(PAD, PAD);   // everything from here on is CONTENT space
+
+  // Content + highlight at GRID granularity, in ONE per-cell pass so the
+  // minimap's highlight is EXACTLY the set of cells that glow on the
+  // grid. Each populated (layer, token) cell is painted its heatmap color
+  // (layerCellBackground — the same confidence-driven tint the grid's
+  // blocks use); a cell affected by a mark is painted orange instead. No
+  // continuous stripe over empty template rows, so the preview never
+  // over-claims and every real cell — prompt and OUTPUT alike — lands at
+  // its true row/column position.
+  const firstGenPos = ctx ? ctx.firstGenPos : null;
+  const gapX = cScale > 2.5 ? 0.6 : 0;
+  const gapY = rScale > 2.5 ? 0.6 : 0;
+  const cellW = Math.max(1, cScale - gapX);
+  const affected = (p, layer) => marks.some(m => markMatchesCell(m, firstGenPos, p, layer));
+  for (let p = r0; p < r1; p++) {
+    const row = state.gridRows[p];
+    if (!row) continue;
+    const y = (p - r0) * rScale;
+    const cellH = Math.max(1, rScale - gapY);
+    for (let ci = 0; ci < nCols; ci++) {
+      const layer = state.layers[ci];
+      const cell = row[layer];
+      if (!cell) continue;
+      g.fillStyle = affected(p, layer) ? 'rgba(255, 138, 0, 0.95)'
+        : layerCellBackground(cell, layer);
+      g.fillRect(ci * cScale + gapX / 2, y, cellW, cellH);
+    }
+  }
+
+  // Current grid viewport — expressed as fills, in the SAME layer/row
+  // coordinate space as the stripes and blocks: scroll pixels are
+  // converted to layer columns (the sticky token rail and the grid's
+  // left padding are NOT layer space), so the box exactly frames the
+  // columns and rows that are on screen.
+  const padLeft = parseFloat(getComputedStyle(body).paddingLeft) || 0;
+  const laneW = Math.max(GRID_CELL_W, body.clientWidth - GRID_POS_W);
+  const c0 = (body.scrollLeft - padLeft) / GRID_CELL_W;
+  const c1 = c0 + laneW / GRID_CELL_W;
+  let x0 = (c0 / nCols) * layerW;
+  let x1 = (c1 / nCols) * layerW;
+  let y0 = (body.scrollTop / rowH - r0) * rScale;
+  let y1 = y0 + (body.clientHeight / rowH) * rScale;
+  x0 = Math.max(0, Math.min(layerW, x0));
+  x1 = Math.max(0, Math.min(layerW, x1));
+  y0 = Math.max(0, Math.min(MINIMAP_H, y0));
+  y1 = Math.max(0, Math.min(MINIMAP_H, y1));
+  if (x1 - x0 < 6) { const cx = (x0 + x1) / 2; x0 = Math.max(0, Math.min(layerW - 6, cx - 3)); x1 = x0 + 6; }
+  if (y1 - y0 < 6) { const cy = (y0 + y1) / 2; y0 = Math.max(0, Math.min(MINIMAP_H - 6, cy - 3)); y1 = y0 + 6; }
+  // Solid-fill expression: the LOCAL portion carries a soft ink tint
+  // while everything outside it — margins included — lifts lighter. No
+  // outline stroke at all; the fill contrast draws the boundary.
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);   // back to full-canvas space
+  const vx0 = PAD + x0;
+  const vx1 = PAD + x1;
+  const vy0 = PAD + y0;
+  const vy1 = PAD + y1;
+  g.fillStyle = 'rgba(255, 255, 255, 0.16)';
+  g.fillRect(0, 0, boxW, vy0);
+  g.fillRect(0, vy1, boxW, boxH - vy1);
+  g.fillRect(0, vy0, vx0, vy1 - vy0);
+  g.fillRect(vx1, vy0, boxW - vx1, vy1 - vy0);
+  g.fillStyle = 'rgba(58, 53, 37, 0.12)';
+  g.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
+
+  // TOKEN rail: the grid's sticky right column, mirrored as a gray strip.
+  // A gray block per row that carries a token; rows inside the edit's
+  // token scope light orange (matching the token-label rings on the
+  // grid). Drawn AFTER the scrim so — like the sticky rail — it is never
+  // dimmed by the local-portion overlay.
+  const tokX = PAD + nCols * cScale + gapX / 2;
+  const tCellH = Math.max(1, rScale - gapY);
+  for (let p = r0; p < r1; p++) {
+    const tok = state.gridTokenStrs[p];
+    if (!tok || !normalizeTokenText(tok)) continue;
+    const inScope = marks.some(m => scopeMatchesPos(m.scope, firstGenPos, p));
+    // Gray for token rows, orange where the row is in the edit's token
+    // scope — same block geometry as the content cells.
+    g.fillStyle = inScope ? 'rgba(255, 138, 0, 0.95)' : 'rgba(120, 112, 92, 0.8)';
+    g.fillRect(tokX, PAD + (p - r0) * rScale, cellW, tCellH);
+  }
+
+  // Overflow notification: highlighted rows outside the window.
+  const merged = _mergedRowRanges(marks, firstGenPos, nRows);
+  let above = 0;
+  let below = 0;
+  for (const [a, b] of merged) {
+    if (a < r0) above += Math.min(b, r0 - 1) - a + 1;
+    if (b > r1 - 1) below += b - Math.max(a, r1) + 1;
+  }
+  const up = $('minimap-up');
+  const down = $('minimap-down');
+  up.hidden = above <= 0;
+  down.hidden = below <= 0;
+  if (above > 0) up.textContent = `▲ ${above} more`;
+  if (below > 0) down.textContent = `▼ ${below} more`;
+
+  _minimapView = { r0, r1, rScale, cScale, nRows, merged, pad: PAD, w: layerW, ind: { x0, x1, y0, y1 } };
+}
+
+function _minimapGlideTo(row, layerIndex) {
+  const body = $('grid-body');
+  const rowH = state.gridRowH || 36;
+  const targetTop = Math.max(0, Math.min(
+    body.scrollHeight - body.clientHeight,
+    row * rowH - body.clientHeight / 2,
+  ));
+  let targetLeft = null;
+  if (layerIndex != null) {
+    const usableW = Math.max(GRID_CELL_W, body.clientWidth - GRID_POS_W);
+    const gridLeftInset = parseFloat(getComputedStyle(body).paddingLeft) || 0;
+    const colLeft = gridLeftInset + layerIndex * GRID_CELL_W;
+    targetLeft = Math.max(0, Math.min(
+      body.scrollWidth - body.clientWidth,
+      colLeft + GRID_CELL_W / 2 - usableW / 2,
+    ));
+  }
+  gridGlide.go(body, targetTop, targetLeft);
 }
 
 // ----- Markups -----
@@ -2935,6 +4081,741 @@ function renderMarkups() {
   });
 }
 
+// ----- Interventions: J-space edits (steer / suppress / swap / ablate) -----
+
+function interventionsAvailable() {
+  return !isPresentation() &&
+    !!(state.lensInfo && state.lensInfo.lens_loaded !== false &&
+       Array.isArray(state.lensInfo.source_layers) &&
+       state.lensInfo.source_layers.length > 0);
+}
+
+// A layer accepts writes when it has a fitted Jacobian, or is the final
+// layer (identity transport = plain unembedding steering).
+function layerIntervenable(layer) {
+  const info = state.lensInfo;
+  if (!info) return false;
+  if (Number.isFinite(+info.n_layers) && layer === +info.n_layers - 1) return true;
+  return Array.isArray(info.source_layers) && info.source_layers.includes(layer);
+}
+
+let _ivCounter = 0;
+function nextInterventionId() {
+  return 'iv-' + Date.now().toString(36) + '-' + (++_ivCounter);
+}
+
+function enabledInterventions() {
+  return state.interventions.filter(s => s.enabled);
+}
+
+function interventionById(id) {
+  return state.interventions.find(s => s.id === id) || null;
+}
+
+function addIntervention(spec) {
+  if (isPresentation()) return;
+  state.interventions.push(spec);
+  afterInterventionChange();
+}
+
+function updateIntervention(id, patch) {
+  if (isPresentation()) return;
+  const s = interventionById(id);
+  if (!s) return;
+  Object.assign(s, patch);
+  afterInterventionChange();
+}
+
+function removeIntervention(id) {
+  if (isPresentation()) return;
+  const i = state.interventions.findIndex(s => s.id === id);
+  if (i !== -1) state.interventions.splice(i, 1);
+  afterInterventionChange();
+}
+
+function toggleIntervention(id) {
+  if (isPresentation()) return;
+  const s = interventionById(id);
+  if (!s) return;
+  s.enabled = !s.enabled;
+  afterInterventionChange();
+}
+
+function afterInterventionChange() {
+  saveState();
+  renderInterventions();
+  renderDetail();
+  renderGrid({ keepScroll: true });
+}
+
+function trimConceptLabel(text) {
+  const t = (text || '').trim();
+  return t.length > 14 ? t.slice(0, 13) + '…' : (t || '·');
+}
+
+function formatAlpha(a) {
+  const n = Number(a) || 0;
+  const abs = Math.abs(n);
+  if (abs >= 10) return String(Math.round(n));
+  return (Math.round(n * 10) / 10).toString();
+}
+
+function interventionLabel(s) {
+  const L = 'L' + s.layers.join(',');
+  const scope = !s.scope ? '' :
+    s.scope.type === 'at' ? ` @${s.scope.pos}` :
+    s.scope.type === 'from' ? ` ${s.scope.pos}→` : ' gen';
+  const a = s.mode === 'ablate' ? '' : ` α${formatAlpha(s.alpha)}`;
+  if (s.mode === 'swap') return `${L} ⟨${trimConceptLabel(s.token)}→${trimConceptLabel(s.target)}⟩${scope}`;
+  if (s.mode === 'suppress') return `${L} −⟨${trimConceptLabel(s.token)}⟩${a}${scope}`;
+  if (s.mode === 'ablate') return `${L} ∅ erase ${(s.ablateTokenIds || []).length}${scope}`;
+  return `${L} +⟨${trimConceptLabel(s.token)}⟩${a}${scope}`;
+}
+
+function interventionTitle(s) {
+  const purpose =
+    s.mode === 'swap' ? `Replace the thought ${JSON.stringify(s.token || '')} with ${JSON.stringify(s.target || '')}` :
+    s.mode === 'suppress' ? `Remove the thought ${JSON.stringify(s.token || '')}` :
+    s.mode === 'ablate' ? `Erase everything it is thinking (${(s.ablateTokenIds || []).length} thoughts)` :
+    `Add the thought ${JSON.stringify(s.token || '')}`;
+  const scopeText = !s.scope ? '' :
+    s.scope.type === 'at' ? `at position ${s.scope.pos}` :
+    s.scope.type === 'from' ? `from position ${s.scope.pos} onward` : 'at every generated position';
+  const bits = [purpose, `layers ${s.layers.join(', ')}`, scopeText];
+  if (s.mode === 'steer' || s.mode === 'suppress') bits.push(`strength ${formatAlpha(s.alpha)}`);
+  bits.push('Click to edit');
+  return bits.join(' · ');
+}
+
+// Wire-format spec for POST /api/chat_stream. The UI's "suppress" is
+// steer with a negative alpha; the exact token id (from readout top_ids)
+// wins over text server-side.
+function specToPayload(s) {
+  const p = {
+    mode: s.mode === 'suppress' ? 'steer' : s.mode,
+    layers: s.layers.slice(),
+    alpha: s.mode === 'suppress' ? -Math.abs(s.alpha) : s.alpha,
+  };
+  if (s.mode === 'ablate') {
+    p.alpha = 1.0;
+    p.ablate_token_ids = (s.ablateTokenIds || []).slice();
+  } else {
+    if (s.token != null) p.token = s.token;
+    if (s.tokenId != null) p.token_id = s.tokenId;
+    if (s.mode === 'swap') {
+      if (s.target != null) p.target = s.target;
+      if (s.targetId != null) p.target_id = s.targetId;
+    }
+  }
+  const sc = s.scope || { type: 'gen' };
+  if (sc.type === 'at') p.positions = [sc.pos];
+  else if (sc.type === 'from') p.from_position = sc.pos;
+  else p.segment = 'generation';
+  return p;
+}
+
+function quickAddIntervention(mode, pos, layer, tokText, tokId) {
+  addIntervention({
+    id: nextInterventionId(),
+    enabled: true,
+    mode,
+    token: tokText,
+    tokenId: tokId,
+    target: null,
+    targetId: null,
+    alpha: 200,
+    layers: [layer],
+    scope: { type: 'from', pos },
+    origin: { pos, layer },
+    ablateTokenIds: null,
+  });
+}
+
+// The paper's ablation rule: remove this cell's top readout directions,
+// EXCLUDING tokens the model already outputs (the final layer's top-k at
+// the same position) so we don't ablate what it intends to say.
+function ablateIdsForCell(pos, layer) {
+  const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+  if (!cell || !cell.top_ids) return [];
+  const finalLayer = state.layers[state.layers.length - 1];
+  const outCell = state.gridRows[pos] && state.gridRows[pos][finalLayer];
+  const exclude = new Set(layer === finalLayer ? [] : (outCell ? outCell.top_ids : []));
+  return cell.top_ids.filter(id => !exclude.has(id));
+}
+
+function rerunHintText() {
+  if (state.streaming) return 'Wait for the current stream to finish';
+  if (!enabledInterventions().length) return 'Enable at least one intervention first';
+  const last = state.messages[state.messages.length - 1];
+  if (!last || last.role !== 'assistant' || last.tokens.length === 0) {
+    return 'Needs a completed assistant turn to re-generate';
+  }
+  let hint = 'Re-generate the last response with the enabled interventions applied; the current run is kept as the baseline for A/B comparison';
+  if (state.settings.temp > 0) hint += '. Note: temp > 0, so differences include sampling noise';
+  return hint;
+}
+
+function renderInterventions() {
+  const wrap = $('interventions');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const specs = state.interventions;
+  if (!specs.length) return;
+
+  const rerun = document.createElement('button');
+  rerun.id = 'rerun-btn';
+  rerun.type = 'button';
+  const n = enabledInterventions().length;
+  rerun.textContent = n ? `Re-run ⊕${n}` : 'Re-run';
+  rerun.disabled = !canRerun();
+  rerun.title = rerunHintText();
+  rerun.onclick = () => rerunWithInterventions();
+  wrap.appendChild(rerun);
+
+  specs.forEach((s) => {
+    const item = document.createElement('div');
+    item.className = 'intervention-item' + (s.enabled ? '' : ' disabled');
+
+    const dot = document.createElement('button');
+    dot.className = 'iv-toggle';
+    dot.type = 'button';
+    dot.title = s.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable';
+    dot.setAttribute('aria-label', dot.title);
+    dot.onclick = (e) => { e.stopPropagation(); toggleIntervention(s.id); };
+    item.appendChild(dot);
+
+    const btn = document.createElement('button');
+    btn.className = 'markup-btn glass-hoverable';
+    btn.type = 'button';
+    btn.textContent = interventionLabel(s);
+    btn.title = interventionTitle(s);
+    if (!isPresentation()) btn.onclick = () => openInterventionEditor({ editId: s.id });
+    item.appendChild(btn);
+
+    if (!isPresentation()) {
+      const del = document.createElement('button');
+      del.className = 'markup-delete';
+      del.type = 'button';
+      del.title = 'Remove intervention';
+      del.setAttribute('aria-label', 'Remove intervention');
+      del.innerHTML = `
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18"></path>
+          <path d="M8 6V4h8v2"></path>
+          <path d="M19 6l-1 14H6L5 6"></path>
+          <path d="M10 11v5"></path>
+          <path d="M14 11v5"></path>
+        </svg>
+      `;
+      del.onclick = (e) => { e.stopPropagation(); removeIntervention(s.id); };
+      item.appendChild(del);
+    }
+    wrap.appendChild(item);
+  });
+}
+
+// ----- Intervention editor modal -----
+
+// Purpose-first copy: each choice is named after what the user is trying
+// to do to the model's workspace, not after the paper's operation.
+// (Internally the values stay steer/suppress/swap/ablate — the wire
+// protocol and persisted sessions are unchanged.)
+// ONE line each, always: the hint slot has a fixed height so the panel
+// never jumps; the fuller explanations live in the buttons' tooltips.
+const IV_MODE_HINTS = {
+  swap: 'Swaps the old thought for the new one, at the same strength.',
+  steer: 'Pushes a new thought in — strength matters.',
+  suppress: 'Pushes this thought out — strength matters.',
+  ablate: 'Blanks everything the aimed cell is thinking.',
+};
+// Per-purpose concept-field label + example placeholder.
+const IV_TOKEN_LABELS = {
+  swap: ['Thought to replace', ' France'],
+  steer: ['Thought to add', ' China'],
+  suppress: ['Thought to remove', ' Paris'],
+};
+const IV_ALPHA_DEFAULT = { steer: 200, suppress: 200, swap: 1 };
+
+// Log-mapped α slider: raw 0..1000 → 0.5..800.
+const IV_ALPHA_MIN = 0.5, IV_ALPHA_MAX = 800;
+function alphaFromSlider(raw) {
+  const t = Math.max(0, Math.min(1000, +raw)) / 1000;
+  const a = Math.exp(Math.log(IV_ALPHA_MIN) + t * (Math.log(IV_ALPHA_MAX) - Math.log(IV_ALPHA_MIN)));
+  return a >= 10 ? Math.round(a) : Math.round(a * 10) / 10;
+}
+function sliderFromAlpha(alpha) {
+  const a = Math.max(IV_ALPHA_MIN, Math.min(IV_ALPHA_MAX, Math.abs(Number(alpha) || IV_ALPHA_MIN)));
+  const t = (Math.log(a) - Math.log(IV_ALPHA_MIN)) / (Math.log(IV_ALPHA_MAX) - Math.log(IV_ALPHA_MIN));
+  return Math.round(t * 1000);
+}
+
+// Animate the grid/chat scroll paddings for `ms` (single shared timer —
+// overlapping open/close cycles extend the window instead of racing to
+// strip the class from each other mid-transition).
+let _recoverTimer = null;
+function animateClearanceFor(ms) {
+  const root = document.documentElement;
+  root.classList.add('recovering-clearance');
+  if (_recoverTimer) clearTimeout(_recoverTimer);
+  _recoverTimer = setTimeout(() => {
+    _recoverTimer = null;
+    root.classList.remove('recovering-clearance');
+  }, ms);
+}
+
+// Draft the modal edits; committed into state.interventions on Save.
+let _ivDraft = null;
+// Live grid preview of the draft's target cells ({marks:[{layerSet,scope,layers}]})
+// or null. Read by buildGridRowCtx while the editor is open.
+let _ivPreview = null;
+
+// Plain-language strength: an absolute push (Add/Remove) means nothing as
+// a bare number, so anchor it on a word.
+function alphaWord(a) {
+  if (a < 5) return 'barely';
+  if (a < 50) return 'gently';
+  if (a < 150) return 'moderately';
+  if (a < 400) return 'strongly';
+  return 'very strongly';
+}
+function _renderAlphaValue(a) {
+  $('iv-alpha-value').textContent = `${alphaWord(a)} · ${formatAlpha(a)}`;
+}
+
+function _segSet(groupId, attr, value) {
+  $(groupId).querySelectorAll('button').forEach((b) => {
+    b.classList.toggle('active', b.dataset[attr] === value);
+  });
+}
+function _segGet(groupId, attr) {
+  const b = $(groupId).querySelector('button.active');
+  return b ? b.dataset[attr] : null;
+}
+
+function _bandLayersFor(layer) {
+  const band = LAYER_BANDS.find(b => layer >= b.coreStart && layer <= b.coreEnd) ||
+    LAYER_BANDS.find(b => b.id === 'workspace') || LAYER_BANDS[0];
+  if (!band) return [layer];
+  const out = [];
+  for (let l = band.coreStart; l <= band.coreEnd; l++) {
+    if (layerIntervenable(l)) out.push(l);
+  }
+  return out.length ? out : [layer];
+}
+
+function _resolveDraftLayers() {
+  const scope = _segGet('iv-layer-scope', 'scope') || 'this';
+  if (scope === 'this') return { layers: [_ivDraft.origin.layer] };
+  if (scope === 'band') return { layers: _bandLayersFor(_ivDraft.origin.layer) };
+  // Pick… is purely interactive: the set lives on the draft and is only
+  // changed by clicking layer columns on the grid.
+  return { layers: (_ivDraft.pickedLayers || []).slice().sort((a, b) => a - b) };
+}
+
+// Compact layer list: consecutive runs collapse to ranges (L16–L47).
+function formatLayerList(layers) {
+  const runs = [];
+  let s = layers[0], prev = layers[0];
+  for (let i = 1; i <= layers.length; i++) {
+    const l = layers[i];
+    if (l === prev + 1) { prev = l; continue; }
+    runs.push(s === prev ? `L${s}` : `L${s}–L${prev}`);
+    s = prev = l;
+  }
+  return runs.join(', ');
+}
+
+function syncInterventionEditorFields() {
+  const mode = _segGet('iv-mode', 'mode') || 'swap';
+  // Erase all needs no thought/strength: fold the "what" block away
+  // (CSS animates its row track; width is constant so nothing re-wraps).
+  // Other modes toggle individual fields.
+  $('intervene-popup').classList.toggle('iv-erase', mode === 'ablate');
+  $('iv-target-field').style.display = mode === 'swap' ? '' : 'none';
+  const [tokLabel, tokPlaceholder] = IV_TOKEN_LABELS[mode] || IV_TOKEN_LABELS.steer;
+  $('iv-token-label').textContent = tokLabel;
+  $('iv-token').placeholder = tokPlaceholder;
+  // Strength only matters when pushing by an absolute amount (Add /
+  // Remove). Replace self-calibrates and Erase is a full removal.
+  $('iv-alpha-field').style.display = (mode === 'steer' || mode === 'suppress') ? '' : 'none';
+  if (mode === 'ablate') {
+    const n = ablateIdsForCell(_ivDraft.origin.pos, _ivDraft.origin.layer).length;
+    $('iv-mode-hint').textContent = n
+      ? `Blanks everything the aimed cell is thinking — ${n} thought${n === 1 ? '' : 's'} here.`
+      : 'Nothing to erase here — this cell only thinks what it already says.';
+  } else {
+    $('iv-mode-hint').textContent = IV_MODE_HINTS[mode] || '';
+  }
+  // Anchor line: where this edit is aimed (updated by grid clicks too).
+  const anchorTok = (state.gridTokenStrs[_ivDraft.origin.pos] || '·').trim() || '·';
+  $('iv-anchor').innerHTML =
+    `Aimed at <b>${escapeHtml(anchorTok)}</b> · row <b>${_ivDraft.origin.pos}</b>` +
+    ` · <b>L${_ivDraft.origin.layer}</b> <span class="dim">— click the grid to re-aim</span>`;
+  const layerScope = _segGet('iv-layer-scope', 'scope') || 'this';
+  // Pick… mode: grid clicks toggle layer columns instead of re-aiming.
+  document.documentElement.classList.toggle('iv-picking', layerScope === 'custom');
+  const { layers } = _resolveDraftLayers();
+  const layersHint = $('iv-layers-hint');
+  if (layerScope === 'custom') {
+    // Interactive picking: the description IS the state display — the
+    // picked layers in the highlight color, or a glowing guidance line
+    // asking the user to pick when nothing is selected yet.
+    layersHint.innerHTML = layers.length
+      ? `<span class="picked-layers">${escapeHtml(formatLayerList(layers))}</span>`
+      : '<span class="pick-guidance">Click layer columns on the grid to pick them</span>';
+  } else {
+    layersHint.textContent = layers.length ? formatLayerList(layers) : 'no layers';
+  }
+  updateInterventionPreview();
+}
+
+// Compute the draft's target cells, count the ones that exist on the grid,
+// and repaint the live highlight. Called whenever a scope option changes.
+function draftPreviewMark() {
+  if (!_ivDraft) return null;
+  const { layers } = _resolveDraftLayers();
+  if (!layers.length) return null;
+  const posType = _segGet('iv-pos-scope', 'scope') || 'from';
+  const scope = posType === 'gen'
+    ? { type: 'gen' }
+    : { type: posType, pos: _ivDraft.origin.pos };
+  return { layerSet: new Set(layers), scope, layers };
+}
+
+function updateInterventionPreview() {
+  const mark = draftPreviewMark();
+  _ivPreview = mark ? { marks: [mark] } : null;
+  const el = $('iv-preview-summary');
+  if (el) {
+    if (!mark) {
+      el.textContent = 'No layers picked — nothing will change yet';
+      el.classList.add('empty');
+    } else {
+      const fg = firstGeneratedPos();
+      let n = 0;
+      for (let pos = 0; pos < state.gridRows.length; pos++) {
+        const row = state.gridRows[pos];
+        if (!row) continue;
+        const posMatch = mark.scope.type === 'at' ? pos === mark.scope.pos
+          : mark.scope.type === 'from' ? pos >= mark.scope.pos
+          : (fg != null && pos >= fg);
+        if (!posMatch) continue;
+        for (const l of mark.layers) if (row[l]) n++;
+      }
+      const cols = mark.layers.length;
+      const toks = cols ? Math.round(n / cols) : 0;
+      el.textContent = `${n} cell${n === 1 ? '' : 's'} glow on the grid — `
+        + `${cols} layer${cols === 1 ? '' : 's'} × ${toks} token${toks === 1 ? '' : 's'}`;
+      el.classList.remove('empty');
+    }
+  }
+  renderGrid({ keepScroll: true });
+}
+
+function _setAlphaSlider(alpha) {
+  const slider = $('iv-alpha');
+  slider.value = sliderFromAlpha(alpha);
+  updateRangeProgress(slider);
+  _renderAlphaValue(alphaFromSlider(slider.value));
+}
+
+function openInterventionEditor({ seed = null, editId = null } = {}) {
+  if (isPresentation() || !interventionsAvailable()) return;
+  // The intervening status sinks the input box (and its Stop button), so
+  // never enter it mid-stream.
+  if (state.streaming) return;
+  const editing = editId ? interventionById(editId) : null;
+  if (editId && !editing) return;
+  const origin = editing ? (editing.origin || { pos: 0, layer: state.layers[0] || 0 })
+    : { pos: seed.pos, layer: seed.layer };
+  let seedToken = editing ? editing.token : (seed && seed.token) || '';
+  let seedTokenId = editing ? editing.tokenId : ((seed && seed.tokenId) ?? null);
+  // Plain "Intervene" (no explicit concept): seed with what the cell is
+  // currently thinking — the natural target of a Replace.
+  if (!editing && !seedToken) {
+    const cell = state.gridRows[origin.pos] && state.gridRows[origin.pos][origin.layer];
+    if (cell && cell.top_tokens && cell.top_tokens.length) {
+      seedToken = cell.top_tokens[0];
+      seedTokenId = cell.top_ids[0];
+    }
+  }
+  _ivDraft = {
+    editId: editing ? editing.id : null,
+    origin,
+    seedToken,
+    seedTokenId,
+    seedTarget: editing ? editing.target : null,
+    seedTargetId: editing ? editing.targetId : null,
+    // Interactively picked layer columns (used by the Pick… scope).
+    pickedLayers: editing ? editing.layers.slice() : [],
+  };
+  const mode = editing ? editing.mode : (seed && seed.mode) || 'swap';
+  _segSet('iv-mode', 'mode', mode);
+  $('iv-token').value = _ivDraft.seedToken || '';
+  $('iv-target').value = _ivDraft.seedTarget || '';
+  $('iv-token-preview').innerHTML = '';
+  $('iv-target-preview').innerHTML = '';
+  _setAlphaSlider(editing ? editing.alpha : (IV_ALPHA_DEFAULT[mode] || 1));
+  // Layer scope: reconstruct the closest scope for an existing spec.
+  let layerScope = 'this';
+  if (editing) {
+    if (editing.layers.length === 1 && editing.layers[0] === origin.layer) layerScope = 'this';
+    else if (editing.layers.join(',') === _bandLayersFor(origin.layer).join(',')) layerScope = 'band';
+    else layerScope = 'custom';
+  }
+  _segSet('iv-layer-scope', 'scope', layerScope);
+  _segSet('iv-pos-scope', 'scope', editing && editing.scope ? editing.scope.type : 'from');
+  $('iv-delete').hidden = !editing;
+  // Animate the scroll paddings alongside the chrome-sink transition so
+  // grid/chat content glides instead of snapping when the input leaves.
+  document.documentElement.classList.add('intervening');
+  animateClearanceFor(700);
+  syncInterventionEditorFields();
+  const backdrop = $('intervene-backdrop');
+  backdrop.inert = false;
+  backdrop.setAttribute('aria-hidden', 'false');
+  backdrop.classList.add('visible');
+  renderInterventions();       // Re-run pauses while an edit is open
+  updateScrollClearance();
+  setTimeout(updateScrollClearance, 380);  // after the chrome-sink transition
+  requestAnimationFrame(() => {
+    if (!backdrop.classList.contains('visible')) return;
+    const mode2 = _segGet('iv-mode', 'mode');
+    if (mode2 === 'swap' && !$('iv-target').value) $('iv-target').focus();
+    else if (mode2 !== 'ablate') $('iv-token').focus();
+  });
+}
+
+function closeInterventionEditor() {
+  const backdrop = $('intervene-backdrop');
+  backdrop.inert = true;
+  backdrop.classList.remove('visible');
+  backdrop.setAttribute('aria-hidden', 'true');
+  _ivDraft = null;
+  _ivPreview = null;
+  _tipEvt = null;
+  _tipKey = '';
+  $('iv-cursor-tip').hidden = true;
+  const root = document.documentElement;
+  root.classList.remove('intervening', 'iv-picking');
+  // The chrome slides back over 340ms. Park the detail card until the
+  // input box has landed, keep the scroll paddings animating, then reveal
+  // the card at its FINAL anchor with its usual entrance — revealing it
+  // immediately made it enter as if there were no input box and jump up
+  // when the input arrived.
+  root.classList.add('iv-restoring');
+  animateClearanceFor(700);
+  $('detail').classList.remove('visible');
+  renderInterventions();
+  renderGrid({ keepScroll: true });
+  updateScrollClearance();
+  setTimeout(() => {
+    root.classList.remove('iv-restoring');
+    updateScrollClearance();
+    renderDetail();              // strips recovering-clearance (legacy)...
+    animateClearanceFor(260);    // ...so re-arm it for the settle tail
+  }, 360);
+}
+
+// --- Interactive intervening: the grid is the input surface ---
+
+// Click a populated cell (or a token label) while the panel is open:
+// move the edit's anchor there. The "This one" layer scope and the
+// token scopes follow the new anchor; an untouched thought field
+// re-seeds from the newly aimed cell's top readout.
+function reanchorIntervention(pos, layer) {
+  if (!_ivDraft) return;
+  if (!layerIntervenable(layer)) layer = _ivDraft.origin.layer;
+  const untouched = $('iv-token').value === (_ivDraft.seedToken || '');
+  _ivDraft.origin = { pos, layer };
+  if (untouched) {
+    const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+    if (cell && cell.top_tokens && cell.top_tokens.length) {
+      _ivDraft.seedToken = cell.top_tokens[0];
+      _ivDraft.seedTokenId = cell.top_ids[0];
+      $('iv-token').value = _ivDraft.seedToken;
+      $('iv-token-preview').innerHTML = '';
+    }
+  }
+  syncInterventionEditorFields();
+}
+
+// Click a layer column (header or any cell) in Pick… mode: toggle it.
+function toggleDraftLayer(layer) {
+  if (!_ivDraft || !layerIntervenable(layer)) return;
+  const picked = _ivDraft.pickedLayers || (_ivDraft.pickedLayers = []);
+  const i = picked.indexOf(layer);
+  if (i === -1) picked.push(layer); else picked.splice(i, 1);
+  picked.sort((a, b) => a - b);
+  syncInterventionEditorFields();
+}
+
+// ----- Cursor tooltip (intervening only) -----
+// Names the active picking mode and previews what a click at the hovered
+// cell would do: the would-be layer set in Pick… mode, the would-be aim
+// otherwise. Follows the pointer with an offset (never underneath it)
+// and flips at the viewport edges.
+let _tipEvt = null;
+let _tipRaf = null;
+let _tipKey = '';
+
+function _cursorTipContent(el) {
+  if (!_ivDraft) return null;
+  const layer = el.dataset.layer !== undefined ? +el.dataset.layer : null;
+  if (document.documentElement.classList.contains('iv-picking')) {
+    if (layer === null || !Number.isFinite(layer)) return null;
+    if (!layerIntervenable(layer)) {
+      return { mode: 'Pick layers', body: `L${layer} — not editable` };
+    }
+    const picked = _ivDraft.pickedLayers || [];
+    const has = picked.includes(layer);
+    const next = has
+      ? picked.filter(l => l !== layer)
+      : picked.concat([layer]).sort((a, b) => a - b);
+    return {
+      mode: 'Pick layers',
+      body: `L${layer} — click to ${has ? 'remove' : 'add'} → ${next.length ? formatLayerList(next) : 'none'}`,
+    };
+  }
+  const pos = el.dataset.pos !== undefined ? +el.dataset.pos : null;
+  if (pos === null || !Number.isFinite(pos)) return null;
+  const isCell = el.classList.contains('selectable');
+  const isTok = el.classList.contains('clickable-token');
+  if (!isCell && !isTok) return null;
+  const aimLayer = (isCell && layer !== null && layerIntervenable(layer))
+    ? layer : _ivDraft.origin.layer;
+  const tok = (state.gridTokenStrs[pos] || '·').trim() || '·';
+  const posScope = _segGet('iv-pos-scope', 'scope') || 'from';
+  const rows = posScope === 'at' ? `row ${pos}`
+    : posScope === 'from' ? `rows ${pos}→end` : 'the reply';
+  return {
+    mode: 'Aim the edit',
+    body: `click to aim → ⟨${tok}⟩ · L${aimLayer} · ${rows}`,
+  };
+}
+
+function _positionCursorTip() {
+  _tipRaf = null;
+  const tip = $('iv-cursor-tip');
+  const e = _tipEvt;
+  if (!e || !_ivDraft) { tip.hidden = true; _tipKey = ''; return; }
+  const el = e.target && e.target.closest ? e.target.closest('td, th') : null;
+  const content = el ? _cursorTipContent(el) : null;
+  if (!content) { tip.hidden = true; _tipKey = ''; return; }
+  const key = content.mode + '|' + content.body;
+  if (key !== _tipKey) {
+    _tipKey = key;
+    tip.innerHTML = `<span class="tip-mode">${escapeHtml(content.mode)}</span>${escapeHtml(content.body)}`;
+  }
+  tip.hidden = false;
+  const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14;
+  let y = e.clientY + 18;
+  if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 12;
+  if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 12;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top = Math.max(8, y) + 'px';
+}
+
+function cancelInterventionEditor() { closeInterventionEditor(); }
+
+function commitInterventionEditor() {
+  if (!_ivDraft) return;
+  const mode = _segGet('iv-mode', 'mode') || 'swap';
+  const { layers } = _resolveDraftLayers();
+  if (!layers.length) { syncInterventionEditorFields(); return; }
+  const editingSpec = _ivDraft.editId ? interventionById(_ivDraft.editId) : null;
+  // Strength comes from the slider only where it is exposed (Add /
+  // Remove); Replace and Erase are exact (α = 1), preserving a stored α
+  // when re-saving an existing same-purpose spec.
+  const alpha = (mode === 'steer' || mode === 'suppress')
+    ? alphaFromSlider($('iv-alpha').value)
+    : (editingSpec && editingSpec.mode === mode ? editingSpec.alpha : 1);
+  const spec = {
+    id: _ivDraft.editId || nextInterventionId(),
+    enabled: editingSpec ? editingSpec.enabled : true,
+    mode,
+    token: null, tokenId: null, target: null, targetId: null,
+    alpha,
+    layers,
+    scope: (() => {
+      const t = _segGet('iv-pos-scope', 'scope') || 'from';
+      return t === 'gen' ? { type: 'gen' } : { type: t, pos: _ivDraft.origin.pos };
+    })(),
+    origin: { ..._ivDraft.origin },
+    ablateTokenIds: null,
+  };
+  if (mode === 'ablate') {
+    const ids = ablateIdsForCell(_ivDraft.origin.pos, _ivDraft.origin.layer);
+    if (!ids.length) { syncInterventionEditorFields(); return; }
+    spec.ablateTokenIds = ids;
+  } else {
+    const token = $('iv-token').value;
+    if (!token) { $('iv-token').focus(); return; }
+    spec.token = token;
+    // Keep the exact readout id only if the text was not edited.
+    spec.tokenId = (token === _ivDraft.seedToken) ? _ivDraft.seedTokenId : null;
+    if (mode === 'swap') {
+      const target = $('iv-target').value;
+      if (!target) { $('iv-target').focus(); return; }
+      spec.target = target;
+      spec.targetId = (target === _ivDraft.seedTarget) ? _ivDraft.seedTargetId : null;
+    }
+  }
+  if (_ivDraft.editId) {
+    updateIntervention(_ivDraft.editId, spec);
+  } else {
+    addIntervention(spec);
+  }
+  closeInterventionEditor();
+}
+
+function deleteFromInterventionEditor() {
+  if (_ivDraft && _ivDraft.editId) removeIntervention(_ivDraft.editId);
+  closeInterventionEditor();
+}
+
+// Debounced /api/tokenize preview: shows which token the backend will
+// actually use (the FIRST one). Degrades silently if the endpoint is
+// missing or the model is not loaded.
+function attachTokenPreview(inputId, chipsId) {
+  const input = $(inputId);
+  const chips = $(chipsId);
+  let timer = null;
+  let gen = 0;
+  input.addEventListener('input', () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(async () => {
+      timer = null;
+      const g = ++gen;
+      const text = input.value;
+      if (!text) { chips.innerHTML = ''; return; }
+      try {
+        const resp = await fetch(API + '/api/tokenize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        if (!resp.ok) { chips.innerHTML = ''; return; }
+        const data = await resp.json();
+        if (g !== gen || input.value !== text) return;
+        chips.innerHTML = '';
+        (data.tokens || []).forEach((t, i) => {
+          const chip = document.createElement('span');
+          chip.className = 'token-chip' + (i === 0 ? ' used' : '');
+          chip.textContent = t.display || t.text || String(t.id);
+          chip.title = i === 0
+            ? `token id ${t.id} — this token is used`
+            : `token id ${t.id} — ignored (only the first token is used)`;
+          chips.appendChild(chip);
+        });
+      } catch (e) {
+        chips.innerHTML = '';
+      }
+    }, 250);
+  });
+}
+
 function renderDetail() {
   const col = $('detail');
   if (!state.selectedCell) {
@@ -2973,6 +4854,21 @@ function renderDetail() {
       : 'Save this block as a markup';
     if (!alreadyMarked) mark.onclick = () => addMarkup(pos, layer);
     col.appendChild(mark);
+    // Intervene button, left of Markup: open the J-space edit editor
+    // seeded with this cell.
+    const iv = document.createElement('button');
+    iv.className = 'markup-save intervene-save';
+    iv.type = 'button';
+    iv.textContent = 'Intervene';
+    const usable = interventionsAvailable() && layerIntervenable(layer);
+    iv.disabled = !usable;
+    iv.title = !interventionsAvailable()
+      ? 'Interventions need a fitted lens'
+      : (usable
+          ? 'Edit what the model is thinking at this cell'
+          : `L${layer} has no fitted Jacobian`);
+    if (usable) iv.onclick = () => openInterventionEditor({ seed: { pos, layer } });
+    col.appendChild(iv);
   }
   const h3 = document.createElement('h3');
   h3.textContent = 'Detail';
@@ -2987,6 +4883,17 @@ function renderDetail() {
     appendDetailSignature(col);
     col.classList.add('visible');
     return;
+  }
+  // Compare context: the same cell in the OTHER (inactive) run, when a
+  // baseline-vs-intervened compare exists.
+  const cmp = state.compare;
+  const otherCell = cmp && cmp.other.gridRows[pos] && cmp.other.gridRows[pos][layer];
+  if (otherCell && otherCell.top_tokens && otherCell.top_tokens.length) {
+    const note = document.createElement('div');
+    note.className = 'compare-note';
+    const otherName = cmp.activeIsIntervened ? 'baseline' : 'intervened';
+    note.innerHTML = `top-1 in ${otherName}: <b>${escapeHtml(otherCell.top_tokens[0] || '·')}</b>`;
+    col.appendChild(note);
   }
   // Find max positive score for bar normalization.
   const scores = cell.top_scores.map(Number);
@@ -3003,12 +4910,27 @@ function renderDetail() {
   readout.appendChild(head);
   const body = document.createElement('div');
   body.className = 'readout-body';
+  const rowActionsUsable = !isPresentation() && interventionsAvailable() && layerIntervenable(layer);
   cell.top_tokens.forEach((tok, i) => {
     const row = document.createElement('div');
     row.className = 'row' + (i === 0 ? ' top1' : '');
     const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = (i+1);
     const t = document.createElement('span'); t.className = 'tok'; t.textContent = tok;
     const id = document.createElement('span'); id.className = 'id'; id.textContent = cell.top_ids[i];
+    // Rank delta vs the other run's readout at the same cell.
+    if (otherCell && otherCell.top_ids) {
+      const oi = otherCell.top_ids.indexOf(cell.top_ids[i]);
+      const d = document.createElement('span');
+      d.className = 'rank-delta';
+      if (oi === -1) { d.classList.add('new'); d.textContent = 'new'; }
+      else if (oi > i) { d.classList.add('up'); d.textContent = '▲' + (oi - i); }
+      else if (oi < i) { d.classList.add('down'); d.textContent = '▼' + (i - oi); }
+      else { d.textContent = '='; }
+      d.title = oi === -1
+        ? 'Not in the other run’s top readout here'
+        : `Rank ${oi + 1} in the other run`;
+      id.appendChild(d);
+    }
     const bar = document.createElement('span'); bar.className = 'bar';
     const fill = document.createElement('div');
     fill.style.width = (Math.max(scores[i] || 0, 0) / maxScore * 100) + '%';
@@ -3017,6 +4939,28 @@ function renderDetail() {
     scoreValue.className = 'score-value';
     scoreValue.textContent = formatDetailScore(scores[i]);
     row.appendChild(idx); row.appendChild(t); row.appendChild(id); row.appendChild(bar); row.appendChild(scoreValue);
+    // Hover quick actions: amplify / suppress / swap this readout token.
+    if (rowActionsUsable) {
+      const actions = document.createElement('span');
+      actions.className = 'row-actions';
+      const tokId = cell.top_ids[i];
+      const mk = (labelText, title, fn) => {
+        const b = document.createElement('button');
+        b.className = 'row-action';
+        b.type = 'button';
+        b.textContent = labelText;
+        b.title = title;
+        b.onclick = (e) => { e.stopPropagation(); fn(); };
+        return b;
+      };
+      actions.appendChild(mk('＋', `Make it think ${JSON.stringify(tok)} harder (from here on, at L${layer})`,
+        () => quickAddIntervention('steer', pos, layer, tok, tokId)));
+      actions.appendChild(mk('－', `Make it stop thinking ${JSON.stringify(tok)} (from here on, at L${layer})`,
+        () => quickAddIntervention('suppress', pos, layer, tok, tokId)));
+      actions.appendChild(mk('⇄', `Replace the thought ${JSON.stringify(tok)} with another…`,
+        () => openInterventionEditor({ seed: { pos, layer, token: tok, tokenId: tokId, mode: 'swap' } })));
+      row.appendChild(actions);
+    }
     body.appendChild(row);
   });
   readout.appendChild(body);
@@ -3117,6 +5061,8 @@ function renderAll() {
   focusSelectionOnRender = false;
   renderDetail();
   renderMarkups();
+  renderInterventions();
+  renderVariantToggle();
   updateScrollClearance();
   // When a focus scroll is about to run, keep the chat log where it is:
   // snapping to the tail first would make every focus animate from the
@@ -3154,6 +5100,8 @@ function ingestSnapshot(snap) {
   }
   state.snapshots.push(snap);
   state.snapshotByMsgToken.set(`${snap.msg_idx}:${snap.token_idx}`, snap.snapshot_id);
+  // The compared turn is changing — recompute the token diff lazily.
+  if (state.compare && snap.msg_idx === state.compare.msgIdx) state.compare.diff = null;
   while (state.messages.length <= snap.msg_idx) {
     state.messages.push({ role: '?', content: '', tokens: [], prefillSnapshotId: null });
   }
@@ -3214,27 +5162,28 @@ function ingestSnapshot(snap) {
   renderAll();
 }
 
-function ensureGridRow(globalPos, tokStr, meta) {
-  while (state.gridRows.length <= globalPos) {
-    state.gridRows.push(null);
-    state.gridTokenStrs.push('');
-    state.gridTokenMsgs.push(null);
+function ensureGridRow(globalPos, tokStr, meta, run = state) {
+  while (run.gridRows.length <= globalPos) {
+    run.gridRows.push(null);
+    run.gridTokenStrs.push('');
+    run.gridTokenMsgs.push(null);
   }
-  state.gridTokenStrs[globalPos] = tokStr;
-  if (meta) state.gridTokenMsgs[globalPos] = meta;
+  run.gridTokenStrs[globalPos] = tokStr;
+  if (meta) run.gridTokenMsgs[globalPos] = meta;
 }
 
-function writeGridRow(pos, cells, sliceIndex) {
+function writeGridRow(pos, cells, sliceIndex, run = state) {
   if (!cells) return;
-  if (!state.gridRows[pos]) state.gridRows[pos] = {};
+  if (!run.gridRows[pos]) run.gridRows[pos] = {};
   for (const layer of Object.keys(cells)) {
     const c = cells[layer];
-    state.gridRows[pos][parseInt(layer)] = {
+    run.gridRows[pos][parseInt(layer)] = {
       top_ids: c.top_ids[sliceIndex],
       top_tokens: c.top_tokens[sliceIndex],
       top_scores: c.top_scores[sliceIndex],
     };
   }
+  // state.layers is shared across runs (identical column set).
   if (state.layers.length === 0) {
     state.layers = Object.keys(cells).map(l => parseInt(l)).sort((a, b) => a - b);
   }
@@ -3263,8 +5212,13 @@ async function sendMessage() {
   const content = chatInputValue().trim();
   if (!content || state.streaming) return;
 
+  // A new turn retires any open A/B compare: the currently ACTIVE variant
+  // becomes the single timeline (deliberate fork semantics).
+  retireCompare();
   state.messages.push({ role: 'user', content, tokens: [], prefillSnapshotId: null });
   state.messages.push({ role: 'assistant', content: '', tokens: [], prefillSnapshotId: null });
+  // Freeze the enabled specs as this run's applied set (grid badges).
+  state.appliedInterventions = enabledInterventions().map(persistSpec);
   state.streaming = true;
   state.selectedSnapshotId = null;
   // While streaming, show the LAST layer (the output end of J-Space);
@@ -3280,8 +5234,19 @@ async function sendMessage() {
     temp: state.settings.temp,
     top_n: state.settings.topN,
   };
+  if (state.appliedInterventions.length) {
+    payload.interventions = state.appliedInterventions.map(specToPayload);
+  }
   setChatInputValue('');
+  await streamChat(payload);
+}
 
+// Shared streaming core for sendMessage and rerunWithInterventions:
+// POSTs /api/chat_stream, pumps SSE frames into ingestSnapshot, and runs
+// the stream-end autosave. Returns false when the request itself failed
+// (HTTP error before any frame), true otherwise.
+async function streamChat(payload) {
+  let ok = true;
   const controller = new AbortController();
   state.streamAbortController = controller;
   try {
@@ -3292,11 +5257,9 @@ async function sendMessage() {
     });
     if (!resp.ok) {
       const txt = await resp.text();
-      console.error('stream error:', txt.slice(0,200));
-      state.streaming = false;
-      updateAutoFollowUI();
-      renderAll();
-      return;
+      console.error('stream error:', txt.slice(0, 200));
+      ok = false;
+      return false;
     }
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -3313,8 +5276,10 @@ async function sendMessage() {
       }
     }
     if (buffer.trim()) handleSSEFrame(buffer);
+    return true;
   } catch (e) {
     if (e.name !== 'AbortError') console.error('request failed:', e);
+    return ok;
   } finally {
     state.streaming = false;
     state.streamId = null;
@@ -3326,7 +5291,7 @@ async function sendMessage() {
     // quota-trimmed, the server-side copy never is. On success, record it
     // as this conversation's recovery source and re-persist the cache so
     // the reference survives reloads.
-    if (state.messages.length > 0) {
+    if (ok && state.messages.length > 0) {
       fetch(API + '/api/sessions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...serializableConversation(), autosave: true }),
@@ -3375,8 +5340,245 @@ function stopStreaming() {
   renderAll();
 }
 
+// ----- Baseline vs intervened: re-run + A/B compare -----
+// The top-level state.* run fields always hold the ACTIVE variant; the
+// inactive one lives in state.compare.other. Toggling variants is an O(1)
+// swap of these references — the whole render path reads state.* and
+// needs no variant awareness.
+const RUN_FIELDS = [
+  'messages', 'snapshots', 'gridRows', 'gridTokenStrs', 'gridTokenMsgs',
+  'snapshotByMsgToken', 'appliedInterventions',
+];
+
+function captureRun() {
+  const run = {};
+  for (const f of RUN_FIELDS) run[f] = state[f];
+  return run;
+}
+
+function installRun(run) {
+  for (const f of RUN_FIELDS) state[f] = run[f];
+}
+
+function retireCompare() {
+  if (!state.compare) return;
+  state.compare = null;
+  renderVariantToggle();
+}
+
+function canRerun() {
+  if (isPresentation() || state.streaming) return false;
+  if (_ivDraft) return false;  // finish (or cancel) the open edit first
+  if (!interventionsAvailable()) return false;
+  if (!enabledInterventions().length) return false;
+  const last = state.messages[state.messages.length - 1];
+  return !!(last && last.role === 'assistant' && last.tokens.length > 0);
+}
+
+async function rerunWithInterventions() {
+  if (!canRerun()) return;
+  flushSaveState();
+  const baseline = captureRun();
+  const specs = enabledInterventions().map(persistSpec);
+  const msgIdx = state.messages.length - 1;
+
+  // Fresh run: context-message shells + an empty assistant target. The
+  // server re-emits prefill snapshots for every message on each stream,
+  // so the grid (including intervened prompt readouts) rebuilds itself.
+  state.messages = baseline.messages.slice(0, -1).map(m => ({
+    role: m.role, content: m.content, tokens: [], prefillSnapshotId: null,
+  }));
+  state.messages.push({ role: 'assistant', content: '', tokens: [], prefillSnapshotId: null });
+  state.snapshots = [];
+  state.gridRows = [];
+  state.gridTokenStrs = [];
+  state.gridTokenMsgs = [];
+  state.snapshotByMsgToken = new Map();
+  state.appliedInterventions = specs;
+  state.compare = {
+    msgIdx,
+    activeIsIntervened: true,
+    specs,
+    baselineHadInterventions: (baseline.appliedInterventions || []).length > 0,
+    other: baseline,
+    diff: null,
+  };
+  state.selectedCell = null;
+  state.selectedToken = null;
+  state.selectedSnapshotId = null;
+  dismissDetailCard();
+  state.streaming = true;
+  pendingGridView = { horizontal: 'end' };
+  updateAutoFollowUI();
+  renderAll();
+
+  const payload = {
+    messages: state.messages.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
+    max_tokens: state.settings.maxTokens,
+    temp: state.settings.temp,
+    top_n: state.settings.topN,
+    interventions: specs.map(specToPayload),
+  };
+  const ok = await streamChat(payload);
+  if (!ok) {
+    // Un-truncate: reinstall the baseline run, drop the failed compare.
+    installRun(baseline);
+    state.compare = null;
+    updateAutoFollowUI();
+    renderAll();
+  }
+}
+
+function validateSelection() {
+  if (state.selectedCell) {
+    const { pos, layer } = state.selectedCell;
+    const cell = state.gridRows[pos] && state.gridRows[pos][layer];
+    if (!cell) {
+      state.selectedCell = null;
+      state.selectedToken = null;
+      dismissDetailCard();
+    }
+  }
+  if (state.selectedToken) {
+    const { msgIdx, tokenIdx } = state.selectedToken;
+    if (!state.messages[msgIdx] || !state.messages[msgIdx].tokens[tokenIdx]) {
+      state.selectedToken = null;
+    }
+  }
+}
+
+function setActiveVariant(intervened) {
+  const c = state.compare;
+  if (!c || state.streaming || c.activeIsIntervened === intervened) return;
+  const current = captureRun();
+  installRun(c.other);
+  c.other = current;
+  c.activeIsIntervened = intervened;
+  state.selectedSnapshotId = null;
+  validateSelection();
+  scheduleSaveState();
+  // Re-render IN PLACE (never renderAll — it would snap to the tail).
+  renderDetail();
+  renderMarkups();
+  renderInterventions();
+  renderVariantToggle();
+  renderChat();
+  renderGrid({ keepScroll: true });
+}
+
+// Token-level diff of the compared assistant turn: common prefix/suffix
+// trim + LCS over the middle (bail to everything-changed above ~250k DP
+// cells). Sets are keyed by variant identity so they survive A/B swaps.
+function _tokenDiffSets(baseArr, intArr) {
+  const nA = baseArr.length, nB = intArr.length;
+  let p = 0;
+  while (p < nA && p < nB && baseArr[p] === intArr[p]) p++;
+  let s = 0;
+  while (s < nA - p && s < nB - p && baseArr[nA - 1 - s] === intArr[nB - 1 - s]) s++;
+  const a = baseArr.slice(p, nA - s);
+  const b = intArr.slice(p, nB - s);
+  const changedBase = new Set();
+  const changedInt = new Set();
+  if (a.length && b.length && a.length * b.length <= 250000) {
+    const m = a.length, n = b.length, W = n + 1;
+    const dp = new Int32Array((m + 1) * W);
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        dp[i * W + j] = a[i] === b[j]
+          ? dp[(i + 1) * W + j + 1] + 1
+          : Math.max(dp[(i + 1) * W + j], dp[i * W + j + 1]);
+      }
+    }
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { i++; j++; }
+      else if (dp[(i + 1) * W + j] >= dp[i * W + j + 1]) { changedBase.add(p + i); i++; }
+      else { changedInt.add(p + j); j++; }
+    }
+    while (i < m) { changedBase.add(p + i); i++; }
+    while (j < n) { changedInt.add(p + j); j++; }
+  } else {
+    for (let i = 0; i < a.length; i++) changedBase.add(p + i);
+    for (let j = 0; j < b.length; j++) changedInt.add(p + j);
+  }
+  return {
+    changedBase,
+    changedInt,
+    nChanged: Math.max(changedBase.size, changedInt.size),
+  };
+}
+
+function computeCompareDiff() {
+  const c = state.compare;
+  if (!c) return null;
+  if (c.diff) return c.diff;
+  const activeMsg = state.messages[c.msgIdx];
+  const otherMsg = c.other.messages[c.msgIdx];
+  if (!activeMsg || !otherMsg) return null;
+  const activeToks = activeMsg.tokens.map(t => t.text);
+  const otherToks = otherMsg.tokens.map(t => t.text);
+  const baseToks = c.activeIsIntervened ? otherToks : activeToks;
+  const intToks = c.activeIsIntervened ? activeToks : otherToks;
+  c.diff = _tokenDiffSets(baseToks, intToks);
+  return c.diff;
+}
+
+function renderVariantToggle() {
+  const el = $('variant-toggle');
+  if (!el) return;
+  const c = state.compare;
+  if (!c) { el.hidden = true; return; }
+  el.hidden = false;
+  const base = $('variant-baseline');
+  const inter = $('variant-intervened');
+  base.querySelector('span').textContent = c.baselineHadInterventions ? 'Run A' : 'Baseline';
+  base.classList.toggle('active', !c.activeIsIntervened);
+  inter.classList.toggle('active', c.activeIsIntervened);
+  base.disabled = inter.disabled = state.streaming;
+  const chip = inter.querySelector('.diff-chip');
+  if (chip) {
+    const diff = state.streaming ? null : computeCompareDiff();
+    if (diff && diff.nChanged > 0) {
+      chip.hidden = false;
+      chip.textContent = diff.nChanged + 'Δ';
+      chip.title = `${diff.nChanged} tokens differ from the ${c.baselineHadInterventions ? 'other run' : 'baseline'}`;
+    } else {
+      chip.hidden = true;
+    }
+  }
+}
+
 // ----- Stream/view controls -----
 $('stop-btn').onclick = () => stopStreaming();
+$('variant-baseline').onclick = () => setActiveVariant(false);
+$('variant-intervened').onclick = () => setActiveVariant(true);
+// Minimap navigation: click the map to glide to that spot; click an
+// overflow chip to glide to the nearest highlighted rows beyond it.
+$('minimap-canvas').addEventListener('click', (e) => {
+  if (!_minimapView) return;
+  const rect = e.currentTarget.getBoundingClientRect();
+  const row = _minimapView.r0 + (e.clientY - rect.top - _minimapView.pad) / _minimapView.rScale;
+  const ci = Math.floor((e.clientX - rect.left - _minimapView.pad) / _minimapView.cScale);
+  _minimapGlideTo(row, Math.max(0, Math.min(state.layers.length - 1, ci)));
+});
+$('minimap-up').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!_minimapView) return;
+  let target = null;
+  for (const [a, b] of _minimapView.merged) {
+    if (a < _minimapView.r0) target = Math.min(b, _minimapView.r0 - 1);
+  }
+  if (target != null) _minimapGlideTo(target, null);
+});
+$('minimap-down').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (!_minimapView) return;
+  let target = null;
+  for (const [a, b] of _minimapView.merged) {
+    if (b > _minimapView.r1 - 1) { target = Math.max(a, _minimapView.r1); break; }
+  }
+  if (target != null) _minimapGlideTo(target, null);
+});
 
 // ----- Saved sessions -----
 function sessionMetaText(session) {
@@ -3677,14 +5879,29 @@ $('grid-body').addEventListener('scroll', onGridBodyScroll, { passive: true });
 ['wheel', 'touchstart', 'mousedown'].forEach((evt) =>
   $('grid-body').addEventListener(evt, () => gridGlide.cancel(), { passive: true }));
 // Delegated grid clicks: rows are built as plain HTML (no per-cell
-// handlers); data-pos/data-layer identify the target.
+// handlers); data-pos/data-layer identify the target. While the
+// intervene panel is open the grid becomes the edit's input surface:
+// Pick… mode toggles the clicked LAYER column; otherwise clicking a
+// cell (or a token label) re-aims the edit.
 $('grid-body').addEventListener('click', (e) => {
-  const td = e.target.closest('td');
-  if (!td) return;
-  if (td.classList.contains('selectable')) {
-    selectCell(+td.dataset.pos, +td.dataset.layer);
-  } else if (td.classList.contains('clickable-token')) {
-    selectTokenHeader(+td.dataset.pos);
+  const el = e.target.closest('td, th');
+  if (!el) return;
+  if (_ivDraft) {
+    const layer = el.dataset.layer !== undefined ? +el.dataset.layer : null;
+    if (document.documentElement.classList.contains('iv-picking')) {
+      if (layer !== null && Number.isFinite(layer)) toggleDraftLayer(layer);
+    } else if (el.classList.contains('selectable')) {
+      reanchorIntervention(+el.dataset.pos, layer);
+    } else if (el.classList.contains('clickable-token')) {
+      reanchorIntervention(+el.dataset.pos, _ivDraft.origin.layer);
+    }
+    return;
+  }
+  if (el.tagName !== 'TD') return;
+  if (el.classList.contains('selectable')) {
+    selectCell(+el.dataset.pos, +el.dataset.layer);
+  } else if (el.classList.contains('clickable-token')) {
+    selectTokenHeader(+el.dataset.pos);
   }
 });
 $('chat-editor').addEventListener('keydown', (e) => {
@@ -3747,9 +5964,63 @@ $('set-temp').addEventListener('input', () => {
     if (e.key === 'Escape') { e.preventDefault(); cancelSettings(); }
   });
 });
+
+// ----- Intervene panel -----
+// No backdrop-press dismissal here: unlike the settings modal, the page
+// behind the panel is intentionally interactive (grid scroll, aiming,
+// layer picking). Close via Save / Cancel / Escape only.
+$('iv-ok').onclick = commitInterventionEditor;
+$('iv-cancel').onclick = cancelInterventionEditor;
+$('iv-delete').onclick = deleteFromInterventionEditor;
+$('iv-alpha').addEventListener('input', () => {
+  const slider = $('iv-alpha');
+  updateRangeProgress(slider);
+  _renderAlphaValue(alphaFromSlider(slider.value));
+});
+// Segmented controls: one delegated listener per group.
+[['iv-mode', 'mode'], ['iv-layer-scope', 'scope'], ['iv-pos-scope', 'scope']].forEach(([id, attr]) => {
+  $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || !$(id).contains(b)) return;
+    const prev = _segGet(id, attr);
+    _segSet(id, attr, b.dataset[attr]);
+    // Switching MODE resets α to that mode's default (steer 200, swap 1).
+    if (id === 'iv-mode' && b.dataset.mode !== prev) {
+      _setAlphaSlider(IV_ALPHA_DEFAULT[b.dataset.mode] || 1);
+    }
+    syncInterventionEditorFields();
+  });
+});
+attachTokenPreview('iv-token', 'iv-token-preview');
+attachTokenPreview('iv-target', 'iv-target-preview');
+['iv-token', 'iv-target'].forEach((id) => {
+  $(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitInterventionEditor(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelInterventionEditor(); }
+  });
+});
+// Cursor tooltip: rAF-throttled pointer follow over the grid while the
+// intervene panel is open.
+$('grid-body').addEventListener('mousemove', (e) => {
+  if (!_ivDraft) {
+    const tip = $('iv-cursor-tip');
+    if (!tip.hidden) { tip.hidden = true; _tipKey = ''; }
+    return;
+  }
+  _tipEvt = e;
+  if (_tipRaf === null) _tipRaf = requestAnimationFrame(_positionCursorTip);
+}, { passive: true });
+$('grid-body').addEventListener('mouseleave', () => {
+  _tipEvt = null;
+  _tipKey = '';
+  $('iv-cursor-tip').hidden = true;
+});
+
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && $('settings-backdrop').classList.contains('visible')) cancelSettings();
-  if (e.key === 'Escape' && $('sessions-menu').classList.contains('visible')) closeSessionsMenu();
+  if (e.key !== 'Escape') return;
+  if ($('intervene-backdrop').classList.contains('visible')) { cancelInterventionEditor(); return; }
+  if ($('settings-backdrop').classList.contains('visible')) { cancelSettings(); return; }
+  if ($('sessions-menu').classList.contains('visible')) closeSessionsMenu();
 });
 
 function escapeHtml(s) {
