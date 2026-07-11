@@ -66,12 +66,15 @@ CF_HEADERS = """\
 
 def snapshots_are_lossy(session: dict) -> bool:
     """Mirror of snapshotsAreLossy() in web/index.html: per generated
-    message, per-token snapshots must be contiguous starting at token 0."""
-    by_msg: dict[int, list[int]] = {}
+    message, per-token snapshots must be contiguous starting at token 0.
+    A/B compares tag the inactive run's snapshots variant:'other' and each
+    stream restarts snapshot ids, so group per (variant, message)."""
+    by_msg: dict[str, list[int]] = {}
     for sn in session.get("snapshots") or []:
         if sn.get("token_idx", -1) == -1:
             continue
-        by_msg.setdefault(sn.get("msg_idx", 0), []).append(sn["token_idx"])
+        key = f"{sn.get('variant') or ''}:{sn.get('msg_idx', 0)}"
+        by_msg.setdefault(key, []).append(sn["token_idx"])
     for idxs in by_msg.values():
         idxs.sort()
         if idxs[0] != 0:
