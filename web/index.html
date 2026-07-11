@@ -2031,7 +2031,7 @@ function applyLayerBands(lensInfo, modelInfo) {
   const raw = lensInfo && Array.isArray(lensInfo.bands) ? lensInfo.bands : [];
   if (raw.length) {
     LAYER_BANDS = raw.map((band, index) => {
-      const id = ({ surface: 'early', motor: 'late' })[band.name] || band.name;
+      const id = ({ surface: 'early', sensory: 'early', motor: 'late' })[band.name] || band.name;
       return {
         id,
         label: BAND_LABELS[id] || id,
