@@ -426,7 +426,12 @@ class InterveneRequest(BaseModel):
 
 @app.post("/api/intervene")
 async def intervene_endpoint(req: InterveneRequest):
-    """Generate with a J-space intervention."""
+    """Generate with a J-space intervention (single layer, uncached path).
+
+    Legacy — superseded by the streaming `interventions` field on
+    /api/chat_stream. Kept as a curl-able reference that matches
+    scripts/intervention_sanity.py semantics.
+    """
     _require_active_mode()
     if _model is None:
         raise HTTPException(503, "model not loaded")
@@ -475,6 +480,153 @@ async def intervene_endpoint(req: InterveneRequest):
     }
 
 
+class TokenizeRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/tokenize")
+async def tokenize_endpoint(req: TokenizeRequest):
+    """Preview how a concept string tokenizes.
+
+    Interventions use only the FIRST token of a concept string; the UI
+    calls this to show which token that is before the user commits.
+    """
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    ids = _model.tokenizer.encode(req.text, add_special_tokens=False)
+    segs = _token_segments(_model.tokenizer, ids)
+    return {
+        "text": req.text,
+        "tokens": [
+            {"id": int(t), "text": segs[i], "display": _tok_str(int(t))}
+            for i, t in enumerate(ids)
+        ],
+    }
+
+
+class InterventionSpec(BaseModel):
+    """One J-space edit applied during a chat stream.
+
+    Position scopes are GLOBAL indices into the chat-templated token
+    sequence — the same coordinates the readout grid uses — and exactly
+    one of `positions`, `from_position`, `segment` must be set.
+    `segment: "generation"` means every generated position of this
+    request (resolved server-side to the generation-prefix length).
+    The UI's "suppress" is steer with a negative alpha.
+    """
+
+    mode: str                        # "steer" | "swap" | "ablate"
+    layers: list[int]                # lens source layers; n_layers-1 = plain unembed
+    token: str | None = None         # steer concept / swap source (text...)
+    token_id: int | None = None      # ...or exact token id (id wins over text)
+    target: str | None = None        # swap target
+    target_id: int | None = None
+    alpha: float = 1.0               # steer: h += a*v (a<0 suppress); swap: coord scale
+    positions: list[int] | None = None
+    from_position: int | None = None
+    segment: str | None = None       # "generation"
+    ablate_token_ids: list[int] | None = None  # explicit directions to remove
+
+
+def _validate_and_resolve_specs(
+    specs: list[InterventionSpec],
+    lens,
+    tokenizer,
+    n_layers: int,
+) -> list[dict[str, Any]]:
+    """Validate specs and resolve concept text -> token ids.
+
+    Returns JSON-safe dicts that double as the `stream_start` echo and
+    the compile_edits() inputs. Raises HTTPException(400) on any invalid
+    spec — called in the endpoint body BEFORE the SSE stream starts, so
+    failures surface as proper HTTP errors.
+    """
+    fitted = set(lens.source_layers) if lens is not None else set()
+    allowed = fitted | {n_layers - 1}
+    resolved: list[dict[str, Any]] = []
+    for i, spec in enumerate(specs):
+        where = f"interventions[{i}]"
+        if spec.mode not in ("steer", "swap", "ablate"):
+            raise HTTPException(400, f"{where}: unknown mode {spec.mode!r}")
+        if spec.segment is not None and spec.segment != "generation":
+            raise HTTPException(400, f"{where}: unknown segment {spec.segment!r}")
+        layers = sorted(set(spec.layers))
+        if not layers:
+            raise HTTPException(400, f"{where}: layers is empty")
+        bad = sorted(l for l in layers if l not in allowed)
+        if bad:
+            raise HTTPException(
+                400,
+                f"{where}: layers {bad} have no fitted Jacobian "
+                f"(fitted={sorted(fitted)}, final={n_layers - 1})",
+            )
+        n_scopes = sum(
+            s is not None for s in (spec.positions, spec.from_position, spec.segment)
+        )
+        if n_scopes != 1:
+            raise HTTPException(
+                400,
+                f"{where}: exactly one of positions / from_position / segment "
+                f"is required (got {n_scopes})",
+            )
+        positions = sorted(set(spec.positions)) if spec.positions is not None else None
+        if positions is not None and not positions:
+            raise HTTPException(400, f"{where}: positions is empty")
+        if positions is not None and positions[0] < 0:
+            raise HTTPException(400, f"{where}: positions must be >= 0")
+        if spec.from_position is not None and spec.from_position < 0:
+            raise HTTPException(400, f"{where}: from_position must be >= 0")
+
+        def _resolve(text: str | None, tid: int | None, field: str) -> tuple[int, list[int]]:
+            if tid is not None:
+                return int(tid), [int(tid)]
+            if not text:
+                raise HTTPException(
+                    400, f"{where}: {field} is required for mode {spec.mode!r}")
+            ids = tokenizer.encode(text, add_special_tokens=False)
+            if not ids:
+                raise HTTPException(
+                    400, f"{where}: {field} {text!r} encodes to no tokens")
+            return int(ids[0]), [int(t) for t in ids]
+
+        token_id = target_id = None
+        token_ids_all = target_ids_all = None
+        ablate_ids = None
+        if spec.mode in ("steer", "swap"):
+            token_id, token_ids_all = _resolve(spec.token, spec.token_id, "token")
+        if spec.mode == "swap":
+            target_id, target_ids_all = _resolve(spec.target, spec.target_id, "target")
+        if spec.mode == "ablate":
+            ablate_ids = sorted({int(t) for t in (spec.ablate_token_ids or [])})
+            if not ablate_ids:
+                raise HTTPException(400, f"{where}: ablate requires ablate_token_ids")
+
+        token_str = _tok_str(token_id) if token_id is not None else None
+        target_str = _tok_str(target_id) if target_id is not None else None
+        if spec.mode == "steer":
+            label = f"steer {token_str!r} a={spec.alpha:g}"
+        elif spec.mode == "swap":
+            label = f"swap {token_str!r}->{target_str!r} a={spec.alpha:g}"
+        else:
+            label = f"ablate k={len(ablate_ids)}"
+        resolved.append({
+            "index": i,
+            "mode": spec.mode,
+            "layers": layers,
+            "token": spec.token, "token_id": token_id,
+            "token_ids_all": token_ids_all, "token_str": token_str,
+            "target": spec.target, "target_id": target_id,
+            "target_ids_all": target_ids_all, "target_str": target_str,
+            "alpha": spec.alpha,
+            "positions": positions,
+            "from_position": spec.from_position,
+            "segment": spec.segment,
+            "ablate_token_ids": ablate_ids,
+            "label": label,
+        })
+    return resolved
+
+
 class ChatMessage(BaseModel):
     role: str  # "user" | "assistant"
     content: str
@@ -489,6 +641,12 @@ class ChatStreamRequest(BaseModel):
     # block burns hundreds of tokens before the answer. The J-lens stays
     # exact either way (this only changes the prompt template).
     enable_thinking: bool = False
+    # J-space edits applied during prefill + generation. Empty list =
+    # byte-identical clean behavior. NOTE: for a meaningful baseline vs
+    # intervened comparison the client must keep every other field
+    # (messages, temp, enable_thinking) identical across the two runs —
+    # the chat template determines the global position coordinates.
+    interventions: list[InterventionSpec] = []
 
 
 
@@ -534,6 +692,13 @@ class SessionSaveRequest(BaseModel):
     settings: dict[str, Any] = {}
     # Token markups: [{pos, layer, token}] bookmarks into the J-Space grid.
     markups: list[dict[str, Any]] = []
+    # Intervention specs authored in the UI, the specs applied to the
+    # current run, and the baseline-vs-intervened compare envelope.
+    # Client-defined shapes, persisted verbatim (pydantic drops unknown
+    # keys, so these MUST be declared to round-trip).
+    interventions: list[dict[str, Any]] = []
+    appliedInterventions: list[dict[str, Any]] = []
+    compare: dict[str, Any] | None = None
     # Fire-and-forget full-fidelity save at stream end. localStorage is
     # quota-trimmed (~4.2MB) and silently loses old snapshots on long
     # conversations; the autosave keeps the complete state server-side
@@ -728,6 +893,13 @@ async def chat_stream(req: ChatStreamRequest):
     import asyncio
     import uuid
 
+    # Validate + resolve interventions BEFORE streaming starts so bad
+    # specs fail as proper HTTP 400s instead of mid-stream error frames.
+    resolved_specs: list[dict[str, Any]] = []
+    if req.interventions:
+        resolved_specs = _validate_and_resolve_specs(
+            req.interventions, _lens, _model.tokenizer, _model.n_layers)
+
     layers = _record_layers()
     top_n = req.top_n
     temp = req.temp
@@ -744,8 +916,11 @@ async def chat_stream(req: ChatStreamRequest):
         token_strs_global: list[str] = []
 
         # Emit the stream_start event so the client knows the stream_id for
-        # pause/resume control.
-        yield _sse("stream_start", {"stream_id": stream_id})
+        # pause/resume control (plus the resolved intervention echo).
+        yield _sse("stream_start", {
+            "stream_id": stream_id,
+            "interventions": resolved_specs,
+        })
 
         try:
             # Build an effective message list: the client sends user messages
@@ -762,6 +937,48 @@ async def chat_stream(req: ChatStreamRequest):
             # (and each generated token) is fed as a delta chunk, so the
             # per-step cost is O(chunk) instead of O(total sequence).
             session = _model.make_stream(capture_layers=layers)
+
+            if resolved_specs:
+                # "generation" scopes resolve to the first generated
+                # position = the generation-prefix length of THIS
+                # conversation (template-dependent, so server-side).
+                gen_from_pos = None
+                if any(r["segment"] == "generation" for r in resolved_specs):
+                    last = eff_messages[-1]
+                    if last.role == "assistant" and not last.content:
+                        pm = [{"role": m.role, "content": m.content}
+                              for m in eff_messages[:-1]]
+                        pids = tok.apply_chat_template(
+                            pm, add_generation_prompt=True,
+                            enable_thinking=req.enable_thinking)
+                        gen_from_pos = len(
+                            pids if isinstance(pids, list) else list(pids))
+
+                def _compile_all():
+                    from .interventions import compile_edits
+                    edits = []
+                    for r in resolved_specs:
+                        from_pos = r["from_position"]
+                        if r["segment"] == "generation":
+                            if gen_from_pos is None:
+                                # Nothing generated this request -> inert.
+                                continue
+                            from_pos = gen_from_pos
+                        edits.extend(compile_edits(
+                            _lens, _model,
+                            mode=r["mode"], layers=r["layers"],
+                            token_id=r["token_id"], target_id=r["target_id"],
+                            alpha=r["alpha"], positions=r["positions"],
+                            from_pos=from_pos,
+                            ablate_token_ids=r["ablate_token_ids"],
+                            label=r["label"],
+                        ))
+                    return edits
+
+                # Vector compile is a handful of matvecs against the
+                # resident fp16 J stack — never the [vocab, D] matrix.
+                async with _gpu_lock:
+                    session.set_edits(await asyncio.to_thread(_compile_all))
 
             # We build the formatted token sequence using the chat template.
             # For each message, the template wraps it as:
