@@ -3813,11 +3813,11 @@ function renderMinimap() {
     if (ctx.previewMarks) marks.push(...ctx.previewMarks);
     marks.push(...(ctx.marks || []));
   }
-  // While the intervene panel is open the minimap is part of the right
-  // rail (the panel docks directly above it) — keep it up even before
-  // any cells are targeted, so the rail never reshuffles mid-edit.
+  // The minimap exists to preview interventions: it lives in the right
+  // rail below the intervene panel and ONLY while that panel is open —
+  // when the panel closes, the minimap goes with it.
   const intervening = document.documentElement.classList.contains('intervening');
-  if (!nRows || !nCols || (!marks.length && !intervening)) {
+  if (!nRows || !nCols || !intervening) {
     wrap.hidden = true;
     _minimapView = null;
     return;
