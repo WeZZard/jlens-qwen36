@@ -17,7 +17,8 @@ weight), so we never materialize the 2.5 GB dense ``W_U``.
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable, Sequence
 
 import mlx.core as mx
 import mlx.nn as nn
@@ -25,6 +26,68 @@ import mlx_lm
 
 from .patch_gdn import patch_gdn
 from .custom_gdn_patch import patch_gdn_custom
+
+
+@dataclass(frozen=True)
+class LayerEdit:
+    """A compiled residual-stream edit for the cached streaming path.
+
+    At `layer`, the rows of the current chunk selected by the position
+    scope are rewritten by ``fn`` ([n, D] fp32 -> [n, D] fp32). Position
+    scopes are GLOBAL indices into the chat-templated token sequence
+    (the same coordinates the readout grid uses); ``extend()`` maps them
+    onto each chunk via its ``n_consumed`` offset.
+
+    positions: explicit global positions, or None.
+    from_pos: persistent scope — every global position >= from_pos, or None.
+    The two scopes are unioned when both are set.
+    """
+
+    layer: int
+    fn: Callable[[mx.array], mx.array]
+    positions: tuple[int, ...] | None = None
+    from_pos: int | None = None
+    label: str = ""
+
+
+def _chunk_local_indices(
+    positions: Sequence[int] | None,
+    from_pos: int | None,
+    start: int,
+    n: int,
+) -> list[int]:
+    """Map global position scopes onto a chunk covering ``[start, start+n)``.
+
+    Returns sorted chunk-local row indices; empty when the scope misses
+    the chunk entirely.
+    """
+    end = start + n
+    sel: set[int] = set()
+    if positions is not None:
+        sel.update(p - start for p in positions if start <= p < end)
+    if from_pos is not None and from_pos < end:
+        sel.update(range(max(from_pos - start, 0), n))
+    return sorted(sel)
+
+
+def _apply_edits(
+    hidden: mx.array, edits: Sequence[LayerEdit], start: int
+) -> mx.array:
+    """Apply same-layer edits to ``hidden`` [1, n, D], in list order.
+
+    Gathers the selected rows, runs each edit fn in fp32, and scatters
+    the result back in place (verified in-place semantics on MLX 0.31).
+    The ops are lazy; the caller's existing ``mx.eval`` materializes them.
+    """
+    n = hidden.shape[1]
+    for e in edits:
+        local = _chunk_local_indices(e.positions, e.from_pos, start, n)
+        if not local:
+            continue
+        idx = mx.array(local)
+        rows = e.fn(hidden[0, idx].astype(mx.float32))
+        hidden[0, idx] = rows.astype(hidden.dtype)
+    return hidden
 
 
 class MLXLensModel:
@@ -292,6 +355,20 @@ class StreamSession:
         self.caches = make_prompt_cache(model._model)
         self.capture = sorted(set(capture_layers or []))
         self.n_consumed = 0
+        self._edits_by_layer: dict[int, list[LayerEdit]] = {}
+
+    def set_edits(self, edits: Sequence[LayerEdit] | None) -> None:
+        """Install residual-stream edits applied inside every ``extend()``.
+
+        Edits are grouped by layer and applied in list order within a
+        layer, right after that layer's forward and BEFORE its residual
+        is captured — so downstream layers (and their KV/GDN caches)
+        consume the edited stream, and readouts show the written values.
+        """
+        by_layer: dict[int, list[LayerEdit]] = {}
+        for e in edits or []:
+            by_layer.setdefault(e.layer, []).append(e)
+        self._edits_by_layer = by_layer
 
     def extend(self, ids) -> tuple[mx.array, dict[int, mx.array]]:
         """Feed token ids (a Python list) after the tokens already consumed.
@@ -312,6 +389,10 @@ class StreamSession:
         for i, (layer, c) in enumerate(zip(m.layers, self.caches)):
             mask = ssm_mask if layer.is_linear else fa_mask
             hidden = layer(hidden, mask=mask, cache=c)
+            if self._edits_by_layer:
+                ed = self._edits_by_layer.get(i)
+                if ed:
+                    hidden = _apply_edits(hidden, ed, self.n_consumed)
             if i in self.capture:
                 acts[i] = hidden
         final = text.norm(hidden)
@@ -327,4 +408,4 @@ def load(model_id: str = "mlx-community/Qwen3.6-27B-4bit") -> MLXLensModel:
     return MLXLensModel(model, tokenizer)
 
 
-__all__ = ["MLXLensModel", "StreamSession", "load"]
+__all__ = ["LayerEdit", "MLXLensModel", "StreamSession", "load"]
