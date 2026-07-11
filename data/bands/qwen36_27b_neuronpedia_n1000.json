@@ -543,18 +543,18 @@
     {
       "name": "workspace",
       "start_layer": 26,
-      "end_layer": 46
+      "end_layer": 59
     },
     {
       "name": "motor",
-      "start_layer": 47,
+      "start_layer": 60,
       "end_layer": 63
     }
   ],
   "detected": {
     "workspace_start": 26,
-    "motor_start": 47,
-    "motor_committed": 60,
+    "motor_start": 60,
+    "ramp_onset": 47,
     "persistence_peak": 0.16033451162812187,
     "next_token_baseline": 0.0348,
     "next_token_final": 0.4891

@@ -275,7 +275,7 @@ def _detect_bands(record, curves, final_layer):
             break
 
     ws_start = layers[ws_i]
-    mo_start = layers[mo_i]
+    mo_start = layers[committed_i]           # motor = readout committed to output
     bands = [
         {"name": "sensory", "start_layer": layers[0], "end_layer": max(layers[0], ws_start - 1)},
         {"name": "workspace", "start_layer": ws_start, "end_layer": max(ws_start, mo_start - 1)},
@@ -283,8 +283,8 @@ def _detect_bands(record, curves, final_layer):
     ]
     return bands, {
         "workspace_start": ws_start,
-        "motor_start": mo_start,               # ramp onset (band boundary)
-        "motor_committed": layers[committed_i],  # readout ~= output
+        "motor_start": mo_start,
+        "ramp_onset": layers[mo_i],           # where the output ramp begins (auxiliary)
         "persistence_peak": peak,
         "next_token_baseline": round(b_mean, 4),
         "next_token_final": round(final_val, 4),
