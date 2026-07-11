@@ -1235,7 +1235,7 @@ async def index():
                 f'window.JLENS_MODE = "{_app_mode}"',
                 1,
             )
-        return HTMLResponse(html)
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
     return HTMLResponse("<h1>J-Space Visualizer</h1><p>web/index.html not found</p>")
 
 
