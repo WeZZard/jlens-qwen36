@@ -37,6 +37,10 @@ from jlens_qwen import perf
 # Globals (loaded once at startup).
 _model = None
 _lens = None
+# Measured functional bands for the loaded lens (sensory/workspace/motor),
+# from scripts/measure_bands.py -> data/bands/<lens_stem>.json. None => the
+# UI falls back to its percentage-split guess (bands_are_fallback).
+_bands = None
 _model_id = os.environ.get("JLENS_MODEL", "mlx-community/Qwen3.6-27B-4bit")
 # Lens selection is ENFORCED at startup — there is no silent fallback.
 # JLENS_PATH=<file> loads that file or refuses to start; JLENS_PATH=none
@@ -137,9 +141,30 @@ class SliceRequest(BaseModel):
     top_n: int = 10
 
 
+def _load_bands(lens_path: str | None) -> list[dict] | None:
+    """Measured functional bands for this lens, if scripts/measure_bands.py
+    has been run. Looked up by lens-file stem at data/bands/<stem>.json."""
+    if not lens_path:
+        return None
+    bands_file = _repo_root / "data" / "bands" / (Path(lens_path).stem + ".json")
+    if not bands_file.exists():
+        return None
+    try:
+        data = json.loads(bands_file.read_text())
+        bands = data.get("bands")
+        if isinstance(bands, list) and bands:
+            print(f"BANDS: measured bands from {bands_file.name}: "
+                  + ", ".join(f"{b['name']} L{b['start_layer']}-L{b['end_layer']}"
+                              for b in bands), flush=True)
+            return bands
+    except Exception as e:
+        print(f"BANDS: failed to read {bands_file} ({e}); using UI fallback", flush=True)
+    return None
+
+
 @app.on_event("startup")
 async def load():
-    global _model, _lens
+    global _model, _lens, _bands
     # Resolve the lens FIRST so a wrong/ambiguous choice fails in
     # milliseconds instead of after a 15 GB model load.
     try:
@@ -161,6 +186,7 @@ async def load():
         _t0 = time.perf_counter()
         _lens.warm()
         print(f"  lens warmed (fp16 GPU upload) in {time.perf_counter() - _t0:.1f}s", flush=True)
+    _bands = _load_bands(lens_path)
 
 
 @app.get("/api/lens")
@@ -173,6 +199,9 @@ async def lens_info():
         "n_prompts": _lens.n_prompts,
         "d_model": _lens.d_model,
         "n_layers": _model.n_layers,
+        # Measured bands when available; else the UI uses its percentage guess.
+        "bands": _bands or [],
+        "bands_are_fallback": _bands is None,
     }
 
 
