@@ -3773,7 +3773,7 @@ function shiftGridWindow() {
 const MINIMAP_W = 168;
 const MINIMAP_H = 132;      // CONTENT height; the canvas adds 2× the pad
 const MINIMAP_PAD = 10;     // content inset from the card edges
-const MINIMAP_MIN_ROW_PX = 2;
+const MINIMAP_ROW_PX = 3;   // fixed block height — never scales with content
 let _minimapView = null;
 
 function markRowRange(scope, firstGenPos, nRows) {
@@ -3839,19 +3839,22 @@ function renderMinimap() {
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   g.clearRect(0, 0, boxW, boxH);
 
-  // Row scale: fit the whole grid when readable, else a fixed readable
-  // scale windowed around the grid viewport.
+  // Fixed-height blocks, windowed with a parallax scroll: the drawn row
+  // window slides proportionally with the grid's scroll position (top of
+  // grid = window at the start, bottom = window at the end), so the
+  // background blocks and the viewport highlight move together. Short
+  // sessions simply don't fill the card — block height never changes.
   const body = $('grid-body');
   const rowH = state.gridRowH || 36;
-  const fullFit = MINIMAP_H / nRows >= 1;
-  const rScale = fullFit ? MINIMAP_H / nRows : MINIMAP_MIN_ROW_PX;
+  const rScale = MINIMAP_ROW_PX;
   const winRows = Math.floor(MINIMAP_H / rScale);
   let r0 = 0;
-  if (!fullFit) {
-    const centerRow = (body.scrollTop + body.clientHeight / 2) / rowH;
-    r0 = Math.round(Math.max(0, Math.min(nRows - winRows, centerRow - winRows / 2)));
+  if (nRows > winRows) {
+    const scrollMax = Math.max(1, body.scrollHeight - body.clientHeight);
+    const frac = Math.max(0, Math.min(1, body.scrollTop / scrollMax));
+    r0 = Math.round(frac * (nRows - winRows));
   }
-  const r1 = fullFit ? nRows : Math.min(nRows, r0 + winRows);
+  const r1 = Math.min(nRows, r0 + winRows);
   // The TOKEN rail is drawn as ONE more column, same width as the layer
   // cells, so the columns count is nCols + 1. layerW is the layer area
   // (the scrollable columns the viewport indicator frames); the token
@@ -3922,16 +3925,35 @@ function renderMinimap() {
   let y1 = y0 + (body.clientHeight / rowH) * rScale;
   x0 = Math.max(0, Math.min(layerW, x0));
   x1 = Math.max(0, Math.min(layerW, x1));
-  y0 = Math.max(0, Math.min(MINIMAP_H, y0));
-  y1 = Math.max(0, Math.min(MINIMAP_H, y1));
+  const winH = (r1 - r0) * rScale;
+  y0 = Math.max(0, Math.min(winH, y0));
+  y1 = Math.max(0, Math.min(winH, y1));
   if (x1 - x0 < 6) { const cx = (x0 + x1) / 2; x0 = Math.max(0, Math.min(layerW - 6, cx - 3)); x1 = x0 + 6; }
-  if (y1 - y0 < 6) { const cy = (y0 + y1) / 2; y0 = Math.max(0, Math.min(MINIMAP_H - 6, cy - 3)); y1 = y0 + 6; }
+  if (y1 - y0 < 6) { const cy = (y0 + y1) / 2; y0 = Math.max(0, Math.min(Math.max(0, winH - 6), cy - 3)); y1 = Math.min(winH, y0 + 6); }
   // Solid-fill expression: the LOCAL portion carries a soft ink tint
   // while everything outside it — margins included — lifts lighter. No
   // outline stroke at all; the fill contrast draws the boundary.
   g.setTransform(dpr, 0, 0, dpr, 0, 0);   // back to full-canvas space
+
+  // TOKEN rail: the grid's sticky right column, mirrored as a gray strip.
+  // A gray block per row that carries a token; rows inside the edit's
+  // token scope light orange (matching the token-label rings on the
+  // grid). Drawn before the scrim so it shades with the rest of the map.
+  const tokX = PAD + nCols * cScale + gapX / 2;
+  const tCellH = Math.max(1, rScale - gapY);
+  for (let p = r0; p < r1; p++) {
+    const tok = state.gridTokenStrs[p];
+    if (!tok || !normalizeTokenText(tok)) continue;
+    const inScope = marks.some(m => scopeMatchesPos(m.scope, firstGenPos, p));
+    g.fillStyle = inScope ? 'rgba(255, 138, 0, 0.95)' : 'rgba(120, 112, 92, 0.8)';
+    g.fillRect(tokX, PAD + (p - r0) * rScale, cellW, tCellH);
+  }
+
+  // The local box stays inside the 10px content inset. At full right it
+  // extends across the token strip — the rightmost CONTENT column (the
+  // sticky rail is on screen) — but never into the margins.
   const vx0 = PAD + x0;
-  const vx1 = PAD + x1;
+  const vx1 = c1 >= nCols - 0.05 ? PAD + W : PAD + x1;
   const vy0 = PAD + y0;
   const vy1 = PAD + y1;
   g.fillStyle = 'rgba(255, 255, 255, 0.16)';
@@ -3941,23 +3963,6 @@ function renderMinimap() {
   g.fillRect(vx1, vy0, boxW - vx1, vy1 - vy0);
   g.fillStyle = 'rgba(58, 53, 37, 0.12)';
   g.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
-
-  // TOKEN rail: the grid's sticky right column, mirrored as a gray strip.
-  // A gray block per row that carries a token; rows inside the edit's
-  // token scope light orange (matching the token-label rings on the
-  // grid). Drawn AFTER the scrim so — like the sticky rail — it is never
-  // dimmed by the local-portion overlay.
-  const tokX = PAD + nCols * cScale + gapX / 2;
-  const tCellH = Math.max(1, rScale - gapY);
-  for (let p = r0; p < r1; p++) {
-    const tok = state.gridTokenStrs[p];
-    if (!tok || !normalizeTokenText(tok)) continue;
-    const inScope = marks.some(m => scopeMatchesPos(m.scope, firstGenPos, p));
-    // Gray for token rows, orange where the row is in the edit's token
-    // scope — same block geometry as the content cells.
-    g.fillStyle = inScope ? 'rgba(255, 138, 0, 0.95)' : 'rgba(120, 112, 92, 0.8)';
-    g.fillRect(tokX, PAD + (p - r0) * rScale, cellW, tCellH);
-  }
 
   // Overflow notification: highlighted rows outside the window.
   const merged = _mergedRowRanges(marks, firstGenPos, nRows);
@@ -3974,7 +3979,7 @@ function renderMinimap() {
   if (above > 0) up.textContent = `▲ ${above} more`;
   if (below > 0) down.textContent = `▼ ${below} more`;
 
-  _minimapView = { r0, r1, rScale, cScale, nRows, merged, pad: PAD, w: layerW, ind: { x0, x1, y0, y1 } };
+  _minimapView = { r0, r1, rScale, cScale, nRows, merged, pad: PAD, w: layerW, ind: { x0, x1, y0, y1 }, vx: { x0: vx0, x1: vx1, y0: vy0, y1: vy1 }, boxW, boxH };
 }
 
 function _minimapGlideTo(row, layerIndex) {
