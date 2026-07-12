@@ -125,7 +125,6 @@
     background: transparent;
   }
   #chat-col {
-    position: relative;
     width: 450px; min-width: 360px; flex-shrink: 0;
     display: flex; flex-direction: column;
     background: transparent;
@@ -134,9 +133,7 @@
 
   /* ----- Chat (right column) ----- */
   #chat-log {
-    /* 52px top clearance keeps the first bubble's role label out from
-       under the ambient Clear / Settings actions. */
-    flex: 1; overflow-y: auto; padding: 52px 16px var(--chat-bottom-clearance);
+    flex: 1; overflow-y: auto; padding: 20px 16px var(--chat-bottom-clearance);
     scroll-padding-bottom: var(--chat-bottom-clearance);
     display: flex; flex-direction: column; gap: 14px;
   }
@@ -271,19 +268,24 @@
     position: fixed; right: 16px; bottom: var(--bottom-control-inset); z-index: 10;
     display: flex; gap: 0;
   }
-  #sessions-btn {
+  #clear-btn, #settings-btn, #sessions-btn {
     height: 44px;
-    font-size: 13px; font-weight: 500; cursor: pointer;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 0 18px;
+    font-size: 14px; font-weight: 500; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
     color: var(--text);
     transition: background 0.12s, transform 0.1s;
   }
-  /* Bottom-left bar: GitHub capsule. */
+  #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; font-size: 13px; }
+  /* Bottom-left bar: icon-only settings (active mode) + GitHub. */
   #corner-actions-left {
     position: fixed; left: 16px; bottom: var(--bottom-control-inset); z-index: 10;
     display: flex; gap: 0;
   }
+  #settings-btn {
+    width: 44px; padding: 0;
+    justify-content: center;
+  }
+  #settings-btn svg { width: 19px; height: 19px; }
   #github-btn {
     height: 44px; padding: 0 18px;
     display: flex; align-items: center; gap: 8px;
@@ -1165,14 +1167,22 @@
     outline-offset: -2px;
   }
   #grid td.cell.selected.intervened .cell-block { outline-color: #ffffff; }
-  /* Compare dot: the cell's top-1 readout differs from the other run. */
+  /* Compare dot: the cell's top-1 readout differs from the other run.
+     Inset past the intervened ring (its dashed stroke runs ~3.2-4.7px
+     from the td edge) so the two markers never overlap. */
   #grid td.cell.diff-cell { position: relative; }
   #grid td.cell.diff-cell::after {
     content: '';
-    position: absolute; top: 4px; right: 4px;
+    position: absolute; top: 7px; right: 7px;
     width: 5px; height: 5px; border-radius: 50%;
     background: var(--highlight-orange);
     pointer-events: none;
+  }
+  /* On selected / highlighted blocks the background is itself orange —
+     the dot flips to white to stay visible. */
+  #grid td.cell.diff-cell.selected::after,
+  #grid td.cell.diff-cell.matching-token::after {
+    background: #ffffff;
   }
 
   /* ----- Detail panel (floating, centered, stacked above the input box) ----- */
@@ -1342,22 +1352,54 @@
      vertical center of the screen — adding markups grows the group evenly
      up and down. It scrolls internally before touching the screen edges
      or the settings button. */
-  #markups {
+  /* ----- Side rail: single home on the left edge, vertically centered.
+     One scroll container for both sections; the padding gives the pills'
+     drop shadows room instead of cropping them, and the 16px left inset
+     doubles as the screen-edge offset. ----- */
+  #side-rail {
     position: fixed; left: 0; top: 50vh; z-index: 9;
     transform: translateY(-50%);
-    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
-    /* The scroll container clips at its box: pad it on every side so the
-       pills' drop shadows have room instead of getting cropped. The 16px
-       left padding doubles as the pills' screen-edge offset. */
+    display: flex; flex-direction: column; align-items: flex-start; gap: 12px;
     padding: 20px 20px 20px 16px;
-    max-height: calc(100vh - 112px);
+    max-height: calc(100vh - 128px);
     overflow-y: auto;
     scrollbar-width: none;
     /* Only the pills themselves take clicks — the padded frame lets
        interactions pass through to the grid beneath. */
     pointer-events: none;
   }
-  #markups::-webkit-scrollbar { display: none; }
+  #side-rail::-webkit-scrollbar { display: none; }
+  #markups {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
+  }
+  /* Section headers appear only when the section has content. The
+     interventions header is a real element (it hosts the play button);
+     the markups header is generated. */
+  #markups:not(:empty)::before { content: 'Markups'; }
+  .rail-head {
+    display: flex; align-items: center; gap: 8px;
+    pointer-events: auto;
+  }
+  .rail-head > .rail-head-chip,
+  #markups:not(:empty)::before {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    /* Glass chip: the rail floats over live grid cells, so the header
+       carries its own background like every other floating pill. */
+    background: var(--glass-control);
+    border: 1px solid var(--border-2);
+    border-radius: 999px;
+    padding: 3px 10px;
+    box-shadow: var(--glass-control-shadow);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+  }
+  /* Hairline between the sections, only when both have content. */
+  #side-rail-divider { display: none; width: 128px; height: 1px; background: var(--border-2); }
+  #side-rail:has(#interventions:not(:empty)):has(#markups:not(:empty)) #side-rail-divider {
+    display: block;
+  }
   .markup-item { display: flex; align-items: center; gap: 6px; max-width: 240px; pointer-events: auto; }
   .markup-btn {
     min-width: 0;
@@ -1400,98 +1442,57 @@
     stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
   }
 
-  /* ----- Interventions: floating column on the top-left edge -----
-     Same pill language as the markups rail; a leading toggle dot shows
-     enabled state, the primary Re-run pill sits on top. */
+  /* ----- Interventions section: same pill language as markups; a leading
+     toggle dot shows enabled state, the primary Re-run pill sits on top. */
   #interventions {
-    position: fixed; right: 0; top: 50vh; z-index: 9;
-    transform: translateY(-50%);
-    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-    padding: 20px 16px 20px 20px;
-    max-height: calc(100vh - 112px);
-    overflow-y: auto;
-    scrollbar-width: none;
-    pointer-events: none;
-    transition: transform 340ms cubic-bezier(0.4, 0, 0.2, 1), opacity 340ms ease;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
   }
-  /* While the intervene panel owns the right rail, the tag rail yields. */
-  html.intervening #interventions {
-    transform: translate(120%, -50%);
-    opacity: 0;
-    pointer-events: none;
-  }
-  #interventions::-webkit-scrollbar { display: none; }
   .intervention-item { display: flex; align-items: center; gap: 6px; max-width: 300px; pointer-events: auto; }
-  .intervention-item.disabled .markup-btn { opacity: 0.55; }
+  /* The enable/disable dot is drawn INSIDE the tag. */
+  .intervention-item .iv-tag { display: flex; align-items: center; gap: 8px; }
+  .intervention-item .iv-tag > .iv-label {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
   .intervention-item .iv-toggle {
-    width: 22px; height: 22px; flex-shrink: 0;
-    border: 1px solid var(--border-2);
-    border-radius: 50%;
-    background: var(--glass-control);
-    box-shadow: var(--glass-control-shadow);
-    backdrop-filter: var(--glass-control-filter);
-    -webkit-backdrop-filter: var(--glass-control-filter);
-    display: inline-flex; align-items: center; justify-content: center;
-    cursor: pointer; padding: 0;
-    transition: border-color 0.12s;
-  }
-  .intervention-item .iv-toggle::after {
-    content: '';
-    width: 10px; height: 10px; border-radius: 50%;
-    border: 1.5px solid var(--highlight-orange);
+    width: 12px; height: 12px; flex-shrink: 0; box-sizing: border-box;
+    border: 1.5px solid var(--highlight-orange); border-radius: 50%;
     background: var(--highlight-orange);
-    box-sizing: border-box;
-    transition: background 0.12s;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s;
   }
-  .intervention-item.disabled .iv-toggle::after { background: transparent; }
+  /* Disabled: the TAG goes transparent (ghosted glass) — that alone
+     signals off. The dot is the toggle handle and always keeps the
+     selected (highlight-orange) color. */
+  .intervention-item.disabled .iv-tag {
+    color: var(--text-3);
+    background: rgba(255, 253, 240, 0.35);
+    border-color: rgba(60, 50, 30, 0.10);
+    box-shadow: none;
+  }
   .intervention-item .markup-delete { display: none; }
   .intervention-item:hover .markup-delete { display: inline-flex; }
+  /* Re-run: a compact play button living inside the section header. */
   #rerun-btn {
-    pointer-events: auto;
-    border: 1px solid var(--highlight-orange);
-    border-radius: 999px;
+    width: 18px; height: 18px; flex-shrink: 0;
+    border: none; border-radius: 50%;
     background: var(--highlight-orange); color: #ffffff;
-    height: 30px; padding: 0 16px;
-    font: inherit; font-size: 12px; font-weight: 600;
-    cursor: pointer;
-    box-shadow: 0 4px 14px rgba(255,138,0,0.35), 0 1px 4px rgba(60,50,30,0.10);
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(255,138,0,0.35);
     transition: background 0.12s, transform 0.1s, opacity 0.12s;
   }
+  #rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
   #rerun-btn:hover:not(:disabled) { background: #e87900; }
-  #rerun-btn:active:not(:disabled) { transform: scale(0.96); }
-  #rerun-btn:disabled { opacity: 0.5; cursor: default; box-shadow: none; }
+  #rerun-btn:active:not(:disabled) { transform: scale(0.92); }
+  #rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
-  /* ----- A/B variant toggle (baseline vs intervened), top right ----- */
-  /* Ambient corner actions: icon + small-caps label inked directly onto
-     the page background — no card, no glass. Clear guards the top-left of
-     the message-bubble area, Settings its top-right (the screen corner).
-     Clear only exists once a conversation exists. */
-  .ambient-action {
-    position: absolute; top: 10px; z-index: 12;
-    display: inline-flex; align-items: center; gap: 6px;
-    background: none; border: none; padding: 8px 10px;
-    color: var(--text-3); cursor: pointer;
-    font-family: inherit; font-size: 10px; font-weight: 600;
-    letter-spacing: 0.08em; text-transform: uppercase;
-    transition: color 0.15s ease, opacity 340ms ease,
-                transform 340ms cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .ambient-action:hover { color: var(--text); }
-  .ambient-action:active { transform: translateY(1px); }
-  .ambient-action[hidden] { display: none; }
-  #clear-btn { left: 8px; }
-  #settings-btn { right: 8px; }
-  /* The intervening status sinks the ambient chrome with the input box. */
-  html.intervening .ambient-action {
-    transform: translateY(-56px); opacity: 0; pointer-events: none;
-  }
-  html.picker-open .ambient-action { display: none !important; }
-
-  /* A/B toggle rides the horizontal center of the message-bubble area. */
+  /* ----- A/B variant toggle (baseline vs intervened): lives IN the
+     message stream as the first item — the first user message leaves
+     room for it. When no compare is active it is hidden and the stream
+     starts at its original place. ----- */
   #variant-toggle {
-    position: fixed; top: 12px; right: calc(450px / 2);
-    transform: translateX(50%);
-    z-index: 12;
+    align-self: center;
+    flex-shrink: 0;
     display: flex;
     height: 36px;
     border-radius: 18px;
@@ -1719,15 +1720,6 @@
     <!-- ===== RIGHT: chat ===== -->
     <div id="chat-col">
       <div id="chat-log"></div>
-      <!-- Ambient corner actions: inked straight onto the page background. -->
-      <button id="clear-btn" class="ambient-action" title="Clear conversation" hidden>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-        <span>Clear</span>
-      </button>
-      <button id="settings-btn" class="ambient-action" title="Generation settings" aria-label="Settings">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span>Settings</span>
-      </button>
     </div>
   </div>
 
@@ -1741,6 +1733,9 @@
 
   <!-- ===== Bottom-left: icon-only settings + GitHub button bar ===== -->
   <div id="corner-actions-left" class="corner-button-bar">
+  <button id="settings-btn" class="corner-action glass-hoverable" title="Generation settings" aria-label="Settings">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
   <a id="github-btn" class="corner-action glass-hoverable" href="https://github.com/WeZZard/jlens-qwen36" target="_blank" rel="noopener" title="View on GitHub">
     <svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>
     <span class="github-name"><span class="github-owner">WeZZard/</span>jlens-qwen36</span>
@@ -1752,6 +1747,7 @@
   </div>
   <div id="corner-actions" class="corner-button-bar">
     <button id="sessions-btn" class="corner-action glass-hoverable" title="Saved sessions"><span>Saved Sessions</span></button>
+    <button id="clear-btn" class="corner-action glass-hoverable" title="Clear conversation"><span>Clear</span></button>
   </div>
   <div id="sessions-menu" aria-live="polite">
     <div class="sessions-head">
@@ -1763,11 +1759,14 @@
     </div>
   </div>
 
-  <!-- ===== Markups: floating column, left edge ===== -->
-  <div id="markups" aria-label="Saved markups"></div>
-
-  <!-- ===== Interventions: floating column, top-left edge ===== -->
-  <div id="interventions" aria-label="Active interventions"></div>
+  <!-- ===== Side rail: one home on the left edge, vertically centered.
+       Interventions (with Re-run) on top, markups below, divided by a
+       hairline when both are present. ===== -->
+  <div id="side-rail">
+    <div id="interventions" aria-label="Active interventions"></div>
+    <div id="side-rail-divider"></div>
+    <div id="markups" aria-label="Saved markups"></div>
+  </div>
 
   <!-- ===== A/B variant toggle (baseline vs intervened) ===== -->
   <div id="variant-toggle" class="corner-button-bar" hidden>
@@ -2589,6 +2588,11 @@ async function loadInfo() {
     state.lensInfo = meta.lens || null;
     applyLayerBands(state.lensInfo, meta.model || null);
     if (state.gridRows.length) renderGrid({ keepScroll: true });
+    // Interventions gate on lensInfo (interventionsAvailable), and a
+    // restored session renders its rail BEFORE this fetch lands — refresh
+    // it so the Re-run play button isn't stuck in its pre-lens disabled
+    // state on first load.
+    renderInterventions();
   } catch (e) {
     console.warn('loadInfo failed:', e);
   }
@@ -2795,14 +2799,16 @@ function closeDetailCard() {
 // ----- Chat rendering -----
 function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
   const log = $('chat-log');
-  const clearBtn = $('clear-btn');
-  if (clearBtn) clearBtn.hidden = state.messages.length === 0;
   const previousScrollTop = log.scrollTop;
   log.innerHTML = '';
   if (state.messages.length === 0) {
     log.scrollTop = 0;
     return;
   }
+  // The A/B capsule is a persistent node (it carries its handlers) that
+  // renders as the FIRST item of the stream; [hidden] keeps it out of
+  // flow when no compare is active.
+  log.appendChild(variantToggleEl());
   // Token-level compare diff for the compared turn (skipped mid-stream —
   // the intervened run is still growing).
   const cmp = state.compare;
@@ -2976,22 +2982,29 @@ function smoothstep(edge0, edge1, x) {
 function bandRgbAtLayer(layer) {
   if (!LAYER_BANDS.length) return PAPER_RGB;
   const centers = LAYER_BANDS.map((band) => (band.coreStart + band.coreEnd) / 2);
-  if (layer <= centers[0]) return LAYER_BANDS[0].color;
-  for (let i = 1; i < LAYER_BANDS.length; i++) {
-    if (layer <= centers[i]) {
-      return mixRgb(
-        LAYER_BANDS[i - 1].color,
-        LAYER_BANDS[i].color,
-        smoothstep(centers[i - 1], centers[i], layer),
-      );
+  let rgb = LAYER_BANDS[LAYER_BANDS.length - 1].color;
+  if (layer <= centers[0]) {
+    rgb = LAYER_BANDS[0].color;
+  } else {
+    for (let i = 1; i < LAYER_BANDS.length; i++) {
+      if (layer <= centers[i]) {
+        rgb = mixRgb(
+          LAYER_BANDS[i - 1].color,
+          LAYER_BANDS[i].color,
+          (layer - centers[i - 1]) / (centers[i] - centers[i - 1]),
+        );
+        break;
+      }
     }
   }
+  // Tail: the last two columns fade linearly to paper so the grid's right
+  // edge meets the page background (kept outside the design doc's ramp).
   const last = LAYER_BANDS[LAYER_BANDS.length - 1];
-  return mixRgb(
-    last.color,
-    PAPER_RGB,
-    smoothstep(Math.max(centers[centers.length - 1], last.coreEnd - 2), last.coreEnd, layer),
-  );
+  const tailStart = Math.max(centers[centers.length - 1], last.coreEnd - 2);
+  if (layer > tailStart) {
+    rgb = mixRgb(rgb, PAPER_RGB, (layer - tailStart) / (last.coreEnd - tailStart));
+  }
+  return rgb;
 }
 
 function layerGuideBackground(layer) {
@@ -3036,9 +3049,20 @@ function cellOrangeRgb(cell) {
   return mixRgb(PAPER_RGB, HIGHLIGHT_ORANGE_RGB, amount);
 }
 
+// Selected analog: the strongest orange travel, still confidence-driven.
+function cellSelectedRgb(cell) {
+  const t = cellIntensity(cell);
+  const amount = t == null ? 0.70 : 0.70 + t * 0.30;
+  return mixRgb(PAPER_RGB, HIGHLIGHT_ORANGE_RGB, amount);
+}
+
+// Step two of every block background: wash 14% toward the layer's band.
+function bandWashed(rgb, layer) {
+  return rgbCss(mixRgb(rgb, bandRgbCached(layer), 0.14));
+}
+
 function layerCellBackground(cell, layer) {
-  const base = cell ? cellBlueRgb(cell) : PAPER_RGB;
-  return rgbCss(mixRgb(base, bandRgbCached(layer), 0.14));
+  return bandWashed(cell ? cellBlueRgb(cell) : PAPER_RGB, layer);
 }
 
 // Per-layer color caches: band colors are pure functions of the layer
@@ -3388,10 +3412,10 @@ function gridRowHtml(pos, selectedTokenKey, activePos, rowCtx = null) {
     let bg;
     if (selRow && state.selectedCell.layer === layer) {
       cls += ' selected';
-      bg = rgbCss(HIGHLIGHT_ORANGE_RGB);
+      bg = bandWashed(cellSelectedRgb(cell), layer);
     } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
       cls += ' matching-token';
-      bg = rgbCss(cellOrangeRgb(cell));
+      bg = bandWashed(cellOrangeRgb(cell), layer);
     } else {
       bg = layerCellBackground(cell, layer);
     }
@@ -4290,6 +4314,7 @@ function ablateIdsForCell(pos, layer) {
 
 function rerunHintText() {
   if (state.streaming) return 'Wait for the current stream to finish';
+  if (!interventionsAvailable()) return 'Interventions need a loaded lens';
   if (!enabledInterventions().length) return 'Enable at least one intervention first';
   const last = state.messages[state.messages.length - 1];
   if (!last || last.role !== 'assistant' || last.tokens.length === 0) {
@@ -4307,33 +4332,53 @@ function renderInterventions() {
   const specs = state.interventions;
   if (!specs.length) return;
 
+  // Section header chip: the title carries the enabled count and the
+  // Re-run action is the play button at its end.
+  const head = document.createElement('div');
+  head.className = 'rail-head';
+  const n = enabledInterventions().length;
+  const lbl = document.createElement('span');
+  lbl.className = 'rail-head-chip';
+  lbl.textContent = n ? `Intervene · ${n}` : 'Intervene';
+  head.appendChild(lbl);
   const rerun = document.createElement('button');
   rerun.id = 'rerun-btn';
   rerun.type = 'button';
-  const n = enabledInterventions().length;
-  rerun.textContent = n ? `Re-run ⊕${n}` : 'Re-run';
   rerun.disabled = !canRerun();
   rerun.title = rerunHintText();
+  rerun.setAttribute('aria-label', n ? `Re-run with ${n} intervention(s)` : 'Re-run');
+  rerun.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
   rerun.onclick = () => rerunWithInterventions();
-  wrap.appendChild(rerun);
+  head.appendChild(rerun);
+  wrap.appendChild(head);
 
   specs.forEach((s) => {
     const item = document.createElement('div');
     item.className = 'intervention-item' + (s.enabled ? '' : ' disabled');
 
-    const dot = document.createElement('button');
-    dot.className = 'iv-toggle';
-    dot.type = 'button';
-    dot.title = s.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable';
-    dot.setAttribute('aria-label', dot.title);
-    dot.onclick = (e) => { e.stopPropagation(); toggleIntervention(s.id); };
-    item.appendChild(dot);
-
     const btn = document.createElement('button');
-    btn.className = 'markup-btn glass-hoverable';
+    btn.className = 'markup-btn glass-hoverable iv-tag';
     btn.type = 'button';
-    btn.textContent = interventionLabel(s);
     btn.title = interventionTitle(s);
+    // The toggle is drawn inside the tag (a button cannot nest a button,
+    // so it is a switch-role span that swallows its clicks).
+    const dot = document.createElement('span');
+    dot.className = 'iv-toggle';
+    dot.setAttribute('role', 'switch');
+    dot.setAttribute('aria-checked', s.enabled ? 'true' : 'false');
+    dot.tabIndex = 0;
+    dot.title = s.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable';
+    dot.addEventListener('click', (e) => { e.stopPropagation(); toggleIntervention(s.id); });
+    dot.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault(); e.stopPropagation(); toggleIntervention(s.id);
+      }
+    });
+    const lbl = document.createElement('span');
+    lbl.className = 'iv-label';
+    lbl.textContent = interventionLabel(s);
+    btn.appendChild(lbl);
+    btn.appendChild(dot);
     if (!isPresentation()) btn.onclick = () => openInterventionEditor({ editId: s.id });
     item.appendChild(btn);
 
@@ -5568,14 +5613,20 @@ function computeCompareDiff() {
   return c.diff;
 }
 
+let _variantToggleEl = null;
+function variantToggleEl() {
+  _variantToggleEl = _variantToggleEl || document.getElementById('variant-toggle');
+  return _variantToggleEl;
+}
+
 function renderVariantToggle() {
-  const el = $('variant-toggle');
+  const el = variantToggleEl();
   if (!el) return;
   const c = state.compare;
   if (!c) { el.hidden = true; return; }
   el.hidden = false;
-  const base = $('variant-baseline');
-  const inter = $('variant-intervened');
+  const base = el.querySelector('#variant-baseline');
+  const inter = el.querySelector('#variant-intervened');
   base.querySelector('span').textContent = c.baselineHadInterventions ? 'Run A' : 'Baseline';
   base.classList.toggle('active', !c.activeIsIntervened);
   inter.classList.toggle('active', c.activeIsIntervened);
@@ -5595,8 +5646,8 @@ function renderVariantToggle() {
 
 // ----- Stream/view controls -----
 $('stop-btn').onclick = () => stopStreaming();
-$('variant-baseline').onclick = () => setActiveVariant(false);
-$('variant-intervened').onclick = () => setActiveVariant(true);
+variantToggleEl().querySelector('#variant-baseline').onclick = () => setActiveVariant(false);
+variantToggleEl().querySelector('#variant-intervened').onclick = () => setActiveVariant(true);
 // Minimap navigation: click the map to glide to that spot; click an
 // overflow chip to glide to the nearest highlighted rows beyond it.
 $('minimap-canvas').addEventListener('click', (e) => {
