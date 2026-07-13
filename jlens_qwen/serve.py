@@ -1222,6 +1222,171 @@ async def chat_stream(req: ChatStreamRequest):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+# ---------------------------------------------------------------------------
+# Intervention scan: goal-directed probe grid over layers × strength.
+#
+# For a concept edit (swap source→target, or steer ±source) the endpoint
+# runs a small grid of SHORT greedy probes — one layer × one alpha each —
+# classifies every outcome, and streams the results as SSE so the client
+# can paint the map incrementally:
+#   unchanged   output identical to the baseline        (too weak)
+#   derived     changed, not the literal target          (the win)
+#   parrot      output IS the literal target token       (too strong — the
+#                                                         mouth, not the mind)
+#   degenerate  repetition / collapse                    (way too strong)
+# Probes intentionally skip activation capture (make_stream() bare), so a
+# probe costs a prefill + max_tokens decode steps and nothing else.
+# ---------------------------------------------------------------------------
+
+class InterventionScanRequest(BaseModel):
+    messages: list[ChatMessage]
+    mode: str = "swap"          # "swap" | "steer" (validator rejects others)
+    token: str | None = None
+    token_id: int | None = None
+    target: str | None = None
+    target_id: int | None = None
+    layers: list[int] | None = None       # default: spread across the workspace band
+    alphas: list[float] | None = None     # default: mode-appropriate ladder
+    from_position: int = 0
+    max_tokens: int = 4
+    enable_thinking: bool = False
+
+
+def _classify_probe(ids: list[int], text: str, baseline: str, target_str: str | None) -> str:
+    t = text.strip().lower()
+    if t == baseline.strip().lower():
+        return "unchanged"
+    tgt = (target_str or "").strip().lower()
+    if tgt and t.startswith(tgt):
+        return "parrot"
+    if len(ids) >= 4 and len(set(ids)) <= 2:
+        return "degenerate"
+    return "derived"
+
+
+def _scan_default_layers(fitted: set[int]) -> list[int]:
+    """~6 write sites spread across the measured workspace band (or the
+    middle half of the fitted range when no bands were measured)."""
+    ws = next((b for b in (_bands or []) if b.get("name") == "workspace"), None)
+    if ws:
+        lo, hi = int(ws["start_layer"]), int(ws["end_layer"])
+    else:
+        lo = min(fitted) + (max(fitted) - min(fitted)) // 4
+        hi = min(fitted) + (max(fitted) - min(fitted)) * 3 // 4
+    span = [l for l in range(lo, hi + 1) if l in fitted]
+    if not span:
+        return sorted(fitted)[:6]
+    step = max(1, (len(span) - 1) // 5) if len(span) > 1 else 1
+    picked = span[::step]
+    if span[-1] not in picked:
+        picked.append(span[-1])
+    return picked[:7]
+
+
+@app.post("/api/intervention_scan")
+async def intervention_scan(req: InterventionScanRequest):
+    _require_active_mode()
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    if _lens is None:
+        raise HTTPException(400, "the intervention scan requires a loaded lens")
+    if not req.messages:
+        raise HTTPException(400, "messages is empty")
+    if req.mode not in ("swap", "steer"):
+        raise HTTPException(400, f"scan supports swap/steer, not {req.mode!r}")
+    tok = _model.tokenizer
+    fitted = set(_lens.source_layers)
+
+    # Reuse the spec validator for concept-token resolution (mode checks,
+    # text→first-token, swap-needs-target); the probe layer is a stand-in.
+    probe_spec = InterventionSpec(
+        mode=req.mode, layers=[sorted(fitted)[0]],
+        token=req.token, token_id=req.token_id,
+        target=req.target, target_id=req.target_id,
+        alpha=1.0, from_position=req.from_position,
+    )
+    resolved = _validate_and_resolve_specs(
+        [probe_spec], _lens, tok, _model.n_layers)[0]
+
+    layers = sorted(set(req.layers)) if req.layers else _scan_default_layers(fitted)
+    bad = [l for l in layers if l not in fitted and l != _model.n_layers - 1]
+    if bad:
+        raise HTTPException(400, f"layers {bad} have no fitted Jacobian")
+    alphas = req.alphas or ([0.5, 1, 2, 4, 8] if req.mode == "swap"
+                            else [50, 100, 200, 400, 800])
+    if not (1 <= req.max_tokens <= 16):
+        raise HTTPException(400, "max_tokens must be in [1, 16]")
+    if len(layers) * len(alphas) > 80:
+        raise HTTPException(400, f"scan too large: {len(layers)}×{len(alphas)} probes (cap 80)")
+
+    pm = [{"role": m.role, "content": m.content} for m in req.messages]
+    pids = tok.apply_chat_template(pm, add_generation_prompt=True,
+                                   enable_thinking=req.enable_thinking)
+    pids = pids if isinstance(pids, list) else list(pids)
+
+    eos_id = tok.eos_token_id
+
+    def _probe(edits) -> list[int]:
+        session = _model.make_stream()
+        if edits:
+            session.set_edits(edits)
+        logits, _ = session.extend(pids)
+        out: list[int] = []
+        for _ in range(req.max_tokens):
+            t = int(mx.argmax(logits.astype(mx.float32)).tolist())
+            if t == eos_id:
+                break
+            out.append(t)
+            logits, _ = session.extend([t])
+        return out
+
+    async def gen():
+        from .interventions import compile_edits
+        try:
+            yield _sse("scan_start", {
+                "mode": req.mode, "layers": layers, "alphas": alphas,
+                "token_str": resolved["token_str"],
+                "target_str": resolved["target_str"],
+                "from_position": req.from_position,
+                "n_probes": len(layers) * len(alphas),
+            })
+            async with _gpu_lock:
+                base_ids = await asyncio.to_thread(_probe, None)
+            base_text = tok.decode(base_ids, skip_special_tokens=True)
+            yield _sse("probe", {"kind": "baseline", "text": base_text})
+            k, total = 0, len(layers) * len(alphas)
+            for a in alphas:
+                for l in layers:
+                    async with _gpu_lock:
+                        edits = await asyncio.to_thread(
+                            lambda: compile_edits(
+                                _lens, _model, mode=req.mode, layers=[l],
+                                token_id=resolved["token_id"],
+                                target_id=resolved["target_id"],
+                                alpha=a, positions=None,
+                                from_pos=req.from_position,
+                                label=f"scan L{l} a={a:g}"))
+                        out_ids = await asyncio.to_thread(_probe, edits)
+                    text = tok.decode(out_ids, skip_special_tokens=True)
+                    k += 1
+                    yield _sse("probe", {
+                        "kind": "probe", "layer": l, "alpha": a,
+                        "text": text,
+                        "cls": _classify_probe(
+                            out_ids, text, base_text,
+                            resolved["target_str"] or resolved["token_str"]),
+                        "index": k, "total": total,
+                    })
+                    await asyncio.sleep(0)
+            yield _sse("scan_end", {})
+        except Exception as e:
+            import traceback
+            print(f"[intervention_scan] error: {e}\n{traceback.format_exc()}", flush=True)
+            yield _sse("error", {"error": str(e)})
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = Path(__file__).parent.parent / "web" / "index.html"
