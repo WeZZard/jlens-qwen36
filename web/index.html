@@ -1523,6 +1523,126 @@
   .loading { color: var(--accent); }
   .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
 
+  /* ----- Intervention scan modal: the layers × strength outcome map ----- */
+  #scan-backdrop {
+    position: fixed; inset: 0; z-index: 300;
+    background: rgba(60, 50, 30, 0.18);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #scan-backdrop[hidden] { display: none; }
+  #scan-popup {
+    background: #fffdf3;
+    border: 1px solid var(--border-2);
+    border-radius: 20px; corner-shape: squircle;
+    box-shadow: 0 24px 60px rgba(60, 50, 30, 0.25);
+    padding: 18px 20px 14px;
+    max-width: min(92vw, 760px); max-height: 86vh; overflow: auto;
+  }
+  #scan-popup h3 { margin: 0 0 2px; font-size: 15px; }
+  #scan-sub {
+    font-size: 12px; color: var(--text-2); margin-bottom: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #scan-map { display: grid; gap: 3px; margin-bottom: 10px; }
+  .scan-hdr {
+    font-size: 10px; color: var(--text-3);
+    display: flex; align-items: center; justify-content: center;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    min-height: 20px;
+  }
+  .scan-cell {
+    height: 26px; min-width: 44px;
+    border-radius: 6px; corner-shape: squircle;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; color: var(--text-3);
+    border: 1px dashed var(--border-2);
+    background: transparent;
+  }
+  .scan-cell.done { border-style: solid; cursor: pointer; color: transparent; }
+  .scan-cell.done:hover { filter: brightness(0.94); }
+  .scan-cell.armed { outline: 2px solid #e0483e; outline-offset: 1px; }
+  .scan-cell.cls-unchanged { background: rgba(60, 50, 30, 0.07); border-color: rgba(60, 50, 30, 0.14); }
+  .scan-cell.cls-derived { background: #3f9d63; border-color: #37905a; }
+  .scan-cell.cls-parrot { background: var(--highlight-orange); border-color: #e87900; }
+  .scan-cell.cls-degenerate { background: #e0483e; border-color: #c93a31; }
+  .scan-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-2); margin-bottom: 10px; }
+  .scan-legend i {
+    display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+    margin-right: 5px; vertical-align: -1px;
+  }
+  .scan-legend .sw-unchanged { background: rgba(60, 50, 30, 0.12); }
+  .scan-legend .sw-derived { background: #3f9d63; }
+  .scan-legend .sw-parrot { background: var(--highlight-orange); }
+  .scan-legend .sw-degenerate { background: #e0483e; }
+  .scan-foot { display: flex; align-items: center; gap: 10px; }
+  .scan-foot .spacer { flex: 1; }
+  #scan-progress { font-size: 11px; color: var(--text-3); }
+  /* Erase-all has no concept to scan for. */
+  #intervene-popup.iv-erase #iv-scan { display: none; }
+
+  /* ----- Output-first wish popover + strategy cards + lesson banner ----- */
+  #chat-log .msg.assistant .tok { cursor: pointer; }
+  html.presentation #chat-log .msg.assistant .tok { cursor: default; }
+  #wish-pop {
+    position: fixed; z-index: 320;
+    background: #fffdf3;
+    border: 1px solid var(--border-2);
+    border-radius: 14px; corner-shape: squircle;
+    box-shadow: 0 14px 40px rgba(60, 50, 30, 0.22);
+    padding: 12px 14px; width: 300px;
+  }
+  #wish-pop[hidden] { display: none; }
+  .wish-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+  .wish-row { display: flex; gap: 8px; }
+  #wish-input {
+    flex: 1; min-width: 0; height: 30px;
+    border: 1px solid var(--border-2); border-radius: 8px;
+    padding: 0 10px; font: inherit; font-size: 13px;
+    background: #ffffff;
+  }
+  .wish-hint { font-size: 11px; color: var(--text-3); margin-top: 8px; }
+  #scan-strategies {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 12px;
+  }
+  #scan-strategies[hidden] { display: none; }
+  .scan-card {
+    border: 1px solid var(--border-2); border-radius: 12px; corner-shape: squircle;
+    padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 8px;
+    background: rgba(255, 255, 255, 0.4);
+  }
+  .scan-card.active { border-color: var(--highlight-orange); box-shadow: 0 0 0 1px var(--highlight-orange) inset; }
+  .scan-card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }
+  .scan-card-body { font-size: 12px; color: var(--text-2); line-height: 1.5; }
+  .scan-card-body input {
+    width: 100%; box-sizing: border-box; height: 26px; margin-top: 4px;
+    border: 1px solid var(--border-2); border-radius: 7px;
+    padding: 0 8px; font: inherit; font-size: 12px; background: #ffffff;
+  }
+  .scan-card-go { align-self: flex-end; }
+  #wish-banner {
+    align-self: center; flex-shrink: 0;
+    max-width: 92%;
+    background: #fffdf3;
+    border: 1px solid var(--border-2);
+    border-radius: 14px; corner-shape: squircle;
+    box-shadow: 0 6px 22px rgba(60, 50, 30, 0.12);
+    padding: 10px 14px;
+    font-size: 12px; color: var(--text-2); line-height: 1.55;
+  }
+  #wish-banner .wish-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+  #wish-banner button {
+    border: 1px solid var(--border-2); border-radius: 999px;
+    background: #ffffff; color: var(--text);
+    font: inherit; font-size: 11px; padding: 4px 12px; cursor: pointer;
+  }
+  #wish-banner button.primary {
+    background: var(--highlight-orange); border-color: var(--highlight-orange); color: #ffffff; font-weight: 600;
+  }
+  #wish-banner .wish-x { margin-left: auto; border: none; background: transparent; color: var(--text-3); font-size: 13px; padding: 2px 4px; }
+  #wish-banner .recap-line { display: block; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+
   /* ===== Presentation mode: read-only viewer ===== */
   /* No input box, no clearing, no settings, no saving/deleting sessions,
      no adding/removing markups. Detail cards, saved-session loading, and
@@ -1537,6 +1657,7 @@
   html.presentation #detail .intervene-save,
   html.presentation #detail .row-actions,
   html.presentation #rerun-btn,
+  html.presentation #iv-scan,
   html.presentation #interventions .iv-toggle {
     display: none !important;
   }
@@ -1774,6 +1895,54 @@
     <button id="variant-intervened" class="corner-action glass-hoverable" type="button" title="Show the intervened run"><span>Intervened</span><span class="diff-chip" hidden></span></button>
   </div>
 
+  <!-- ===== Output-first wish: click an answer token, say what it should
+       have been, and scan for the edits that make it happen ===== -->
+  <div id="wish-pop" hidden>
+    <div class="wish-title">Make it say…</div>
+    <div class="wish-row">
+      <input id="wish-input" type="text" placeholder="the answer you want" autocomplete="off">
+      <button id="wish-go" type="button" class="ok">Find how</button>
+    </div>
+    <div class="wish-hint">instead of ⟨<span id="wish-current"></span>⟩ — scans for edits that make it happen</div>
+  </div>
+
+  <!-- ===== Intervention scan: layers × strength outcome map ===== -->
+  <div id="scan-backdrop" hidden>
+    <div id="scan-popup" role="dialog" aria-label="Intervention scan">
+      <h3>Intervention scan</h3>
+      <div id="scan-sub"></div>
+      <div id="scan-strategies" hidden>
+        <div class="scan-card" id="scan-card-conclusion">
+          <div class="scan-card-title">1 · Edit the conclusion</div>
+          <div class="scan-card-body" id="scan-card-conclusion-body"></div>
+          <button type="button" class="ok scan-card-go" data-strategy="conclusion">Scan</button>
+        </div>
+        <div class="scan-card" id="scan-card-premise">
+          <div class="scan-card-title">2 · Edit the premise</div>
+          <div class="scan-card-body">
+            replace what it <b>thinks</b>:
+            <input id="wish-premise-src" type="text" placeholder="concept it holds" autocomplete="off">
+            <input id="wish-premise-dst" type="text" placeholder="new concept" autocomplete="off">
+          </div>
+          <button type="button" class="ok scan-card-go" data-strategy="premise">Scan</button>
+        </div>
+      </div>
+      <div id="scan-map"></div>
+      <div class="scan-legend">
+        <span><i class="sw-unchanged"></i><span id="scan-lg-unchanged">unchanged — too weak</span></span>
+        <span><i class="sw-derived"></i><span id="scan-lg-derived">derived answer — works</span></span>
+        <span><i class="sw-parrot"></i><span id="scan-lg-parrot">literal target — forced</span></span>
+        <span><i class="sw-degenerate"></i><span id="scan-lg-degenerate">degenerate — far too strong</span></span>
+      </div>
+      <div class="scan-foot">
+        <span id="scan-progress"></span>
+        <span class="spacer"></span>
+        <button id="scan-rerun" type="button" class="ok" hidden>Re-run now</button>
+        <button id="scan-close" type="button" class="cancel">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Cursor tooltip for the intervening status ===== -->
   <div id="iv-cursor-tip" hidden></div>
 
@@ -1882,6 +2051,8 @@
       <div id="iv-preview-summary" class="iv-preview-summary"></div>
       <div class="actions" id="iv-actions">
         <button class="danger" id="iv-delete" type="button" hidden>Delete</button>
+        <button class="cancel" id="iv-scan" type="button"
+          title="Probe layers × strength on this conversation and map which settings work">Scan…</button>
         <span class="spacer"></span>
         <button class="cancel" id="iv-cancel" type="button">Cancel</button>
         <button class="ok" id="iv-ok" type="button">Save</button>
@@ -2809,6 +2980,11 @@ function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
   // renders as the FIRST item of the stream; [hidden] keeps it out of
   // flow when no compare is active.
   log.appendChild(variantToggleEl());
+  if (typeof _wishTick === 'function') {
+    _wishTick();
+    const wb = _wishBanner();
+    if (wb) log.appendChild(wb);
+  }
   // Token-level compare diff for the compared turn (skipped mid-stream —
   // the intervened run is still growing).
   const cmp = state.compare;
@@ -4820,7 +4996,8 @@ function commitInterventionEditor() {
   // when re-saving an existing same-purpose spec.
   const alpha = (mode === 'steer' || mode === 'suppress')
     ? alphaFromSlider($('iv-alpha').value)
-    : (editingSpec && editingSpec.mode === mode ? editingSpec.alpha : 1);
+    : (mode === 'swap' && _ivDraft.scanAlpha != null ? _ivDraft.scanAlpha
+       : (editingSpec && editingSpec.mode === mode ? editingSpec.alpha : 1));
   const spec = {
     id: _ivDraft.editId || nextInterventionId(),
     enabled: editingSpec ? editingSpec.enabled : true,
@@ -6068,6 +6245,463 @@ $('set-temp').addEventListener('input', () => {
 $('iv-ok').onclick = commitInterventionEditor;
 $('iv-cancel').onclick = cancelInterventionEditor;
 $('iv-delete').onclick = deleteFromInterventionEditor;
+
+// ----- Intervention scan: probe grid over layers × strength -----
+// Streams /api/intervention_scan and paints the outcome map live. Each
+// completed cell is clickable: it adopts that (layer, α) into the draft
+// (panel context) or into a wish spec (output-first context).
+let _scanAbort = null;
+let _scanContext = 'panel';   // 'panel' | 'wish-conclusion' | 'wish-premise'
+
+// Conversation context for probes: everything except the trailing
+// assistant turn — probes regenerate it, exactly like Re-run.
+function _scanMessages() {
+  const msgs = state.messages.map((m) => ({
+    role: m.role,
+    content: m.role === 'user'
+      ? (m.content || m.tokens.map((t) => t.text).join(''))
+      : m.tokens.map((t) => t.text).join(''),
+  }));
+  while (msgs.length && msgs[msgs.length - 1].role === 'assistant') msgs.pop();
+  return msgs;
+}
+
+function openInterventionScan(opts = {}) {
+  if (!_ivDraft || isPresentation()) return;
+  _scanContext = 'panel';
+  $('scan-strategies').hidden = true;
+  $('scan-rerun').hidden = true;
+  const uiMode = _segGet('iv-mode', 'mode') || 'swap';
+  if (uiMode === 'ablate') return;
+  const token = $('iv-token').value;
+  if (!token) { $('iv-token').focus(); return; }
+  const target = $('iv-target').value;
+  if (uiMode === 'swap' && !target) { $('iv-target').focus(); return; }
+  const msgs = _scanMessages();
+  if (!msgs.length) return;
+  const posScope = _segGet('iv-pos-scope', 'scope') || 'from';
+  const fromPos = posScope === 'gen'
+    ? (firstGeneratedPos() ?? 0) : _ivDraft.origin.pos;
+  const body = {
+    messages: msgs,
+    mode: uiMode === 'swap' ? 'swap' : 'steer',
+    token,
+    target: uiMode === 'swap' ? target : null,
+    from_position: fromPos,
+    max_tokens: opts.maxTokens || 4,
+  };
+  if (opts.layers) body.layers = opts.layers;
+  if (opts.alphas) body.alphas = opts.alphas;
+  else if (uiMode === 'suppress') body.alphas = [-50, -100, -200, -400, -800];
+  _runInterventionScan(body, uiMode);
+}
+
+async function _runInterventionScan(body, uiMode) {
+  $('scan-backdrop').hidden = false;
+  $('scan-map').innerHTML = '';
+  const what = uiMode === 'swap'
+    ? `Replace ⟨${body.token.trim()}⟩ → ⟨${(body.target || '').trim()}⟩`
+    : `${uiMode === 'suppress' ? 'Remove' : 'Add'} ⟨${body.token.trim()}⟩`;
+  $('scan-sub').textContent = `${what} · from row ${body.from_position}`;
+  $('scan-progress').textContent = 'starting…';
+  const ctrl = new AbortController();
+  _scanAbort = ctrl;
+  const cellId = (l, a) =>
+    'scan-c-' + l + '-' + String(a).replace('.', '_').replace('-', 'm');
+  try {
+    const resp = await fetch(API + '/api/intervention_scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const lines = frame.split('\n');
+        let event = 'message';
+        let data = '';
+        for (const ln of lines) {
+          if (ln.startsWith('event: ')) event = ln.slice(7).trim();
+          else if (ln.startsWith('data: ')) data += ln.slice(6);
+        }
+        if (!data) continue;
+        let obj;
+        try { obj = JSON.parse(data); } catch (err) { continue; }
+        if (event === 'scan_start') {
+          _buildScanMap(obj, cellId);
+        } else if (event === 'probe') {
+          if (obj.kind === 'baseline') {
+            $('scan-sub').textContent = `${what} · baseline: “${obj.text.trim()}”`;
+            if (_scanContext !== 'panel' && _wish) _wish.outcomes.baseline = obj.text.trim();
+          } else {
+            const el = document.getElementById(cellId(obj.layer, obj.alpha));
+            if (el) {
+              // In a wish-CONCLUSION scan the wish word IS the swap target,
+              // so "says the wish" arrives as `parrot` and `derived` means
+              // the answer strayed to some OTHER word. Swap the hues so
+              // green is always "achieves this stage's goal".
+              let shown = obj.cls;
+              if (_scanContext === 'wish-conclusion') {
+                if (obj.cls === 'parrot') shown = 'derived';
+                else if (obj.cls === 'derived') shown = 'parrot';
+              }
+              const label = _scanLegendText(_scanContext)[shown] || shown;
+              el.classList.add('done', 'cls-' + shown);
+              el.title = `L${obj.layer} · α ${obj.alpha}\n${label}: “${obj.text.trim()}”\nclick to use these settings`;
+              el.onclick = _scanContext === 'panel'
+                ? () => _applyScanChoice(obj.layer, obj.alpha, uiMode)
+                : () => _wishCellClick(el, obj, shown);
+            }
+            $('scan-progress').textContent = `probe ${obj.index}/${obj.total}`;
+          }
+        } else if (event === 'scan_end') {
+          $('scan-progress').textContent = 'done — click a cell to adopt its settings';
+        } else if (event === 'error') {
+          $('scan-progress').textContent = 'error: ' + obj.error;
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== 'AbortError') {
+      $('scan-progress').textContent = 'failed: ' + (e.message || e);
+      console.error('intervention scan failed:', e);
+    }
+  } finally {
+    if (_scanAbort === ctrl) _scanAbort = null;
+  }
+}
+
+function _scanLegendText(context) {
+  if (context === 'wish-conclusion') {
+    return {
+      unchanged: 'unchanged — too weak',
+      derived: 'says your word — the word flips',
+      parrot: 'strays to another word — off target',
+      degenerate: 'degenerate — far too strong',
+    };
+  }
+  return {
+    unchanged: 'unchanged — too weak',
+    derived: 'derived answer — works',
+    parrot: 'literal target — forced',
+    degenerate: 'degenerate — far too strong',
+  };
+}
+
+function _applyScanLegend(context) {
+  const t = _scanLegendText(context);
+  $('scan-lg-unchanged').textContent = t.unchanged;
+  $('scan-lg-derived').textContent = t.derived;
+  $('scan-lg-parrot').textContent = t.parrot;
+  $('scan-lg-degenerate').textContent = t.degenerate;
+}
+
+function _buildScanMap(g, cellId) {
+  _applyScanLegend(_scanContext);
+  const map = $('scan-map');
+  map.style.gridTemplateColumns = `56px repeat(${g.layers.length}, 1fr)`;
+  map.innerHTML = '';
+  const hdr = (text) => {
+    const d = document.createElement('div');
+    d.className = 'scan-hdr';
+    d.textContent = text;
+    return d;
+  };
+  map.appendChild(hdr('α \\ L'));
+  for (const l of g.layers) map.appendChild(hdr('L' + l));
+  for (const a of g.alphas.slice().reverse()) {   // strongest on top
+    map.appendChild(hdr(String(a)));
+    for (const l of g.layers) {
+      const c = document.createElement('div');
+      c.className = 'scan-cell';
+      c.id = cellId(l, a);
+      c.textContent = '·';
+      map.appendChild(c);
+    }
+  }
+}
+
+function _applyScanChoice(layer, alpha, uiMode) {
+  if (!_ivDraft) { closeInterventionScan(); return; }
+  _ivDraft.pickedLayers = [layer];
+  _segSet('iv-layer-scope', 'scope', 'custom');
+  if (uiMode === 'steer' || uiMode === 'suppress') {
+    _setAlphaSlider(Math.abs(alpha));
+    _ivDraft.scanAlpha = null;
+  } else {
+    // Replace commits α = 1 by design; a scanned strength overrides it.
+    _ivDraft.scanAlpha = alpha;
+  }
+  syncInterventionEditorFields();
+  closeInterventionScan();
+}
+
+function closeInterventionScan() {
+  if (_scanAbort) { _scanAbort.abort(); _scanAbort = null; }
+  $('scan-backdrop').hidden = true;
+}
+
+$('iv-scan').onclick = () => openInterventionScan();
+$('scan-close').onclick = () => closeInterventionScan();
+$('scan-backdrop').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeInterventionScan();
+});
+
+// ----- Output-first wishes: click an answer token → "Make it say…" -----
+// The wish is a small persistent journey object; the learning arc is
+// conclusion edit (force the word) → inspect the workspace (it still
+// thinks the old concept) → premise edit (change the thought) → recap.
+let _wish = null;       // { pos, outputTok, wishText, stage, pending, specIds, outcomes, dismissed }
+let _wishSeed = null;   // pending popover target
+
+$('chat-log').addEventListener('click', (e) => {
+  const t = e.target.closest('.tok');
+  if (!t || isPresentation() || state.streaming) return;
+  const mi = +t.dataset.msgIdx;
+  const m = state.messages[mi];
+  if (!m || m.role !== 'assistant') return;
+  const ti = +t.dataset.tokenIdx;
+  const tok = m.tokens[ti];
+  if (!tok || !normalizeTokenText(tok.text)) return;
+  // BPE splits words ("Beijing" → "Be"+"ijing"): expand the click to the
+  // whole word so the wish targets the word, anchored at its first token
+  // (the app's first-token convention everywhere else).
+  let lo = ti;
+  while (lo > 0 && !/^\s/.test(m.tokens[lo].text) &&
+         m.tokens[lo - 1] && !/\s$/.test(m.tokens[lo - 1].text) &&
+         normalizeTokenText(m.tokens[lo - 1].text) && ti - lo < 6) lo--;
+  let hi = ti;
+  while (hi + 1 < m.tokens.length && !/^\s/.test(m.tokens[hi + 1].text) &&
+         !/\s$/.test(m.tokens[hi].text) &&
+         normalizeTokenText(m.tokens[hi + 1].text) && hi - ti < 6) hi++;
+  const word = m.tokens.slice(lo, hi + 1).map((x) => x.text).join('');
+  _wishSeed = { pos: m.tokens[lo].globalPos, outputTok: word };
+  $('wish-current').textContent = word.trim();
+  $('wish-input').value = '';
+  const pop = $('wish-pop');
+  pop.hidden = false;
+  const r = t.getBoundingClientRect();
+  const pr = pop.getBoundingClientRect();
+  let x = Math.min(innerWidth - pr.width - 8, r.left);
+  let y = r.bottom + 8;
+  if (y + pr.height > innerHeight - 8) y = r.top - pr.height - 8;
+  pop.style.left = Math.max(8, x) + 'px';
+  pop.style.top = Math.max(8, y) + 'px';
+  $('wish-input').focus();
+  e.stopPropagation();
+});
+document.addEventListener('click', (e) => {
+  const pop = $('wish-pop');
+  if (pop.hidden || pop.contains(e.target)) return;
+  if (e.target.closest && e.target.closest('.tok')) return;
+  pop.hidden = true;
+});
+
+function startWish() {
+  const wishText = $('wish-input').value.trim();
+  if (!wishText || !_wishSeed) return;
+  _wish = { ..._wishSeed, wishText, stage: null, pending: null,
+            specIds: {}, outcomes: {}, dismissed: false };
+  $('wish-pop').hidden = true;
+  openWishModal('conclusion');
+}
+$('wish-go').onclick = startWish;
+$('wish-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); startWish(); }
+});
+
+function openWishModal(strategy) {
+  if (!_wish) return;
+  _scanContext = 'wish-' + strategy;
+  $('scan-backdrop').hidden = false;
+  $('scan-map').innerHTML = '';
+  $('scan-progress').textContent = '';
+  $('scan-rerun').hidden = true;
+  $('scan-strategies').hidden = false;
+  $('scan-sub').textContent =
+    `Make it say ⟨${_wish.wishText}⟩ instead of ⟨${_wish.outputTok.trim()}⟩`;
+  $('scan-card-conclusion-body').textContent =
+    `Replace ⟨${_wish.outputTok.trim()}⟩ → ⟨${_wish.wishText}⟩ — swap the answer word itself: “just change the word.”`;
+  document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
+  $('scan-card-' + strategy).classList.add('active');
+}
+
+function runWishScan(strategy, opts = {}) {
+  if (!_wish) return;
+  let token, target, fromPos;
+  if (strategy === 'conclusion') {
+    token = _wish.outputTok;
+    target = _wish.wishText;
+    // Swap the answer word's coordinates EVERYWHERE: the word's concept
+    // is loaded across the late prompt rows and reaches the emitting
+    // position via attention — anchoring at the answer position alone
+    // is provably too late (the logits form at p-1 from earlier rows).
+    fromPos = 0;
+  } else {
+    token = $('wish-premise-src').value;
+    target = $('wish-premise-dst').value;
+    if (!token) { $('wish-premise-src').focus(); return; }
+    if (!target) { $('wish-premise-dst').focus(); return; }
+    fromPos = 0;
+  }
+  // Concepts usually live as space-prefixed tokens; mirror the source's
+  // leading space onto a bare typed target.
+  if (!/^\s/.test(target) && /^\s/.test(token)) target = ' ' + target;
+  const msgs = _scanMessages();
+  if (!msgs.length) return;
+  _scanContext = 'wish-' + strategy;
+  document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
+  $('scan-card-' + strategy).classList.add('active');
+  $('scan-rerun').hidden = true;
+  const body = { messages: msgs, mode: 'swap', token, target,
+                 from_position: fromPos, max_tokens: opts.maxTokens || 4 };
+  if (opts.layers) body.layers = opts.layers;
+  if (opts.alphas) body.alphas = opts.alphas;
+  _runInterventionScan(body, 'swap');
+}
+document.querySelectorAll('.scan-card-go').forEach((b) => {
+  b.onclick = () => runWishScan(b.dataset.strategy);
+});
+
+// Wish-context cell click: a GREEN cell (this stage's goal) adopts at
+// once; any other outcome must be confirmed with a second click, with
+// the probe's actual output spelled out — no silent adoption of a
+// setting that was measured to fail.
+let _scanArmed = null;
+function _wishCellClick(el, obj, shown) {
+  const said = (obj.text || '').trim();
+  if (shown === 'derived') {
+    _scanArmed = null;
+    _wishAdopt(obj.layer, obj.alpha, said);
+    return;
+  }
+  if (_scanArmed === el) {
+    _scanArmed = null;
+    el.classList.remove('armed');
+    _wishAdopt(obj.layer, obj.alpha, said);
+    return;
+  }
+  if (_scanArmed) _scanArmed.classList.remove('armed');
+  _scanArmed = el;
+  el.classList.add('armed');
+  $('scan-progress').textContent =
+    `⚠ this setting produced “${said}”, not ⟨${_wish ? _wish.wishText : ''}⟩ — click again to adopt anyway`;
+}
+
+function _wishAdopt(layer, alpha, said) {
+  if (!_wish) return;
+  const strategy = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
+  let token, target, pos;
+  if (strategy === 'conclusion') {
+    token = _wish.outputTok; target = _wish.wishText;
+    pos = 0;   // see runWishScan: the word's coordinates live across rows
+  } else {
+    token = $('wish-premise-src').value; target = $('wish-premise-dst').value; pos = 0;
+  }
+  if (!/^\s/.test(target) && /^\s/.test(token)) target = ' ' + target;
+  // The premise stage isolates itself: switch the conclusion edit off so
+  // the re-run shows the premise edit alone.
+  if (strategy === 'premise' && _wish.specIds.conclusion) {
+    const prev = interventionById(_wish.specIds.conclusion);
+    if (prev && prev.enabled) toggleIntervention(prev.id);
+  }
+  if (_wish.specIds[strategy]) removeIntervention(_wish.specIds[strategy]);
+  const spec = { id: nextInterventionId(), enabled: true, mode: 'swap',
+    token, tokenId: null, target, targetId: null,
+    alpha, layers: [layer],
+    scope: { type: 'from', pos },
+    origin: { pos: strategy === 'conclusion' ? _wish.pos : 0, layer },
+    ablateTokenIds: null };
+  addIntervention(spec);
+  _wish.specIds[strategy] = spec.id;
+  let note = `adopted L${layer} · α ${alpha} — the probe said “${said}”`;
+  if ((state.settings.temp || 0) > 0) {
+    note += ` · temp ${state.settings.temp} adds sampling noise on re-run`;
+  }
+  $('scan-progress').textContent = note;
+  $('scan-rerun').hidden = false;
+}
+$('scan-rerun').onclick = () => {
+  if (!_wish) return;
+  _wish.pending = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
+  closeInterventionScan();
+  rerunWithInterventions();
+};
+
+// Stage advance: when a wish-triggered re-run has finished, record the
+// outcome and surface the next lesson step (called from renderChat).
+function _wishTick() {
+  if (!_wish || !_wish.pending || state.streaming) return;
+  const last = state.messages[state.messages.length - 1];
+  if (!last || last.role !== 'assistant' || !last.tokens.length) return;
+  _wish.outcomes[_wish.pending] = last.tokens.map((t) => t.text).join('').trim();
+  _wish.stage = _wish.pending === 'conclusion' ? 'inspect' : 'recap';
+  _wish.pending = null;
+}
+
+function _wishBanner() {
+  if (!_wish || _wish.dismissed || isPresentation()) return null;
+  if (_wish.pending || !_wish.stage) return null;
+  const div = document.createElement('div');
+  div.id = 'wish-banner';
+  const mkbtn = (label, primary) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (primary) b.classList.add('primary');
+    return b;
+  };
+  const actions = document.createElement('div');
+  actions.className = 'wish-actions';
+  if (_wish.stage === 'inspect') {
+    const msg = document.createElement('span');
+    const got = (_wish.outcomes.conclusion || '').trim();
+    const hit = got.toLowerCase().startsWith(_wish.wishText.trim().toLowerCase());
+    msg.innerHTML = hit
+      ? `It says ⟨${escapeHtml(got)}⟩ — but look at the workspace band: what does it still <b>think</b>?`
+      : `It changed — but to ⟨${escapeHtml(got)}⟩, not ⟨${escapeHtml(_wish.wishText)}⟩: swapping the word's coordinates knocked it off course without landing your word. Changing the <b>thought</b> is more reliable:`;
+    div.appendChild(msg);
+    const show = mkbtn('Show me');
+    show.onclick = () => {
+      const ws = LAYER_BANDS.find((b) => b.id === 'workspace') || LAYER_BANDS[0];
+      const mid = Math.round((ws.coreStart + ws.coreEnd) / 2);
+      const li = state.layers.indexOf(mid);
+      _minimapGlideTo(Math.max(0, _wish.pos - 2), li >= 0 ? li : null);
+    };
+    const next = mkbtn('Try the premise edit →', true);
+    next.onclick = () => openWishModal('premise');
+    actions.append(show, next);
+  } else {
+    const title = document.createElement('span');
+    title.innerHTML = '<b>Lesson recap</b>';
+    div.appendChild(title);
+    const line = (label, text) => {
+      const l = document.createElement('span');
+      l.className = 'recap-line';
+      l.textContent = `${label}: “${text || '—'}”`;
+      return l;
+    };
+    div.appendChild(line('baseline', _wish.outcomes.baseline));
+    div.appendChild(line('conclusion edit (forced — workspace unchanged)', _wish.outcomes.conclusion));
+    div.appendChild(line('premise edit (derived — workspace changed)', _wish.outcomes.premise));
+  }
+  const x = mkbtn('×');
+  x.className = 'wish-x';
+  x.onclick = () => { _wish.dismissed = true; renderChat(); };
+  actions.appendChild(x);
+  div.appendChild(actions);
+  return div;
+}
 $('iv-alpha').addEventListener('input', () => {
   const slider = $('iv-alpha');
   updateRangeProgress(slider);
