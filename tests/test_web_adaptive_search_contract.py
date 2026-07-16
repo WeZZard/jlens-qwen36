@@ -9,6 +9,7 @@ from pathlib import Path
 
 
 HTML = (Path(__file__).parents[1] / "web" / "index.html").read_text()
+SERVE = (Path(__file__).parents[1] / "jlens_qwen" / "serve.py").read_text()
 
 
 def test_reply_search_replaces_the_model_composer_in_one_panel():
@@ -41,17 +42,58 @@ def test_deeper_search_is_one_disabled_two_minute_extension():
     assert "search.elapsedSeconds = search.budgetSeconds" in HTML
 
 
-def test_modal_search_still_guards_stale_apply():
+def test_modal_search_still_guards_stale_recipe_runs():
     assert "const modalWishSearch = !!(_wish && _wish.search)" in HTML
-    assert "state.streaming || !wishSearchContextIsCurrent(wish)" in HTML
+    assert "function runIsRecipeBaseline(run, recipe)" in HTML
+    assert "runAssistantText(run) === recipe.baselineResponse" in HTML
+    assert "runContextKey(run) === recipe.contextKey" in HTML
     assert "enabledInterventions().length === 0" in HTML
 
 
-def test_only_exact_verified_candidates_can_be_applied():
+def test_only_exact_verified_candidates_receive_verified_recipe_status():
     assert "obj.verified === true" in HTML
     assert "obj.exact_response_match === true" in HTML
+    assert "upsertWishInterventionRecipe(obj, 'verified')" in HTML
     assert "scope: { type: 'at', pos: Number(cell.position) }" in HTML
-    assert "rerunWithInterventions({ tempOverride: 0 })" in HTML
+    assert "await rerunWithSpecs(recipeToSpecs(recipe)" in HTML
+    assert "tempOverride: 0" in HTML
+
+
+def test_sidebar_separates_markups_recipes_and_manual_interventions():
+    markups = HTML.index('id="markups" aria-label="Saved markups"')
+    recipes = HTML.index('id="intervention-recipes" role="radiogroup" aria-label="Intervention recipes"')
+    manual = HTML.index('id="interventions" aria-label="Manual interventions"')
+    assert markups < recipes < manual
+    assert "Intervention recipes · ${recipes.length}" in HTML
+    assert "Manual interventions · ${specs.length}" in HTML
+
+
+def test_recipe_preview_reuses_panel_and_minimap_without_editable_fields():
+    panel = HTML.index('id="intervene-popup"')
+    recipe = HTML.index('id="iv-recipe-view"', panel)
+    panel_end = HTML.index('</div>\n  </div>\n</div>\n\n<script>', recipe)
+    recipe_markup = HTML[recipe:panel_end]
+    assert 'id="iv-recipe-cells"' in recipe_markup
+    assert 'id="iv-recipe-run"' in recipe_markup
+    assert '<input' not in recipe_markup
+    assert "recipe.cells.map((cell)" in HTML
+    assert "scope: { type: 'at', pos: Number(cell.position) }" in HTML
+    assert 'id="minimap" hidden aria-label="Intervention minimap"' in HTML
+
+
+def test_recipe_choice_exposes_every_cell_strength_and_is_immutable():
+    assert "btn.setAttribute('role', 'radio')" in HTML
+    assert "state.selectedInterventionRecipeId = recipe.id" in HTML
+    assert "meta.textContent = recipeCellSummary(recipe)" in HTML
+    assert "alpha.textContent = `α ${formatAlpha(cell.alpha)}`" in HTML
+    assert "_ivDraft = null" in HTML
+    assert "Duplicate as manual" in HTML
+
+
+def test_saved_sessions_round_trip_recipe_state():
+    assert "interventionRecipes: list[dict[str, Any]] = []" in SERVE
+    assert "selectedInterventionRecipeId: str | None = None" in SERVE
+    assert "interventionRecipes: state.interventionRecipes.map(persistRecipe)" in HTML
 
 
 def test_legacy_scan_is_not_exposed_from_the_detail_editor():

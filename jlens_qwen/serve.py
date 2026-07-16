@@ -1040,6 +1040,8 @@ class SessionSaveRequest(BaseModel):
     # Client-defined shapes, persisted verbatim (pydantic drops unknown
     # keys, so these MUST be declared to round-trip).
     interventions: list[dict[str, Any]] = []
+    interventionRecipes: list[dict[str, Any]] = []
+    selectedInterventionRecipeId: str | None = None
     appliedInterventions: list[dict[str, Any]] = []
     compare: dict[str, Any] | None = None
     # Fire-and-forget full-fidelity save at stream end. localStorage is

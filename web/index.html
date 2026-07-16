@@ -1010,6 +1010,64 @@
   #intervene-popup .actions button.danger:hover { background: rgba(224,72,62,0.12); }
   #intervene-popup .actions button.danger[hidden] { display: none; }
 
+  /* Read-only mode for a system-composed intervention recipe.  It shares
+     the existing panel shell, live grid preview, and minimap, but presents
+     values as prose/table rows instead of disabled editor controls. */
+  #iv-recipe-view[hidden], #iv-editor-view[hidden] { display: none; }
+  .iv-recipe-head {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 14px; margin-bottom: 4px;
+  }
+  .iv-recipe-head h3 { margin: 0 0 3px; }
+  .iv-recipe-direction {
+    color: var(--settings-text-secondary);
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .iv-recipe-status {
+    flex-shrink: 0; padding: 4px 8px; border-radius: 999px;
+    border: 1px solid var(--glass-recessed-border);
+    color: var(--settings-text-tertiary); font-size: 9px; font-weight: 750;
+    letter-spacing: 0.07em; text-transform: uppercase;
+  }
+  .iv-recipe-status.verified { color: #3f8f55; border-color: rgba(63,143,85,0.34); }
+  .iv-recipe-status.promising { color: var(--settings-accent); border-color: rgba(255,159,10,0.42); }
+  .iv-recipe-readonly-note {
+    margin: 12px 0; padding: 8px 10px; border-radius: 10px;
+    background: var(--settings-control-fill); color: var(--settings-text-tertiary);
+    font-size: 11px;
+  }
+  .iv-recipe-cells { display: grid; gap: 7px; }
+  .iv-recipe-cell {
+    display: grid; grid-template-columns: 24px 1fr auto; align-items: center;
+    gap: 9px; padding: 9px 10px; border: 1px solid var(--glass-recessed-border);
+    border-radius: 12px; background: rgba(255,255,255,0.24);
+  }
+  .iv-recipe-cell-index {
+    width: 22px; height: 22px; display: inline-flex; align-items: center;
+    justify-content: center; border-radius: 50%; background: var(--settings-accent);
+    color: #fff; font-size: 10px; font-weight: 750;
+  }
+  .iv-recipe-cell-location {
+    color: var(--settings-text); font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .iv-recipe-cell-role { margin-top: 2px; color: var(--settings-text-tertiary); font-size: 10px; }
+  .iv-recipe-cell-alpha {
+    color: var(--settings-accent); font: 700 12px ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .iv-recipe-observation { margin-top: 14px; }
+  .iv-recipe-label {
+    display: block; margin-bottom: 5px; color: var(--settings-text-tertiary);
+    font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  #iv-recipe-output {
+    margin: 0; padding: 10px 12px; max-height: 92px; overflow: auto;
+    border-radius: 12px; background: var(--settings-control-fill);
+    color: var(--settings-text-secondary); font: 11px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    white-space: pre-wrap;
+  }
+  #iv-recipe-actions { margin-top: 16px; }
+  #iv-recipe-run:disabled, #iv-recipe-duplicate:disabled { opacity: 0.42; cursor: default; }
+
   /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
   /* No top padding so the sticky layer-header aligns with the very top of the
      grid column. Bottom padding is updated from the actual fixed overlays. */
@@ -1387,7 +1445,9 @@
     pointer-events: none;
   }
   #side-rail::-webkit-scrollbar { display: none; }
-  #markups {
+  #markups,
+  #intervention-recipes,
+  #interventions {
     display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
   }
   /* Section headers appear only when the section has content. The
@@ -1413,9 +1473,11 @@
     backdrop-filter: var(--glass-control-filter);
     -webkit-backdrop-filter: var(--glass-control-filter);
   }
-  /* Hairline between the sections, only when both have content. */
-  #side-rail-divider { display: none; width: 128px; height: 1px; background: var(--border-2); }
-  #side-rail:has(#interventions:not(:empty)):has(#markups:not(:empty)) #side-rail-divider {
+  /* Hairlines only separate adjacent populated teaching sections. */
+  .side-rail-divider { display: none; width: 168px; height: 1px; background: var(--border-2); }
+  #side-rail:has(#markups:not(:empty)):has(#intervention-recipes:not(:empty)) #side-rail-divider-1,
+  #side-rail:has(#markups:not(:empty)):has(#interventions:not(:empty)) #side-rail-divider-1,
+  #side-rail:has(#intervention-recipes:not(:empty)):has(#interventions:not(:empty)) #side-rail-divider-2 {
     display: block;
   }
   .markup-item { display: flex; align-items: center; gap: 6px; max-width: 240px; pointer-events: auto; }
@@ -1489,8 +1551,43 @@
   }
   .intervention-item .markup-delete { display: none; }
   .intervention-item:hover .markup-delete { display: inline-flex; }
+  /* Immutable recipes reuse the same rail-pill language, but are radio
+     choices rather than editable/toggleable specs.  The second line keeps
+     every exact cell's signal strength visible without opening the panel. */
+  .recipe-item {
+    display: flex; align-items: center; gap: 6px;
+    max-width: min(360px, calc(100vw - 32px)); pointer-events: auto;
+  }
+  .recipe-item .recipe-tag {
+    display: grid; grid-template-columns: 12px minmax(0, 1fr);
+    column-gap: 8px; row-gap: 2px; align-items: center;
+    max-width: 340px; white-space: normal;
+  }
+  .recipe-radio {
+    grid-row: 1 / 3; width: 12px; height: 12px; box-sizing: border-box;
+    border: 1.5px solid var(--highlight-orange); border-radius: 50%;
+    background: transparent;
+  }
+  .recipe-item.selected .recipe-radio {
+    background: var(--highlight-orange);
+    box-shadow: inset 0 0 0 2px rgba(255,253,240,0.95);
+  }
+  .recipe-main {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-weight: 650;
+  }
+  .recipe-status { color: var(--text-3); font-size: 9px; letter-spacing: 0.06em; }
+  .recipe-item.verified .recipe-status { color: #3f8f55; }
+  .recipe-item.promising .recipe-status { color: var(--highlight-orange); }
+  .recipe-meta {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-3); font-size: 10px;
+  }
+  .recipe-item.selected .recipe-tag {
+    border-color: var(--highlight-orange); color: var(--highlight-orange);
+  }
   /* Re-run: a compact play button living inside the section header. */
-  #rerun-btn {
+  #rerun-btn, #recipe-rerun-btn {
     width: 18px; height: 18px; flex-shrink: 0;
     border: none; border-radius: 50%;
     background: var(--highlight-orange); color: #ffffff;
@@ -1499,10 +1596,10 @@
     box-shadow: 0 2px 8px rgba(255,138,0,0.35);
     transition: background 0.12s, transform 0.1s, opacity 0.12s;
   }
-  #rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
-  #rerun-btn:hover:not(:disabled) { background: #e87900; }
-  #rerun-btn:active:not(:disabled) { transform: scale(0.92); }
-  #rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  #rerun-btn svg, #recipe-rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
+  #rerun-btn:hover:not(:disabled), #recipe-rerun-btn:hover:not(:disabled) { background: #e87900; }
+  #rerun-btn:active:not(:disabled), #recipe-rerun-btn:active:not(:disabled) { transform: scale(0.92); }
+  #rerun-btn:disabled, #recipe-rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
   /* ----- A/B variant toggle (baseline vs intervened): lives IN the
      message stream as the first item — the first user message leaves
@@ -2037,7 +2134,7 @@
           <button id="wish-search-stop" type="button" disabled>Pause</button>
           <span class="spacer"></span>
           <button id="wish-search-deeper" type="button" disabled>Search deeper · +2 min</button>
-          <button id="wish-search-apply" class="primary" type="button" hidden>Apply &amp; re-run</button>
+          <button id="wish-search-apply" class="primary" type="button" hidden>Preview recipe</button>
         </div>
       </div>
     </div>
@@ -2075,13 +2172,15 @@
     </div>
   </div>
 
-  <!-- ===== Side rail: one home on the left edge, vertically centered.
-       Interventions (with Re-run) on top, markups below, divided by a
-       hairline when both are present. ===== -->
+  <!-- ===== Side rail: three distinct teaching objects.  Markups are
+       observations, recipes are immutable system-composed experiments,
+       and manual interventions are the advanced editable workspace. ===== -->
   <div id="side-rail">
-    <div id="interventions" aria-label="Active interventions"></div>
-    <div id="side-rail-divider"></div>
     <div id="markups" aria-label="Saved markups"></div>
+    <div id="side-rail-divider-1" class="side-rail-divider"></div>
+    <div id="intervention-recipes" role="radiogroup" aria-label="Intervention recipes"></div>
+    <div id="side-rail-divider-2" class="side-rail-divider"></div>
+    <div id="interventions" aria-label="Manual interventions"></div>
   </div>
 
   <!-- ===== A/B variant toggle (baseline vs intervened) ===== -->
@@ -2183,6 +2282,7 @@
   <!-- ===== Intervention editor modal (structural twin of settings) ===== -->
   <div id="intervene-backdrop" aria-hidden="true" inert>
     <div id="intervene-popup" role="dialog" aria-modal="false" aria-labelledby="intervene-title">
+      <div id="iv-editor-view">
       <div id="iv-head">
         <h3 id="intervene-title">Intervene</h3>
         <div id="iv-anchor"></div>
@@ -2242,6 +2342,28 @@
         <button class="cancel" id="iv-cancel" type="button">Cancel</button>
         <button class="ok" id="iv-ok" type="button">Save</button>
       </div>
+      </div>
+      <div id="iv-recipe-view" hidden>
+        <div class="iv-recipe-head">
+          <div>
+            <h3 id="iv-recipe-title">Recipe</h3>
+            <div id="iv-recipe-direction" class="iv-recipe-direction"></div>
+          </div>
+          <span id="iv-recipe-status" class="iv-recipe-status"></span>
+        </div>
+        <div class="iv-recipe-readonly-note">System-composed recipe · read only</div>
+        <div id="iv-recipe-cells" class="iv-recipe-cells"></div>
+        <div class="iv-recipe-observation">
+          <span class="iv-recipe-label">Observed output</span>
+          <blockquote id="iv-recipe-output"></blockquote>
+        </div>
+        <div class="actions" id="iv-recipe-actions">
+          <button class="cancel" id="iv-recipe-close" type="button">Close</button>
+          <span class="spacer"></span>
+          <button class="cancel" id="iv-recipe-duplicate" type="button">Duplicate as manual</button>
+          <button class="ok" id="iv-recipe-run" type="button">Run this recipe</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2280,6 +2402,13 @@ let state = {
   //   layers:[int], scope:{type:'at'|'from'|'gen', pos?}, origin,
   //   ablateTokenIds}].
   interventions: [],
+  // Immutable recipes discovered by the backward search.  A recipe is one
+  // selectable experiment even when it contains several exact cells:
+  // [{id, name, status, token, tokenId, target, targetId, cells, output,
+  //   recipeKey, baselineResponse}].  These stay separate from the editable
+  // `interventions` above so inspecting a verified result can never mutate it.
+  interventionRecipes: [],
+  selectedInterventionRecipeId: null,
   // Frozen copies of the specs actually APPLIED to the current run's last
   // stream (drives the grid's dashed-ring badges; persisted).
   appliedInterventions: [],
@@ -2330,6 +2459,28 @@ function persistSpec(s) {
   };
 }
 
+function persistRecipe(recipe) {
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    status: recipe.status === 'verified' ? 'verified' : 'promising',
+    token: recipe.token ?? null,
+    tokenId: recipe.tokenId ?? null,
+    target: recipe.target ?? null,
+    targetId: recipe.targetId ?? null,
+    cells: (recipe.cells || []).map((cell) => ({
+      position: Number(cell.position),
+      layer: Number(cell.layer),
+      alpha: Number(cell.alpha),
+    })),
+    output: recipe.output || '',
+    recipeKey: recipe.recipeKey || '',
+    baselineResponse: recipe.baselineResponse || '',
+    contextKey: recipe.contextKey || '',
+    improvement: Number(recipe.improvement) || 0,
+  };
+}
+
 function serializableConversation({ trimForLocalStorage = false } = {}) {
   const persistable = {
     schema: 1,
@@ -2352,6 +2503,8 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     layers: state.layers,
     markups: state.markups.map(m => ({ pos: m.pos, layer: m.layer, token: m.token })),
     interventions: state.interventions.map(persistSpec),
+    interventionRecipes: state.interventionRecipes.map(persistRecipe),
+    selectedInterventionRecipeId: state.selectedInterventionRecipeId,
     appliedInterventions: state.appliedInterventions.map(persistSpec),
     compare: state.compare ? {
       msgIdx: state.compare.msgIdx,
@@ -2359,6 +2512,7 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
       completed: !!state.compare.completed,
       specs: (state.compare.specs || []).map(persistSpec),
       baselineHadInterventions: !!state.compare.baselineHadInterventions,
+      configurationLabel: state.compare.configurationLabel || '',
       otherApplied: (state.compare.other.appliedInterventions || []).map(persistSpec),
       otherMessages: state.compare.other.messages.map(m => ({
         role: m.role,
@@ -2446,6 +2600,13 @@ function validSpecShape(s) {
     s.layers.length && s.scope && typeof s.scope.type === 'string');
 }
 
+function validRecipeShape(recipe) {
+  return !!(recipe && typeof recipe.id === 'string' &&
+    Array.isArray(recipe.cells) && recipe.cells.length &&
+    recipe.cells.every((cell) => Number.isFinite(+cell.position) &&
+      Number.isFinite(+cell.layer) && Number.isFinite(+cell.alpha)));
+}
+
 function newRunState() {
   return {
     messages: [],
@@ -2482,6 +2643,12 @@ function restoreConversation(saved) {
   state.interventions = Array.isArray(saved.interventions)
     ? saved.interventions.filter(validSpecShape).map(reviveSpec)
     : [];
+  state.interventionRecipes = Array.isArray(saved.interventionRecipes)
+    ? saved.interventionRecipes.filter(validRecipeShape).map(persistRecipe)
+    : [];
+  state.selectedInterventionRecipeId = state.interventionRecipes.some(
+    (recipe) => recipe.id === saved.selectedInterventionRecipeId)
+    ? saved.selectedInterventionRecipeId : null;
   state.appliedInterventions = Array.isArray(saved.appliedInterventions)
     ? saved.appliedInterventions.filter(validSpecShape).map(reviveSpec)
     : [];
@@ -2529,6 +2696,7 @@ function restoreConversation(saved) {
         completed: saved.compare.completed !== false,
         specs: (saved.compare.specs || []).filter(validSpecShape).map(reviveSpec),
         baselineHadInterventions: !!saved.compare.baselineHadInterventions,
+        configurationLabel: saved.compare.configurationLabel || '',
         other,
         diff: null,
       };
@@ -2689,6 +2857,8 @@ function clearState() {
   state.layers = [];
   state.markups = [];
   state.interventions = [];
+  state.interventionRecipes = [];
+  state.selectedInterventionRecipeId = null;
   state.appliedInterventions = [];
   state.compare = null;
   state.sourceSessionId = null;
@@ -2935,6 +3105,7 @@ async function _streamRemainingChunks(sessionId, totalChunks, gen) {
     scheduleSaveState();
     // Extend in place: no view movement, no follow-mode.
     renderMarkups();
+    renderInterventionRecipes();
     renderInterventions();
     renderVariantToggle();
     renderChat();
@@ -2988,6 +3159,7 @@ async function loadInfo() {
     // restored session renders its rail BEFORE this fetch lands — refresh
     // it so the Re-run play button isn't stuck in its pre-lens disabled
     // state on first load.
+    renderInterventionRecipes();
     renderInterventions();
     return true;
   } catch (e) {
@@ -4590,6 +4762,46 @@ function nextInterventionId() {
   return 'iv-' + Date.now().toString(36) + '-' + (++_ivCounter);
 }
 
+let _recipeCounter = 0;
+function nextInterventionRecipeId() {
+  return 'recipe-' + Date.now().toString(36) + '-' + (++_recipeCounter);
+}
+
+function interventionRecipeById(id) {
+  return state.interventionRecipes.find((recipe) => recipe.id === id) || null;
+}
+
+function nextRecipeName() {
+  let n = state.interventionRecipes.length;
+  let suffix = '';
+  do {
+    suffix = String.fromCharCode(65 + (n % 26)) + suffix;
+    n = Math.floor(n / 26) - 1;
+  } while (n >= 0);
+  return `Recipe ${suffix}`;
+}
+
+function recipeCellSummary(recipe) {
+  return (recipe.cells || []).map((cell) =>
+    `p${cell.position} · L${cell.layer} · α${formatAlpha(cell.alpha)}`).join(' + ');
+}
+
+function recipeDirectionText(recipe) {
+  return `⟨${trimConceptLabel(recipe.token)}⟩ → ⟨${trimConceptLabel(recipe.target)}⟩`;
+}
+
+function recipeToSpecs(recipe) {
+  return (recipe.cells || []).map((cell) => ({
+    id: nextInterventionId(), enabled: true, mode: 'swap',
+    token: recipe.token, tokenId: recipe.tokenId,
+    target: recipe.target, targetId: recipe.targetId,
+    alpha: Number(cell.alpha), layers: [Number(cell.layer)],
+    scope: { type: 'at', pos: Number(cell.position) },
+    origin: { pos: Number(cell.position), layer: Number(cell.layer) },
+    ablateTokenIds: null,
+  }));
+}
+
 function enabledInterventions() {
   return state.interventions.filter(s => s.enabled);
 }
@@ -4743,6 +4955,65 @@ function rerunHintText() {
   return hint;
 }
 
+function renderInterventionRecipes() {
+  const wrap = $('intervention-recipes');
+  if (!wrap) return;
+  wrap.replaceChildren();
+  const recipes = [...state.interventionRecipes].sort((a, b) =>
+    (a.status === 'verified' ? 0 : 1) - (b.status === 'verified' ? 0 : 1) ||
+    (a.name || '').localeCompare(b.name || ''));
+  if (!recipes.length) return;
+
+  const head = document.createElement('div');
+  head.className = 'rail-head';
+  const chip = document.createElement('span');
+  chip.className = 'rail-head-chip';
+  chip.textContent = `Intervention recipes · ${recipes.length}`;
+  head.appendChild(chip);
+  const rerun = document.createElement('button');
+  rerun.id = 'recipe-rerun-btn';
+  rerun.type = 'button';
+  const selected = interventionRecipeById(state.selectedInterventionRecipeId);
+  rerun.disabled = !selected || !canRunRecipe(selected);
+  rerun.title = selected
+    ? (rerun.disabled ? 'Return to this recipe’s clean baseline before running it' : `Run ${selected.name}`)
+    : 'Select one intervention recipe first';
+  rerun.setAttribute('aria-label', selected ? `Run ${selected.name}` : 'Run selected recipe');
+  rerun.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
+  rerun.onclick = () => runSelectedInterventionRecipe();
+  head.appendChild(rerun);
+  wrap.appendChild(head);
+
+  for (const recipe of recipes) {
+    const item = document.createElement('div');
+    const selectedNow = recipe.id === state.selectedInterventionRecipeId;
+    item.className = `recipe-item ${recipe.status || 'promising'}${selectedNow ? ' selected' : ''}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'markup-btn glass-hoverable recipe-tag';
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', selectedNow ? 'true' : 'false');
+    btn.title = `${recipe.name} · ${recipe.status} · ${recipeDirectionText(recipe)} · ${recipeCellSummary(recipe)}`;
+    const radio = document.createElement('span');
+    radio.className = 'recipe-radio';
+    radio.setAttribute('aria-hidden', 'true');
+    const main = document.createElement('span');
+    main.className = 'recipe-main';
+    const status = document.createElement('span');
+    status.className = 'recipe-status';
+    status.textContent = recipe.status === 'verified' ? 'VERIFIED' : 'PROMISING';
+    main.append(document.createTextNode(`${recipe.name.replace('Recipe ', '')} · `), status,
+      document.createTextNode(` · ${recipeDirectionText(recipe)}`));
+    const meta = document.createElement('span');
+    meta.className = 'recipe-meta';
+    meta.textContent = recipeCellSummary(recipe);
+    btn.append(radio, main, meta);
+    btn.onclick = () => openRecipePreview(recipe.id);
+    item.appendChild(btn);
+    wrap.appendChild(item);
+  }
+}
+
 function renderInterventions() {
   const wrap = $('interventions');
   if (!wrap) return;
@@ -4757,7 +5028,8 @@ function renderInterventions() {
   const n = enabledInterventions().length;
   const lbl = document.createElement('span');
   lbl.className = 'rail-head-chip';
-  lbl.textContent = n ? `Intervene · ${n}` : 'Intervene';
+  lbl.textContent = `Manual interventions · ${specs.length} · Advanced`;
+  lbl.title = `${n} enabled · Advanced`;
   head.appendChild(lbl);
   const rerun = document.createElement('button');
   rerun.id = 'rerun-btn';
@@ -4873,6 +5145,9 @@ function animateClearanceFor(ms) {
 
 // Draft the modal edits; committed into state.interventions on Save.
 let _ivDraft = null;
+// An immutable adaptive-search recipe currently being inspected.  Recipe
+// mode uses the same panel/minimap shell but never creates an editor draft.
+let _ivRecipePreviewId = null;
 // Live grid preview of the draft's target cells ({marks:[{layerSet,scope,layers}]})
 // or null. Read by buildGridRowCtx while the editor is open.
 let _ivPreview = null;
@@ -5027,11 +5302,94 @@ function _setAlphaSlider(alpha) {
   _renderAlphaValue(alphaFromSlider(slider.value));
 }
 
+function renderRecipePreview(recipe) {
+  $('iv-recipe-title').textContent = recipe.name || 'Recipe';
+  $('iv-recipe-direction').textContent = recipeDirectionText(recipe);
+  const status = $('iv-recipe-status');
+  status.textContent = recipe.status === 'verified' ? 'Verified' : 'Promising';
+  status.className = `iv-recipe-status ${recipe.status || 'promising'}`;
+  const cells = $('iv-recipe-cells');
+  cells.replaceChildren();
+  (recipe.cells || []).forEach((cell, index, all) => {
+    const row = document.createElement('div');
+    row.className = 'iv-recipe-cell';
+    const number = document.createElement('span');
+    number.className = 'iv-recipe-cell-index';
+    number.textContent = String(index + 1);
+    const copy = document.createElement('div');
+    const location = document.createElement('div');
+    location.className = 'iv-recipe-cell-location';
+    location.textContent = `position ${cell.position} · L${cell.layer}`;
+    const role = document.createElement('div');
+    role.className = 'iv-recipe-cell-role';
+    role.textContent = all.length === 1
+      ? 'Exact workspace cell'
+      : `Cell ${index + 1} of ${all.length} · applied together`;
+    copy.append(location, role);
+    const alpha = document.createElement('span');
+    alpha.className = 'iv-recipe-cell-alpha';
+    alpha.textContent = `α ${formatAlpha(cell.alpha)}`;
+    alpha.title = 'Signal multiplier';
+    row.append(number, copy, alpha);
+    cells.appendChild(row);
+  });
+  $('iv-recipe-output').textContent = (recipe.output || '').trim() || 'Not run to completion yet.';
+  $('iv-recipe-run').disabled = !canRunRecipe(recipe);
+  $('iv-recipe-run').title = $('iv-recipe-run').disabled
+    ? 'The clean baseline used to discover this recipe is not available in the current view'
+    : `Re-run the clean baseline with ${recipe.name}`;
+}
+
+function openRecipePreview(recipeId) {
+  const recipe = interventionRecipeById(recipeId);
+  if (!recipe || state.streaming) return;
+  _ivDraft = null;
+  _ivRecipePreviewId = recipe.id;
+  state.selectedInterventionRecipeId = recipe.id;
+  _ivPreview = {
+    marks: recipe.cells.map((cell) => ({
+      layerSet: new Set([Number(cell.layer)]),
+      scope: { type: 'at', pos: Number(cell.position) },
+      layers: [Number(cell.layer)],
+    })),
+  };
+  $('iv-editor-view').hidden = true;
+  $('iv-recipe-view').hidden = false;
+  $('intervene-popup').setAttribute('aria-labelledby', 'iv-recipe-title');
+  renderRecipePreview(recipe);
+  const root = document.documentElement;
+  root.classList.add('intervening', 'recipe-previewing');
+  root.classList.remove('iv-picking');
+  animateClearanceFor(700);
+  const backdrop = $('intervene-backdrop');
+  backdrop.inert = false;
+  backdrop.setAttribute('aria-hidden', 'false');
+  backdrop.classList.add('visible');
+  saveState();
+  renderInterventionRecipes();
+  renderGrid({ keepScroll: true });
+  updateScrollClearance();
+  setTimeout(updateScrollClearance, 380);
+}
+
+function duplicateRecipeAsManual(recipeId = _ivRecipePreviewId) {
+  const recipe = interventionRecipeById(recipeId);
+  if (!recipe || isPresentation()) return;
+  const copies = recipeToSpecs(recipe).map((spec) => ({ ...spec, enabled: false }));
+  state.interventions.push(...copies);
+  afterInterventionChange();
+  closeInterventionEditor();
+}
+
 function openInterventionEditor({ seed = null, editId = null } = {}) {
   if (isPresentation() || !interventionsAvailable()) return;
   // The intervening status sinks the input box (and its Stop button), so
   // never enter it mid-stream.
   if (state.streaming) return;
+  _ivRecipePreviewId = null;
+  $('iv-editor-view').hidden = false;
+  $('iv-recipe-view').hidden = true;
+  $('intervene-popup').setAttribute('aria-labelledby', 'intervene-title');
   const editing = editId ? interventionById(editId) : null;
   if (editId && !editing) return;
   const origin = editing ? (editing.origin || { pos: 0, layer: state.layers[0] || 0 })
@@ -5100,12 +5458,13 @@ function closeInterventionEditor() {
   backdrop.classList.remove('visible');
   backdrop.setAttribute('aria-hidden', 'true');
   _ivDraft = null;
+  _ivRecipePreviewId = null;
   _ivPreview = null;
   _tipEvt = null;
   _tipKey = '';
   $('iv-cursor-tip').hidden = true;
   const root = document.documentElement;
-  root.classList.remove('intervening', 'iv-picking');
+  root.classList.remove('intervening', 'iv-picking', 'recipe-previewing');
   // The chrome slides back over 340ms. Park the detail card until the
   // input box has landed, keep the scroll paddings animating, then reveal
   // the card at its FINAL anchor with its usual entrance — revealing it
@@ -5114,6 +5473,7 @@ function closeInterventionEditor() {
   root.classList.add('iv-restoring');
   animateClearanceFor(700);
   $('detail').classList.remove('visible');
+  renderInterventionRecipes();
   renderInterventions();
   renderGrid({ keepScroll: true });
   updateScrollClearance();
@@ -5616,6 +5976,7 @@ function renderAll() {
   focusSelectionOnRender = false;
   renderDetail();
   renderMarkups();
+  renderInterventionRecipes();
   renderInterventions();
   renderVariantToggle();
   updateScrollClearance();
@@ -5945,12 +6306,54 @@ function canRerun() {
   return !!(last && last.role === 'assistant' && last.tokens.length > 0);
 }
 
-async function rerunWithInterventions({ tempOverride = null } = {}) {
-  if (!canRerun()) return;
+function runAssistantText(run) {
+  const last = run?.messages?.[run.messages.length - 1];
+  if (!last || last.role !== 'assistant') return '';
+  return last.tokens?.length ? last.tokens.map((token) => token.text).join('') : (last.content || '');
+}
+
+function runContextKey(run) {
+  const messages = (run?.messages || []).map((message) => ({
+    role: message.role,
+    content: message.role === 'user'
+      ? (message.content || (message.tokens || []).map((token) => token.text).join(''))
+      : (message.tokens || []).map((token) => token.text).join(''),
+  }));
+  while (messages.length && messages[messages.length - 1].role === 'assistant') messages.pop();
+  return wishSearchContextKey(messages);
+}
+
+function runIsRecipeBaseline(run, recipe) {
+  return !!run && !(run.appliedInterventions || []).length &&
+    runAssistantText(run) === recipe.baselineResponse &&
+    (!recipe.contextKey || runContextKey(run) === recipe.contextKey);
+}
+
+function recipeBaselineRun(recipe) {
+  const current = captureRun();
+  if (runIsRecipeBaseline(current, recipe)) return current;
+  const other = state.compare?.other;
+  if (runIsRecipeBaseline(other, recipe)) return other;
+  return null;
+}
+
+function canRunRecipe(recipe) {
+  if (!recipe || isPresentation() || state.streaming || !interventionsAvailable()) return false;
+  return !!recipeBaselineRun(recipe);
+}
+
+async function rerunWithSpecs(specs, {
+  tempOverride = null,
+  baseline = null,
+  configurationLabel = 'Intervened',
+} = {}) {
+  if (isPresentation() || state.streaming || !interventionsAvailable() || !specs.length) return;
+  baseline = baseline || captureRun();
+  const last = baseline.messages?.[baseline.messages.length - 1];
+  if (!last || last.role !== 'assistant' || !last.tokens?.length) return;
   flushSaveState();
-  const baseline = captureRun();
-  const specs = enabledInterventions().map(persistSpec);
-  const msgIdx = state.messages.length - 1;
+  specs = specs.map(persistSpec);
+  const msgIdx = baseline.messages.length - 1;
 
   // Fresh run: context-message shells + an empty assistant target. The
   // server re-emits prefill snapshots for every message on each stream,
@@ -5971,6 +6374,7 @@ async function rerunWithInterventions({ tempOverride = null } = {}) {
     completed: false,
     specs,
     baselineHadInterventions: (baseline.appliedInterventions || []).length > 0,
+    configurationLabel,
     other: baseline,
     diff: null,
   };
@@ -6001,6 +6405,29 @@ async function rerunWithInterventions({ tempOverride = null } = {}) {
     updateAutoFollowUI();
     renderAll();
   }
+}
+
+async function rerunWithInterventions({ tempOverride = null } = {}) {
+  if (!canRerun()) return;
+  return rerunWithSpecs(enabledInterventions(), {
+    tempOverride,
+    baseline: captureRun(),
+    configurationLabel: 'Manual',
+  });
+}
+
+async function runSelectedInterventionRecipe() {
+  const recipe = interventionRecipeById(state.selectedInterventionRecipeId);
+  const baseline = recipe && recipeBaselineRun(recipe);
+  if (!recipe || !baseline || state.streaming) return;
+  if (_wish?.search) dismissWishPopover({ updateClearance: false });
+  if ($('intervene-backdrop').classList.contains('visible')) closeInterventionEditor();
+  saveState();
+  await rerunWithSpecs(recipeToSpecs(recipe), {
+    tempOverride: 0,
+    baseline,
+    configurationLabel: recipe.name,
+  });
 }
 
 function validateSelection() {
@@ -6034,6 +6461,7 @@ function setActiveVariant(intervened) {
   // Re-render IN PLACE (never renderAll — it would snap to the tail).
   renderDetail();
   renderMarkups();
+  renderInterventionRecipes();
   renderInterventions();
   renderVariantToggle();
   renderChat();
@@ -6112,6 +6540,7 @@ function renderVariantToggle() {
   const base = el.querySelector('#variant-baseline');
   const inter = el.querySelector('#variant-intervened');
   base.querySelector('span').textContent = c.baselineHadInterventions ? 'Run A' : 'Baseline';
+  inter.querySelector('span').textContent = c.configurationLabel || 'Intervened';
   base.classList.toggle('active', !c.activeIsIntervened);
   inter.classList.toggle('active', c.activeIsIntervened);
   base.disabled = inter.disabled = state.streaming;
@@ -6552,6 +6981,9 @@ $('set-temp').addEventListener('input', () => {
 $('iv-ok').onclick = commitInterventionEditor;
 $('iv-cancel').onclick = cancelInterventionEditor;
 $('iv-delete').onclick = deleteFromInterventionEditor;
+$('iv-recipe-close').onclick = closeInterventionEditor;
+$('iv-recipe-duplicate').onclick = () => duplicateRecipeAsManual();
+$('iv-recipe-run').onclick = () => runSelectedInterventionRecipe();
 
 // ----- Intervention scan: probe grid over layers × strength -----
 // Streams /api/intervention_scan and paints the outcome map live. Each
@@ -7065,6 +7497,47 @@ function wishSearchRecipeText(cells) {
     `L${cell.layer} · p${cell.position} · α${formatAlpha(cell.alpha)}`).join(' + ');
 }
 
+function upsertWishInterventionRecipe(obj, status) {
+  const wish = _wish;
+  const search = wish?.search;
+  if (!wish || !search || !Array.isArray(obj.cells) || !obj.cells.length) return null;
+  const recipeKey = obj.recipe_key || wishSearchRecipeText(obj.cells);
+  let recipe = interventionRecipeById(search.recipeByKey.get(recipeKey));
+  if (!recipe) {
+    recipe = state.interventionRecipes.find((item) =>
+      item.recipeKey === recipeKey && item.baselineResponse === wish.baselineResponse &&
+      item.contextKey === search.contextKey &&
+      item.token === search.token && item.target === search.target) || null;
+  }
+  if (!recipe) {
+    recipe = {
+      id: nextInterventionRecipeId(),
+      name: nextRecipeName(),
+      status,
+      token: search.token,
+      tokenId: search.tokenId,
+      target: search.target,
+      targetId: search.targetId,
+      cells: [], output: '', recipeKey,
+      baselineResponse: wish.baselineResponse,
+      contextKey: search.contextKey,
+      improvement: 0,
+    };
+    state.interventionRecipes.push(recipe);
+  }
+  recipe.status = recipe.status === 'verified' || status === 'verified' ? 'verified' : 'promising';
+  recipe.cells = obj.cells.map((cell) => ({
+    position: Number(cell.position), layer: Number(cell.layer), alpha: Number(cell.alpha),
+  }));
+  recipe.output = String(obj.text || recipe.output || '').slice(0, 4000);
+  recipe.improvement = Math.max(recipe.improvement || 0, Number(obj.improvement_over_baseline) || 0);
+  search.recipeByKey.set(recipeKey, recipe.id);
+  if (recipe.status === 'verified') search.verifiedRecipeId = recipe.id;
+  scheduleSaveState();
+  renderInterventionRecipes();
+  return recipe;
+}
+
 function wishSearchSetCurrent(cells) {
   const search = _wish?.search;
   if (!search) return;
@@ -7168,7 +7641,7 @@ function updateWishSearchStatus() {
     `${search.tested} tested · ${search.partials} leads · ${formatWishElapsed(elapsed)} / ${formatWishElapsed(search.budgetSeconds)}`;
   if (search.verified) {
     const contextCurrent = wishSearchContextIsCurrent();
-    $('wish-search-apply').disabled = state.streaming || !contextCurrent;
+    $('wish-search-apply').disabled = !search.verifiedRecipeId || state.streaming;
     if (search.done && !contextCurrent) {
       $('wish-search-stage').textContent =
         'Verified for the earlier reply; the conversation has since advanced, so it cannot be re-run safely here.';
@@ -7242,7 +7715,7 @@ function finishWishSearch(data = {}) {
       wishSearchRecipeText(search.verified.cells),
     );
     $('wish-search-apply').hidden = false;
-    $('wish-search-apply').disabled = !contextCurrent || state.streaming;
+    $('wish-search-apply').disabled = !search.verifiedRecipeId || state.streaming;
   } else if (data.stop_reason === 'dirty_baseline') {
     $('wish-search-title').textContent = 'Start from a clean baseline';
     $('wish-search-stage').textContent =
@@ -7422,12 +7895,17 @@ function handleWishSearchEvent(event, obj) {
     search.visual.current.clear();
     // The adaptive endpoint's verifier is exact-response strict. Keep this
     // defensive gate so an older server can never expose a phrase-only hit.
-    if (obj.verified === true &&
-        (obj.exact_response_match === true || obj.exact_replacement_match === true)) {
+    const exactVerified = obj.verified === true &&
+      (obj.exact_response_match === true || obj.exact_replacement_match === true);
+    if (exactVerified) {
       search.verified = obj;
+      upsertWishInterventionRecipe(obj, 'verified');
       for (const cell of obj.cells || []) {
         search.visual.cells.set(wishSearchCellKey(cell.position, cell.layer), 'verified');
       }
+    } else if (obj.improving === true &&
+        (classification === 'partial' || classification === 'off-target')) {
+      upsertWishInterventionRecipe(obj, 'promising');
     }
     paintWishSearchCells();
     updateWishSearchStatus();
@@ -7553,6 +8031,7 @@ async function runAdaptiveWishSearch() {
     done: false, cancelled: false, verified: null,
     tested: 0, partials: 0, diagnostics: [],
     recipeKeys: new Set(), priorPromising: [],
+    recipeByKey: new Map(), verifiedRecipeId: null,
     contextKey: wishSearchContextKey(messages),
     clockStartedAt: performance.now(), elapsedSeconds: 0,
     searchId: null,
@@ -7640,31 +8119,10 @@ async function runAdaptiveWishSearch() {
   }
 }
 
-function applyVerifiedWishRecipe() {
-  const wish = _wish;
-  const search = wish?.search;
-  const result = search?.verified;
-  if (!wish || !result || state.streaming || !wishSearchContextIsCurrent(wish) ||
-      !Array.isArray(result.cells) || !result.cells.length) return;
-  const ids = [];
-  for (const cell of result.cells) {
-    const id = nextInterventionId();
-    ids.push(id);
-    state.interventions.push({
-      id, enabled: true, mode: 'swap',
-      token: search.token, tokenId: search.tokenId,
-      target: search.target, targetId: search.targetId,
-      alpha: Number(cell.alpha), layers: [Number(cell.layer)],
-      scope: { type: 'at', pos: Number(cell.position) },
-      origin: { pos: Number(cell.position), layer: Number(cell.layer) },
-      ablateTokenIds: null,
-    });
-  }
-  wish.specIds = { search: ids };
-  afterInterventionChange();
-  dismissWishPopover();
-  wish.dismissed = true;
-  rerunWithInterventions({ tempOverride: 0 });
+function previewVerifiedWishRecipe() {
+  const recipeId = _wish?.search?.verifiedRecipeId;
+  if (!recipeId || state.streaming) return;
+  openRecipePreview(recipeId);
 }
 
 function startWish() {
@@ -7685,7 +8143,7 @@ $('wish-input').addEventListener('keydown', (e) => {
 $('wish-search-stop').onclick = () => toggleWishSearchPause();
 $('wish-search-close').onclick = () => dismissWishPopover();
 $('wish-search-deeper').onclick = () => extendWishSearch();
-$('wish-search-apply').onclick = applyVerifiedWishRecipe;
+$('wish-search-apply').onclick = previewVerifiedWishRecipe;
 
 function openWishModal(strategy) {
   if (!_wish) return;
