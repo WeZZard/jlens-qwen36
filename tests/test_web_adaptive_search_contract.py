@@ -11,14 +11,14 @@ from pathlib import Path
 HTML = (Path(__file__).parents[1] / "web" / "index.html").read_text()
 
 
-def test_reply_search_and_composer_share_one_continuous_panel():
+def test_reply_search_replaces_the_model_composer_in_one_panel():
     assert HTML.count('id="wish-pop"') == 1
     chat_input = HTML.index('<div id="chat-input">')
     wish = HTML.index('id="wish-pop"', chat_input)
     editor = HTML.index('id="chat-input-row"', wish)
     assert chat_input < wish < editor
     assert 'id="wish-go" type="button" class="ok" disabled' in HTML
-    assert "#chat-input.wishing #chat-input-row { display: none; }" not in HTML
+    assert "#chat-input.wishing #chat-input-row { display: none; }" in HTML
     assert "width: min(var(--center-panel-width), calc(100vw - 32px))" in HTML
 
 
@@ -41,9 +41,8 @@ def test_deeper_search_is_one_disabled_two_minute_extension():
     assert "search.elapsedSeconds = search.budgetSeconds" in HTML
 
 
-def test_background_search_keeps_composer_and_guards_stale_apply():
-    assert "const backgroundWishSearch = !!(_wish && _wish.search)" in HTML
-    assert "(!backgroundWishSearch && (state.streaming || !selectedReply))" in HTML
+def test_modal_search_still_guards_stale_apply():
+    assert "const modalWishSearch = !!(_wish && _wish.search)" in HTML
     assert "state.streaming || !wishSearchContextIsCurrent(wish)" in HTML
     assert "enabledInterventions().length === 0" in HTML
 

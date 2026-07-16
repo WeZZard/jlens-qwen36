@@ -1618,12 +1618,11 @@
   #wish-pop.search-mode {
     width: 100%;
   }
-  /* Search is a background task, not a replacement composer. Both sections
-     share this one glass surface and one continuous squircle. */
+  /* Reply intervention is a modal composer state: this one glass surface
+     shows either "Make it say" / search progress OR the model composer,
+     never both at once. */
   #chat-input.wishing { width: min(var(--center-panel-width), calc(100vw - 32px)); }
-  #chat-input.wishing #wish-pop {
-    border-bottom: 1px solid rgba(60, 60, 67, 0.12);
-  }
+  #chat-input.wishing #chat-input-row { display: none; }
   .wish-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
   .wish-row { display: flex; gap: 8px; }
   #wish-input {
@@ -2004,9 +2003,9 @@
 
   <!-- ===== BOTTOM: floating message input (fixed, light glass) ===== -->
   <div id="chat-input">
-    <!-- Reply-token backward search replaces the normal editor in-place,
-         so it occupies the input's familiar position instead of opening
-         a modal over the J-Space table. -->
+    <!-- Reply-token backward search is the input's modal state: it replaces
+         the normal model composer in-place instead of stacking above it or
+         opening a dialog over the J-Space table. -->
     <div id="wish-pop" role="dialog" aria-labelledby="wish-title" hidden>
       <div id="wish-compose">
         <div id="wish-title" class="wish-title">Make it say…</div>
@@ -5605,11 +5604,11 @@ function updateAutoFollowUI() {
 function renderAll() {
   const selectedReply = state.selectedToken &&
     state.messages[state.selectedToken.msgIdx]?.role === 'assistant';
-  const backgroundWishSearch = !!(_wish && _wish.search);
+  const modalWishSearch = !!(_wish && _wish.search);
   // A running/paused backward search owns a frozen copy of its original
-  // context and stays visible while the normal composer starts another turn.
-  // A not-yet-started "Make it say" draft still follows selection normally.
-  if (isPresentation() || (!backgroundWishSearch && (state.streaming || !selectedReply))) {
+  // context and survives incidental rerenders. The model composer is hidden
+  // for this entire modal state. A not-yet-started draft follows selection.
+  if (isPresentation() || (!modalWishSearch && (state.streaming || !selectedReply))) {
     dismissWishPopover({ updateClearance: false });
   }
   const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
@@ -5640,7 +5639,7 @@ function renderAll() {
   chatDetailClearanceApplied = !!state.selectedCell;
   renderGrid({ focusSelection: shouldFocusSelection });
   renderTimeline();
-  if (backgroundWishSearch) updateWishSearchStatus();
+  if (modalWishSearch) updateWishSearchStatus();
 }
 
 // ----- Ingest a snapshot -----

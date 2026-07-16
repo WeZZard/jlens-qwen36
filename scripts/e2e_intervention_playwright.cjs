@@ -137,9 +137,15 @@ async function runTrial(page, trial, index) {
 
   await replyTokens.nth(tokenIndex).click();
   await page.locator('#wish-pop:not([hidden])').waitFor({ timeout: 10_000 });
+  if (await page.locator('#chat-input-row').isVisible()) {
+    throw new Error('model composer remained visible during reply intervention');
+  }
   await page.locator('#wish-input').fill(trial.target);
   await page.locator('#wish-go').click();
   await page.locator('#wish-search-view:not([hidden])').waitFor({ timeout: 10_000 });
+  if (await page.locator('#chat-input-row').isVisible()) {
+    throw new Error('model composer remained visible during intervention search');
+  }
   if (exercisePauseResume) {
     await page.waitForFunction(() => _wish?.search?.searchId &&
       _wish.search.tested >= 1 && _wish.search.running, null, { timeout: 30_000 });
