@@ -1609,17 +1609,16 @@
   #chat-log .msg.assistant .tok { cursor: pointer; }
   html.presentation #chat-log .msg.assistant .tok { cursor: default; }
   #wish-pop {
-    position: fixed;
-    left: 50%; bottom: var(--detail-bottom); z-index: 11;
-    transform: translateX(-50%);
-    background: #fffdf3;
-    border: 1px solid var(--border-2);
-    border-radius: 14px; corner-shape: squircle;
-    box-shadow: 0 14px 40px rgba(60, 50, 30, 0.22);
-    padding: 12px 14px;
-    width: min(var(--center-panel-width), calc(100vw - 32px));
+    position: static; z-index: auto; transform: none;
+    background: transparent; border: 0; border-radius: 0;
+    box-shadow: none; padding: 0; width: 100%;
   }
   #wish-pop[hidden] { display: none; }
+  #wish-pop.search-mode {
+    width: 100%; padding: 0;
+  }
+  #chat-input.wishing { width: min(820px, calc(100vw - 32px)); }
+  #chat-input.wishing #chat-input-row { display: none; }
   .wish-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
   .wish-row { display: flex; gap: 8px; }
   #wish-input {
@@ -1628,7 +1627,131 @@
     padding: 0 10px; font: inherit; font-size: 13px;
     background: #ffffff;
   }
+  #wish-go:disabled { opacity: 0.42; cursor: default; }
   .wish-hint { font-size: 11px; color: var(--text-3); margin-top: 8px; }
+  #wish-search-view[hidden], #wish-compose[hidden] { display: none; }
+  .wish-search-head {
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  .wish-search-copy { flex: 1; min-width: 0; }
+  #wish-search-title { font-size: 13px; font-weight: 700; }
+  #wish-search-sub {
+    margin-top: 2px; color: var(--text-2); font-size: 11px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #wish-search-close {
+    border: 0; background: transparent; color: var(--text-3);
+    width: 28px; height: 28px; padding: 0; border-radius: 50%;
+    font: inherit; font-size: 18px; line-height: 28px; cursor: pointer;
+  }
+  #wish-search-close:hover { background: rgba(60, 50, 30, 0.08); }
+  .wish-search-track {
+    height: 5px; margin-top: 12px; overflow: hidden;
+    border-radius: 999px; background: rgba(60, 50, 30, 0.10);
+  }
+  #wish-search-fill {
+    display: block; height: 100%; width: 0;
+    border-radius: inherit; background: var(--highlight-orange);
+    transition: width 180ms linear, background 160ms ease;
+  }
+  #wish-search-view.success #wish-search-fill { background: #3f9d63; }
+  .wish-search-status {
+    display: flex; align-items: baseline; gap: 10px; margin-top: 9px;
+    min-height: 19px;
+  }
+  #wish-search-stage { flex: 1; min-width: 0; font-size: 12px; color: var(--text-2); }
+  #wish-search-stats {
+    flex-shrink: 0; color: var(--text-3); font-size: 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #wish-search-result {
+    margin-top: 9px; padding: 8px 10px; border-radius: 9px;
+    background: rgba(60, 50, 30, 0.055); color: var(--text-2);
+    font-size: 11px; line-height: 1.45;
+  }
+  #wish-search-result[hidden] { display: none; }
+  #wish-search-result.verified {
+    background: rgba(63, 157, 99, 0.10); color: #2f7048;
+  }
+  #wish-search-recipe {
+    display: block; margin-top: 3px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  #wish-search-diagnostics { display: grid; gap: 5px; margin-top: 7px; }
+  .wish-search-diagnostic {
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 8px;
+    padding-top: 5px; border-top: 1px solid rgba(60, 50, 30, 0.09);
+  }
+  .wish-search-diagnostic strong {
+    color: var(--text-2); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .wish-search-diagnostic code {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--text-3); font: 10px ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .wish-search-diagnostic span {
+    grid-column: 1 / -1; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: var(--text-2);
+  }
+  .wish-search-actions {
+    display: flex; align-items: center; gap: 8px; margin-top: 10px;
+  }
+  .wish-search-actions .spacer { flex: 1; }
+  .wish-search-actions button {
+    border: 1px solid var(--border-2); border-radius: 999px;
+    background: #fff; color: var(--text); padding: 5px 12px;
+    font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .wish-search-actions button.primary {
+    background: var(--highlight-orange); border-color: var(--highlight-orange);
+    color: #fff; font-weight: 650;
+  }
+  .wish-search-actions button[hidden] { display: none; }
+
+  /* Backward search keeps the J-Space table live, but makes the exact
+     prefill cells under evaluation visually explicit. Search state is
+     stored outside the virtualized DOM, so rows painted later retain it. */
+  html.wish-search-active #grid td.cell .cell-block { opacity: 0.24; filter: saturate(0.45); }
+  html.wish-search-active #grid tr.wish-search-position td.cell .cell-block { opacity: 0.42; }
+  #grid td.cell.wish-search-tested .cell-block,
+  #grid td.cell.wish-search-off-target .cell-block,
+  #grid td.cell.wish-search-partial .cell-block,
+  #grid td.cell.wish-search-repetition .cell-block,
+  #grid td.cell.wish-search-current .cell-block,
+  #grid td.cell.wish-search-verified .cell-block {
+    opacity: 1 !important; filter: none !important;
+  }
+  #grid td.cell.wish-search-tested .cell-block {
+    box-shadow: inset 0 0 0 1px rgba(60, 50, 30, 0.20);
+  }
+  #grid td.cell.wish-search-off-target .cell-block {
+    box-shadow: inset 0 0 0 2px #8b98a5;
+  }
+  #grid td.cell.wish-search-partial .cell-block {
+    box-shadow: inset 0 0 0 2px var(--highlight-orange);
+  }
+  #grid td.cell.wish-search-repetition .cell-block {
+    box-shadow: inset 0 0 0 2px #e0483e;
+  }
+  #grid td.cell.wish-search-current .cell-block {
+    box-shadow: 0 0 0 2px #ff8a00, 0 0 10px 2px rgba(255,138,0,0.52);
+    animation: wish-search-pulse 1.1s ease-in-out infinite;
+  }
+  #grid td.cell.wish-search-verified .cell-block {
+    box-shadow: 0 0 0 2px #3f9d63, 0 0 12px 3px rgba(63,157,99,0.48);
+  }
+  html.wish-search-active #grid td.pos-label { opacity: 0.34; }
+  html.wish-search-active #grid tr.wish-search-position td.pos-label,
+  html.wish-search-active #grid td.pos-label.selected-token { opacity: 1; }
+  @keyframes wish-search-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(255,138,0,0.50), 0 0 6px 1px rgba(255,138,0,0.25); }
+    50% { box-shadow: 0 0 0 2px rgba(255,138,0,1), 0 0 12px 3px rgba(255,138,0,0.62); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #grid td.cell.wish-search-current .cell-block { animation: none; }
+  }
   #scan-strategies {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     margin-bottom: 12px;
@@ -1873,6 +1996,44 @@
 
   <!-- ===== BOTTOM: floating message input (fixed, light glass) ===== -->
   <div id="chat-input">
+    <!-- Reply-token backward search replaces the normal editor in-place,
+         so it occupies the input's familiar position instead of opening
+         a modal over the J-Space table. -->
+    <div id="wish-pop" role="dialog" aria-labelledby="wish-title" hidden>
+      <div id="wish-compose">
+        <div id="wish-title" class="wish-title">Make it say…</div>
+        <div class="wish-row">
+          <input id="wish-input" type="text" aria-label="What should the reply say?" placeholder="the answer you want" autocomplete="off">
+          <button id="wish-go" type="button" class="ok" disabled>Search · up to 1 min</button>
+        </div>
+        <div class="wish-hint">instead of ⟨<span id="wish-current"></span>⟩ — searches exact cells across the prefilled workspace</div>
+      </div>
+      <div id="wish-search-view" hidden aria-live="polite">
+        <div class="wish-search-head">
+          <div class="wish-search-copy">
+            <div id="wish-search-title">Searching backward</div>
+            <div id="wish-search-sub"></div>
+          </div>
+          <button id="wish-search-close" type="button" aria-label="Close search">×</button>
+        </div>
+        <div class="wish-search-track"><span id="wish-search-fill"></span></div>
+        <div class="wish-search-status">
+          <span id="wish-search-stage">Ranking prefilled positions…</span>
+          <span id="wish-search-stats">0 tested · 0:00</span>
+        </div>
+        <div id="wish-search-result" hidden>
+          <span id="wish-search-result-copy"></span>
+          <span id="wish-search-recipe"></span>
+          <div id="wish-search-diagnostics"></div>
+        </div>
+        <div class="wish-search-actions">
+          <button id="wish-search-stop" type="button">Stop</button>
+          <span class="spacer"></span>
+          <button id="wish-search-deeper" type="button" hidden>Search deeper · up to 3 min</button>
+          <button id="wish-search-apply" class="primary" type="button" hidden>Apply &amp; re-run</button>
+        </div>
+      </div>
+    </div>
     <div id="chat-input-row">
       <div id="chat-editor" contenteditable="plaintext-only" role="textbox" aria-multiline="true" data-placeholder="Message the model…" spellcheck="false"></div>
       <button id="stop-btn" type="button" title="Stop outputting" aria-label="Stop outputting"></button>
@@ -1920,17 +2081,6 @@
   <div id="variant-toggle" class="corner-button-bar" hidden>
     <button id="variant-baseline" class="corner-action glass-hoverable" type="button" title="Show the baseline run"><span>Baseline</span></button>
     <button id="variant-intervened" class="corner-action glass-hoverable" type="button" title="Show the intervened run"><span>Intervened</span><span class="diff-chip" hidden></span></button>
-  </div>
-
-  <!-- ===== Output-first wish: click an answer token, say what it should
-       have been, and scan for the edits that make it happen ===== -->
-  <div id="wish-pop" role="dialog" aria-labelledby="wish-title" hidden>
-    <div id="wish-title" class="wish-title">Make it say…</div>
-    <div class="wish-row">
-      <input id="wish-input" type="text" aria-label="What should the reply say?" placeholder="the answer you want" autocomplete="off">
-      <button id="wish-go" type="button" class="ok">Find how</button>
-    </div>
-    <div class="wish-hint">instead of ⟨<span id="wish-current"></span>⟩ — scans for edits that make it happen</div>
   </div>
 
   <!-- ===== Intervention scan: layers × strength outcome map ===== -->
@@ -2079,7 +2229,7 @@
       <div id="iv-preview-summary" class="iv-preview-summary"></div>
       <div class="actions" id="iv-actions">
         <button class="danger" id="iv-delete" type="button" hidden>Delete</button>
-        <button class="cancel" id="iv-scan" type="button"
+        <button class="cancel" id="iv-scan" type="button" hidden aria-hidden="true"
           title="Probe layers × strength on this conversation and map which settings work">Scan…</button>
         <span class="spacer"></span>
         <button class="cancel" id="iv-cancel" type="button">Cancel</button>
@@ -3051,11 +3201,6 @@ function renderChat({ scrollToBottom = false, scrollToTop = false } = {}) {
   // renders as the FIRST item of the stream; [hidden] keeps it out of
   // flow when no compare is active.
   log.appendChild(variantToggleEl());
-  if (typeof _wishTick === 'function') {
-    _wishTick();
-    const wb = _wishBanner();
-    if (wb) log.appendChild(wb);
-  }
   // Token-level compare diff for the compared turn (skipped mid-stream —
   // the intervened run is still growing).
   const cmp = state.compare;
@@ -3601,6 +3746,14 @@ function markMatchesCell(mark, firstGenPos, pos, layer) {
   return mark.layerSet.has(layer) && scopeMatchesPos(mark.scope, firstGenPos, pos);
 }
 
+function wishSearchVisualState() {
+  return document.documentElement.classList.contains('wish-search-active') &&
+    _wish && _wish.search && _wish.search.visual
+    ? _wish.search.visual : null;
+}
+
+function wishSearchCellKey(pos, layer) { return `${pos}:${layer}`; }
+
 // Per-render context for intervention badges + live editor preview +
 // compare dots: precomputed once per window rebuild so the per-cell work
 // stays a couple of Set lookups (zero when nothing is active).
@@ -3616,8 +3769,9 @@ function buildGridRowCtx() {
   if (previewMarks && previewMarks.some(m => m.scope.type === 'gen')) needGenPos = true;
   const firstGenPos = needGenPos ? firstGeneratedPos() : null;
   const otherRows = state.compare ? state.compare.other.gridRows : null;
-  if (!marks.length && !previewMarks && !otherRows) return null;
-  return { marks, previewMarks, firstGenPos, otherRows };
+  const search = wishSearchVisualState();
+  if (!marks.length && !previewMarks && !otherRows && !search) return null;
+  return { marks, previewMarks, firstGenPos, otherRows, search };
 }
 
 function cellIsIntervened(ctx, pos, layer) {
@@ -3646,7 +3800,8 @@ function gridRowHtml(pos, selectedTokenKey, activePos, rowCtx = null) {
   const isUser = !!(meta && state.messages[meta.msgIdx]?.role === 'user');
   const rowData = state.gridRows[pos];
   const selRow = !!(state.selectedCell && state.selectedCell.pos === pos);
-  let html = `<tr data-pos="${pos}">`;
+  const searchRow = !!(rowCtx && rowCtx.search && rowCtx.search.positions.has(pos));
+  let html = `<tr${searchRow ? ' class="wish-search-position"' : ''} data-pos="${pos}">`;
   for (const layer of state.layers) {
     const cell = rowData && rowData[layer];
     const gutter = layerCellGutterBackground(layer);
@@ -3674,6 +3829,12 @@ function gridRowHtml(pos, selectedTokenKey, activePos, rowCtx = null) {
       if (rowCtx.otherRows) {
         const oc = rowCtx.otherRows[pos] && rowCtx.otherRows[pos][layer];
         if (oc && oc.top_ids && oc.top_ids[0] !== cell.top_ids[0]) cls += ' diff-cell';
+      }
+      if (rowCtx.search) {
+        const key = wishSearchCellKey(pos, layer);
+        const searchClass = rowCtx.search.cells.get(key);
+        if (searchClass) cls += ` wish-search-${searchClass}`;
+        if (rowCtx.search.current.has(key)) cls += ' wish-search-current';
       }
     }
     html += `<td class="${cls}" data-pos="${pos}" data-layer="${layer}" style="background:${gutter}">` +
@@ -5766,7 +5927,7 @@ function canRerun() {
   return !!(last && last.role === 'assistant' && last.tokens.length > 0);
 }
 
-async function rerunWithInterventions() {
+async function rerunWithInterventions({ tempOverride = null } = {}) {
   if (!canRerun()) return;
   flushSaveState();
   const baseline = captureRun();
@@ -5807,7 +5968,10 @@ async function rerunWithInterventions() {
   const payload = {
     messages: state.messages.slice(0, -1).map(m => ({ role: m.role, content: m.content })),
     max_tokens: state.settings.maxTokens,
-    temp: state.settings.temp,
+    // A verified backward-search recipe was judged by a greedy replay. Its
+    // adoption path passes tempOverride=0 so the visible re-run reproduces
+    // that verification even when the normal composer uses sampling.
+    temp: tempOverride === null ? state.settings.temp : tempOverride,
     top_n: state.settings.topN,
     interventions: specs.map(specToPayload),
   };
@@ -6651,13 +6815,15 @@ $('scan-backdrop').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeInterventionScan();
 });
 
-// ----- Output-first wishes: click an answer token → "Make it say…" -----
-// The wish is a small persistent journey object; the learning arc is
-// conclusion edit (force the word) → inspect the workspace (it still
-// thinks the old concept) → premise edit (change the thought) → recap.
-let _wish = null;       // { pos, outputTok, wishText, stage, pending, specIds, scanSpecs, outcomes, dismissed }
+// ----- Output-first backward search: click a reply token → "Make it say…" -----
+// The visible response and exact selected character span are frozen before
+// search. The server regenerates that baseline deterministically and refuses
+// to search if it no longer matches, preventing a recipe from being verified
+// against a different sampled/session-restored answer.
+let _wish = null;
 let _wishSeed = null;   // pending popover target
 let _wishScanGen = 0;
+let _wishSearchTimer = null;
 const _wishTokenizationCache = new Map();
 
 async function _wishTokenization(text) {
@@ -6723,7 +6889,12 @@ function dismissWishPopover({ updateClearance = true } = {}) {
   const pop = $('wish-pop');
   if (!pop) return;
   const wasVisible = !pop.hidden;
+  stopWishSearch({ silent: true });
   pop.hidden = true;
+  pop.classList.remove('search-mode');
+  $('chat-input').classList.remove('wishing');
+  document.documentElement.classList.remove('wish-search-active');
+  clearWishSearchPaint();
   _wishSeed = null;
   if (wasVisible && updateClearance) updateScrollClearance();
 }
@@ -6749,6 +6920,20 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
   }
   const lexical = _wishDisplayWord(m.tokens, ti);
   const sourceTok = m.tokens[lexical.lo];
+  const baselineResponse = m.tokens.map((token) => token.text).join('');
+  const rawSelected = m.tokens.slice(lexical.lo, lexical.hi + 1)
+    .map((token) => token.text).join('');
+  const leading = rawSelected.length - rawSelected.trimStart().length;
+  const trailing = rawSelected.length - rawSelected.trimEnd().length;
+  const sourceStartUtf16 = m.tokens.slice(0, lexical.lo)
+    .reduce((total, token) => total + token.text.length, 0) + leading;
+  const sourceEndUtf16 = m.tokens.slice(0, lexical.hi + 1)
+    .reduce((total, token) => total + token.text.length, 0) - trailing;
+  // Python indexes Unicode code points; JavaScript indexes UTF-16 code
+  // units. Preserve both so an emoji before the selected word cannot move
+  // the server's exact replacement span.
+  const sourceStart = Array.from(baselineResponse.slice(0, sourceStartUtf16)).length;
+  const sourceEnd = Array.from(baselineResponse.slice(0, sourceEndUtf16)).length;
   // Intervention identity always comes from the exact clicked model token.
   // For a split lexical word, anchor its first fragment; the expanded word
   // is display/classification context only.
@@ -6760,11 +6945,21 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
     outputTok: sourceTok.text,
     outputTokId: Number.isInteger(sourceTok.id) ? sourceTok.id : null,
     outputWord: lexical.word,
+    baselineResponse,
+    sourceStart,
+    sourceEnd,
+    sourceStartUtf16,
+    sourceEndUtf16,
   };
   $('wish-current').textContent = lexical.word.trim();
   $('wish-input').value = '';
+  $('wish-go').disabled = true;
+  $('wish-compose').hidden = false;
+  $('wish-search-view').hidden = true;
+  $('wish-pop').classList.remove('search-mode');
   const pop = $('wish-pop');
   pop.hidden = false;
+  $('chat-input').classList.add('wishing');
   updateScrollClearance();
   $('wish-input').focus();
   return true;
@@ -6773,6 +6968,9 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
 document.addEventListener('click', (e) => {
   const pop = $('wish-pop');
   if (pop.hidden || pop.contains(e.target)) return;
+  // Once a bounded search begins, the input replacement is a persistent
+  // status surface; incidental grid/chat clicks must not cancel GPU work.
+  if (_wish && _wish.search) return;
   // Selection rerenders the chat/grid before this same click reaches the
   // document, detaching e.target from its old ancestors. composedPath()
   // preserves the dispatch-time route, so neither token representation is
@@ -6786,18 +6984,524 @@ document.addEventListener('click', (e) => {
   dismissWishPopover();
 });
 
+function wishSearchWorkspaceLayers() {
+  const band = LAYER_BANDS.find((item) => item.id === 'workspace');
+  const fitted = new Set(state.lensInfo?.source_layers || []);
+  if (!band) return [];
+  const layers = [];
+  for (let layer = band.coreStart; layer <= band.coreEnd; layer++) {
+    if (fitted.has(layer)) layers.push(layer);
+  }
+  return layers;
+}
+
+function wishSelectedText(wish) {
+  return wish.baselineResponse.slice(wish.sourceStartUtf16, wish.sourceEndUtf16);
+}
+
+function wishSearchPositionEvidence(wish) {
+  const generatedAt = firstGeneratedPos();
+  if (!Number.isFinite(generatedAt) || generatedAt < 1) return [];
+  const workspace = new Set(wishSearchWorkspaceLayers());
+  const sourceId = Number.isInteger(wish.outputTokId) ? wish.outputTokId : null;
+  const sourceKeys = new Set([
+    normalizeTokenText(wish.outputTok),
+    normalizeTokenText(wish.outputWord),
+    normalizeTokenText(wishSelectedText(wish)),
+  ].filter(Boolean));
+  const rows = [];
+  for (let position = 0; position < generatedAt; position++) {
+    const row = state.gridRows[position];
+    if (!row) continue;
+    const meta = state.gridTokenMsgs[position];
+    const isFrontier = position === generatedAt - 1;
+    const message = meta ? state.messages[meta.msgIdx] : null;
+    const sourceHits = [];
+    for (const layer of workspace) {
+      const cell = row[layer];
+      if (!cell) continue;
+      const ids = cell.top_ids || [];
+      const words = cell.top_tokens || [];
+      let hitRank = -1;
+      for (let rank = 0; rank < Math.max(ids.length, words.length); rank++) {
+        const idHit = sourceId !== null && ids[rank] === sourceId;
+        const wordHit = sourceKeys.has(normalizeTokenText(words[rank]));
+        if (idHit || wordHit) { hitRank = rank; break; }
+      }
+      // Adaptive ranker uses the human-facing convention: top-1 is rank 1.
+      if (hitRank >= 0) sourceHits.push({ layer, rank: hitRank + 1 });
+    }
+    rows.push({
+      position,
+      msg_idx: meta && Number.isInteger(meta.msgIdx) ? meta.msgIdx : null,
+      role: message?.role || (isFrontier ? 'frontier' : 'template'),
+      token_text: state.gridTokenStrs[position] || '',
+      source_hits: sourceHits,
+    });
+  }
+  return rows;
+}
+
+function wishSearchRecipeText(cells) {
+  return (cells || []).map((cell) =>
+    `L${cell.layer} · p${cell.position} · α${formatAlpha(cell.alpha)}`).join(' + ');
+}
+
+function wishSearchSetCurrent(cells) {
+  const search = _wish?.search;
+  if (!search) return;
+  search.visual.current.clear();
+  for (const cell of cells || []) {
+    search.visual.current.add(wishSearchCellKey(cell.position, cell.layer));
+    search.visual.positions.add(cell.position);
+  }
+  paintWishSearchCells();
+}
+
+function paintWishSearchCells() {
+  const visual = wishSearchVisualState();
+  if (!visual) return;
+  const classes = [
+    'wish-search-tested', 'wish-search-off-target', 'wish-search-partial',
+    'wish-search-repetition', 'wish-search-current', 'wish-search-verified',
+  ];
+  document.querySelectorAll('#grid td.cell').forEach((cell) => {
+    cell.classList.remove(...classes);
+    const key = wishSearchCellKey(+cell.dataset.pos, +cell.dataset.layer);
+    const result = visual.cells.get(key);
+    if (result) cell.classList.add(`wish-search-${result}`);
+    if (visual.current.has(key)) cell.classList.add('wish-search-current');
+    const detail = visual.details?.get(key);
+    if (!cell.dataset.wishSearchTitleSaved) {
+      cell.dataset.wishSearchTitleSaved = '1';
+      cell.dataset.wishSearchOriginalTitle = cell.getAttribute('title') || '';
+    }
+    if (detail) {
+      const excerpt = (detail.text || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+      cell.title = `${detail.classification}: ${detail.recipe}${excerpt ? ` — ${excerpt}` : ''}`;
+    } else {
+      cell.title = cell.dataset.wishSearchOriginalTitle || '';
+    }
+  });
+  document.querySelectorAll('#grid tr[data-pos]').forEach((row) => {
+    row.classList.toggle('wish-search-position', visual.positions.has(+row.dataset.pos));
+  });
+}
+
+function clearWishSearchPaint() {
+  const classes = [
+    'wish-search-tested', 'wish-search-off-target', 'wish-search-partial',
+    'wish-search-repetition', 'wish-search-current', 'wish-search-verified',
+  ];
+  document.querySelectorAll('#grid td.cell').forEach((cell) => {
+    cell.classList.remove(...classes);
+    if (cell.dataset.wishSearchTitleSaved) {
+      cell.title = cell.dataset.wishSearchOriginalTitle || '';
+      delete cell.dataset.wishSearchTitleSaved;
+      delete cell.dataset.wishSearchOriginalTitle;
+    }
+  });
+  document.querySelectorAll('#grid tr.wish-search-position').forEach((row) => {
+    row.classList.remove('wish-search-position');
+  });
+}
+
+function formatWishElapsed(seconds) {
+  const whole = Math.max(0, Math.floor(seconds || 0));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+function updateWishSearchStatus() {
+  const search = _wish?.search;
+  if (!search) return;
+  const elapsed = Math.min(
+    search.budgetSeconds,
+    Math.max(search.elapsedSeconds || 0, (performance.now() - search.startedAt) / 1000),
+  );
+  const fraction = search.done && search.verified
+    ? 1 : Math.min(1, elapsed / search.budgetSeconds);
+  $('wish-search-fill').style.width = `${fraction * 100}%`;
+  $('wish-search-stats').textContent =
+    `${search.tested} tested · ${search.partials} leads · ${formatWishElapsed(elapsed)} / ${formatWishElapsed(search.budgetSeconds)}`;
+}
+
+function beginWishSearchTimer() {
+  if (_wishSearchTimer !== null) clearInterval(_wishSearchTimer);
+  _wishSearchTimer = setInterval(updateWishSearchStatus, 250);
+}
+
+function endWishSearchTimer() {
+  if (_wishSearchTimer !== null) clearInterval(_wishSearchTimer);
+  _wishSearchTimer = null;
+}
+
+function showWishSearchResult(kind, copy, recipe = '') {
+  const result = $('wish-search-result');
+  result.hidden = false;
+  result.className = kind === 'verified' ? 'verified' : '';
+  $('wish-search-result-copy').textContent = copy;
+  $('wish-search-recipe').textContent = recipe;
+}
+
+function renderWishSearchDiagnostics(search) {
+  const host = $('wish-search-diagnostics');
+  host.replaceChildren();
+  const diagnostics = [...(search?.diagnostics || [])]
+    .sort((a, b) => b.improvement - a.improvement)
+    .slice(0, 3);
+  for (const item of diagnostics) {
+    const row = document.createElement('div');
+    row.className = 'wish-search-diagnostic';
+    const label = document.createElement('strong');
+    label.textContent = item.classification.replace('_', ' ');
+    const recipe = document.createElement('code');
+    recipe.textContent = wishSearchRecipeText(item.cells);
+    const text = document.createElement('span');
+    text.textContent = (item.text || '').trim().replace(/\s+/g, ' ') || '—';
+    row.append(label, recipe, text);
+    host.appendChild(row);
+  }
+}
+
+function finishWishSearch(data = {}) {
+  const search = _wish?.search;
+  if (!search || search.done) return;
+  search.done = true;
+  search.running = false;
+  search.elapsedSeconds = Number(data.elapsed_seconds) ||
+    (performance.now() - search.startedAt) / 1000;
+  endWishSearchTimer();
+  search.visual.current.clear();
+  paintWishSearchCells();
+  $('wish-search-stop').hidden = true;
+
+  if (search.verified) {
+    $('wish-search-view').classList.add('success');
+    $('wish-search-title').textContent = 'Verified recipe found';
+    $('wish-search-stage').textContent =
+      `Full deterministic replay said “${search.verified.text.trim()}” and terminated normally.`;
+    showWishSearchResult(
+      'verified',
+      `${search.verified.cells.length}-cell workspace recipe`,
+      wishSearchRecipeText(search.verified.cells),
+    );
+    $('wish-search-apply').hidden = false;
+  } else if (data.stop_reason === 'dirty_baseline') {
+    $('wish-search-title').textContent = 'Start from a clean baseline';
+    $('wish-search-stage').textContent =
+      'Disable existing interventions before searching, so the recipe can be verified in isolation.';
+    showWishSearchResult('', 'No search was run and no intervention was changed.');
+  } else if (data.stop_reason === 'baseline_mismatch' || data.status === 'baseline_mismatch') {
+    $('wish-search-title').textContent = 'Displayed reply changed';
+    $('wish-search-stage').textContent =
+      'The deterministic baseline no longer matches this displayed response.';
+    showWishSearchResult('', 'Re-run the clean baseline, then select the reply token again.');
+  } else if (search.cancelled) {
+    $('wish-search-title').textContent = 'Search stopped';
+    $('wish-search-stage').textContent = `${search.tested} complete recipes were checked safely.`;
+    if (search.profile === 'standard') $('wish-search-deeper').hidden = false;
+  } else if (data.status === 'error') {
+    $('wish-search-title').textContent = 'Search failed';
+    $('wish-search-stage').textContent = search.error || 'The search could not be completed.';
+    showWishSearchResult('', 'No intervention was applied.');
+  } else {
+    $('wish-search-title').textContent = 'No verified recipe yet';
+    $('wish-search-stage').textContent =
+      `No exact, normally terminated replacement was found within ${search.profile === 'standard' ? 'one minute' : 'three minutes'}.`;
+    const diagnostic = search.partials
+      ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} were kept as diagnostics, not solutions.`
+      : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
+    showWishSearchResult('', diagnostic);
+    renderWishSearchDiagnostics(search);
+    if (search.profile === 'standard') $('wish-search-deeper').hidden = false;
+  }
+  updateWishSearchStatus();
+  updateScrollClearance();
+}
+
+function handleWishSearchEvent(event, obj) {
+  const search = _wish?.search;
+  if (!search) return;
+  if (event === 'search_start') {
+    if (Number.isInteger(obj.token_id)) search.tokenId = obj.token_id;
+    if (Number.isInteger(obj.target_id)) search.targetId = obj.target_id;
+    $('wish-search-stage').textContent = 'Ranking J-Space evidence across prefilled positions…';
+  } else if (event === 'position_ranking' || event === 'ranking') {
+    const positions = obj.positions || obj.ranked_positions || [];
+    for (const entry of positions) {
+      const position = Number.isFinite(+entry) ? +entry : +entry.position;
+      if (Number.isFinite(position)) search.visual.positions.add(position);
+    }
+    if (positions.length) renderGrid({ keepScroll: true });
+  } else if (event === 'stage') {
+    search.stage = obj.stage || obj.name || 'search';
+    const labels = {
+      evidence_single: 'Testing coherent source-token tracks…',
+      coarse_single: 'Sweeping the workspace band…',
+      refinement_single: 'Refining nearby layers and strengths…',
+      pair: 'Combining promising workspace cells…',
+      triple: 'Testing a final three-cell combination…',
+    };
+    $('wish-search-stage').textContent =
+      obj.label || obj.message || labels[search.stage] || 'Testing workspace recipes…';
+    wishSearchSetCurrent(obj.cells || []);
+  } else if (event === 'candidate_start') {
+    wishSearchSetCurrent(obj.cells || []);
+  } else if (event === 'candidate') {
+    search.tested = Math.max(search.tested + 1, Number(obj.index) || 0);
+    search.elapsedSeconds = Number(obj.elapsed_seconds) || search.elapsedSeconds;
+    if (obj.recipe_key) search.recipeKeys.add(obj.recipe_key);
+    const classification = obj.class === 'verified' ? 'verified'
+      : obj.class === 'partial' ? 'partial'
+        : obj.class === 'off_target' ? 'off-target'
+          : obj.class === 'repetition' ? 'repetition' : 'tested';
+    if (classification === 'partial' || classification === 'off-target') {
+      search.partials++;
+      search.diagnostics.push({
+        classification,
+        cells: obj.cells || [],
+        text: obj.text || '',
+        recipeKey: obj.recipe_key || '',
+        improvement: Number(obj.improvement_over_baseline) || 0,
+      });
+      search.diagnostics.sort((a, b) => b.improvement - a.improvement);
+      search.diagnostics.length = Math.min(search.diagnostics.length, 12);
+    }
+    if (obj.improving === true && Array.isArray(obj.cells) && obj.cells.length === 1) {
+      const key = obj.recipe_key || wishSearchRecipeText(obj.cells);
+      const prior = {
+        recipe_key: key,
+        cells: obj.cells,
+        similarity_to_desired: Number(obj.similarity_to_desired) || 0,
+      };
+      const at = search.priorPromising.findIndex((item) => item.recipe_key === key);
+      if (at >= 0) search.priorPromising[at] = prior;
+      else search.priorPromising.push(prior);
+      search.priorPromising.sort((a, b) =>
+        b.similarity_to_desired - a.similarity_to_desired ||
+        a.recipe_key.localeCompare(b.recipe_key));
+      search.priorPromising.length = Math.min(search.priorPromising.length, 16);
+    }
+    const recipe = wishSearchRecipeText(obj.cells || []);
+    for (const cell of obj.cells || []) {
+      search.visual.positions.add(cell.position);
+      search.visual.cells.set(wishSearchCellKey(cell.position, cell.layer), classification);
+      search.visual.details.set(wishSearchCellKey(cell.position, cell.layer), {
+        classification, recipe, text: obj.text || '',
+      });
+    }
+    search.visual.current.clear();
+    // The adaptive endpoint's verifier is exact-response strict. Keep this
+    // defensive gate so an older server can never expose a phrase-only hit.
+    if (obj.verified === true &&
+        (obj.exact_response_match === true || obj.exact_replacement_match === true)) {
+      search.verified = obj;
+      for (const cell of obj.cells || []) {
+        search.visual.cells.set(wishSearchCellKey(cell.position, cell.layer), 'verified');
+      }
+    }
+    paintWishSearchCells();
+    updateWishSearchStatus();
+  } else if (event === 'search_end') {
+    finishWishSearch(obj);
+  } else if (event === 'error') {
+    search.error = obj.error || 'Search failed.';
+    finishWishSearch({ status: 'error', stop_reason: 'error' });
+  }
+}
+
+async function streamWishSearch(payload, controller) {
+  const response = await fetch(API + '/api/intervention_search_adaptive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal: controller.signal,
+  });
+  if (!response.ok) throw new Error(await response.text());
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf('\n\n')) >= 0) {
+      const frame = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      let event = 'message';
+      let data = '';
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event: ')) event = line.slice(7).trim();
+        else if (line.startsWith('data: ')) data += line.slice(6);
+      }
+      if (!data) continue;
+      try { handleWishSearchEvent(event, JSON.parse(data)); } catch (_) {}
+    }
+  }
+}
+
+function stopWishSearch({ silent = false } = {}) {
+  const search = _wish?.search;
+  if (!search || !search.running) return;
+  search.cancelled = true;
+  search.running = false;
+  if (search.controller) search.controller.abort();
+  endWishSearchTimer();
+  search.visual.current.clear();
+  if (!silent) finishWishSearch({ status: 'cancelled', stop_reason: 'cancelled' });
+}
+
+async function runAdaptiveWishSearch(profile = 'standard') {
+  if (!_wish) return;
+  const wish = _wish;
+  const previous = wish.search;
+  const budgetSeconds = profile === 'thorough' ? 180 : 60;
+  const visual = previous?.visual || {
+    cells: new Map(), current: new Set(), positions: new Set(), details: new Map(),
+  };
+  if (!visual.details) visual.details = new Map();
+  const controller = new AbortController();
+  wish.search = {
+    profile, budgetSeconds, controller, visual,
+    running: true, done: false, cancelled: false, verified: null,
+    tested: profile === 'thorough' ? (previous?.tested || 0) : 0,
+    partials: profile === 'thorough' ? (previous?.partials || 0) : 0,
+    diagnostics: profile === 'thorough' ? [...(previous?.diagnostics || [])] : [],
+    recipeKeys: previous?.recipeKeys || new Set(),
+    priorPromising: previous?.priorPromising || [],
+    startedAt: performance.now(), elapsedSeconds: 0,
+  };
+  document.documentElement.classList.add('wish-search-active');
+  $('wish-pop').classList.add('search-mode');
+  $('wish-compose').hidden = true;
+  $('wish-search-view').hidden = false;
+  $('wish-search-view').classList.remove('success');
+  $('wish-search-title').textContent = profile === 'thorough'
+    ? 'Searching deeper' : 'Searching backward';
+  $('wish-search-sub').textContent =
+    `⟨${wishSelectedText(wish)}⟩ → ⟨${wish.wishText}⟩ · ${profile === 'thorough' ? 'up to 3 minutes' : 'up to 1 minute'}`;
+  $('wish-search-stage').textContent = 'Resolving token boundaries…';
+  $('wish-search-result').hidden = true;
+  $('wish-search-diagnostics').replaceChildren();
+  $('wish-search-stop').hidden = false;
+  $('wish-search-deeper').hidden = true;
+  $('wish-search-apply').hidden = true;
+  $('wish-search-fill').style.width = '0';
+  updateScrollClearance();
+
+  // Search results are only reproducible when the displayed response is a
+  // clean baseline. Pending enabled edits matter just as much as edits that
+  // were already applied to the active run.
+  if ((state.appliedInterventions || []).length || enabledInterventions().length) {
+    finishWishSearch({ status: 'dirty_baseline', stop_reason: 'dirty_baseline' });
+    return;
+  }
+  beginWishSearchTimer();
+
+  try {
+    const sourceText = wishSelectedText(wish);
+    const [_, resolvedSourceId, canonicalTarget] = await Promise.all([
+      ensureInfoReady(),
+      wish.outputTokId != null ? Promise.resolve(wish.outputTokId) : _wishExactTokenId(wish.outputTok),
+      _canonicalWishTarget(wish.wishText, wish.outputTok),
+    ]);
+    if (_wish !== wish || !wish.search?.running) return;
+    wish.search.token = wish.outputTok;
+    wish.search.tokenId = resolvedSourceId;
+    wish.search.target = canonicalTarget.text;
+    wish.search.targetId = canonicalTarget.id;
+    const messages = _scanMessages();
+    const evidence = wishSearchPositionEvidence(wish);
+    const reply = state.messages[wish.msgIdx];
+    const payload = {
+      messages,
+      token: wish.outputTok,
+      token_id: resolvedSourceId,
+      target: canonicalTarget.text,
+      target_id: canonicalTarget.id,
+      source_text: sourceText,
+      goal_text: wish.wishText,
+      replacement_text: wish.wishText,
+      baseline_response: wish.baselineResponse,
+      selected_start: wish.sourceStart,
+      selected_end: wish.sourceEnd,
+      selected_token_index: wish.selectedTokenIdx,
+      position_evidence: evidence,
+      exclude_recipe_keys: profile === 'thorough' ? [...wish.search.recipeKeys] : [],
+      prior_promising: profile === 'thorough'
+        ? wish.search.priorPromising.map((item) => ({
+            cells: item.cells,
+            similarity_to_desired: item.similarity_to_desired,
+          }))
+        : [],
+      profile,
+      max_tokens: Math.min(128, Math.max(32, (reply?.tokens.length || 1) + 16)),
+      time_budget_seconds: budgetSeconds,
+      enable_thinking: false,
+    };
+    await streamWishSearch(payload, controller);
+    if (_wish === wish && wish.search && !wish.search.done && !wish.search.cancelled) {
+      finishWishSearch({ status: 'no_verified_recipe', stop_reason: 'stream_ended' });
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      if (_wish === wish && wish.search && !wish.search.done) {
+        finishWishSearch({ status: 'cancelled', stop_reason: 'cancelled' });
+      }
+    } else if (_wish === wish && wish.search) {
+      console.error('adaptive intervention search failed:', error);
+      wish.search.error = String(error.message || error);
+      finishWishSearch({ status: 'error', stop_reason: 'error' });
+    }
+  }
+}
+
+function applyVerifiedWishRecipe() {
+  const wish = _wish;
+  const search = wish?.search;
+  const result = search?.verified;
+  if (!wish || !result || !Array.isArray(result.cells) || !result.cells.length) return;
+  const ids = [];
+  for (const cell of result.cells) {
+    const id = nextInterventionId();
+    ids.push(id);
+    state.interventions.push({
+      id, enabled: true, mode: 'swap',
+      token: search.token, tokenId: search.tokenId,
+      target: search.target, targetId: search.targetId,
+      alpha: Number(cell.alpha), layers: [Number(cell.layer)],
+      scope: { type: 'at', pos: Number(cell.position) },
+      origin: { pos: Number(cell.position), layer: Number(cell.layer) },
+      ablateTokenIds: null,
+    });
+  }
+  wish.specIds = { search: ids };
+  afterInterventionChange();
+  dismissWishPopover();
+  wish.dismissed = true;
+  rerunWithInterventions({ tempOverride: 0 });
+}
+
 function startWish() {
   const wishText = $('wish-input').value.trim();
   if (!wishText || !_wishSeed) return;
   _wish = { ..._wishSeed, wishText, stage: null, pending: null,
             specIds: {}, scanSpecs: {}, outcomes: {}, dismissed: false };
-  dismissWishPopover();
-  openWishModal('conclusion');
+  _wishSeed = null;
+  runAdaptiveWishSearch('standard');
 }
 $('wish-go').onclick = startWish;
+$('wish-input').addEventListener('input', () => {
+  $('wish-go').disabled = !$('wish-input').value.trim();
+});
 $('wish-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); startWish(); }
 });
+$('wish-search-stop').onclick = () => stopWishSearch();
+$('wish-search-close').onclick = () => dismissWishPopover();
+$('wish-search-deeper').onclick = () => runAdaptiveWishSearch('thorough');
+$('wish-search-apply').onclick = applyVerifiedWishRecipe;
 
 function openWishModal(strategy) {
   if (!_wish) return;

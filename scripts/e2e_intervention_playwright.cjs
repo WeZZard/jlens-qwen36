@@ -25,6 +25,7 @@ const trials = process.env.JLENS_E2E_TRIALS
       { prompt: 'Say Paris and nothing else.', source: 'Paris', target: 'Beijing' },
       { prompt: 'Say London and nothing else.', source: 'London', target: 'Tokyo' },
     ];
+const searchProfile = process.env.JLENS_E2E_PROFILE || 'standard';
 
 function phraseCount(text, phrase) {
   const haystack = String(text || '').normalize('NFKC').toLocaleLowerCase();
@@ -81,8 +82,8 @@ async function browserState(page) {
 }
 
 async function clearConversation(page) {
-  const visible = await page.locator('#scan-backdrop:not([hidden])').count();
-  if (visible) await page.locator('#scan-close').click();
+  const visible = await page.locator('#wish-pop:not([hidden])').count();
+  if (visible) await page.locator('#wish-search-close').click();
   if (await page.locator('#clear-btn:not([disabled])').count()) {
     await page.locator('#clear-btn').click();
     await page.waitForFunction(() => state.messages.length === 0);
@@ -133,63 +134,74 @@ async function runTrial(page, trial, index) {
   await page.locator('#wish-pop:not([hidden])').waitFor({ timeout: 10_000 });
   await page.locator('#wish-input').fill(trial.target);
   await page.locator('#wish-go').click();
-  await page.locator('#scan-card-conclusion .scan-card-go').click();
-  await page.waitForFunction(() => {
-    const progress = document.querySelector('#scan-progress')?.textContent || '';
-    const cells = document.querySelectorAll('#scan-map .scan-cell');
-    const pending = document.querySelectorAll('#scan-map .scan-cell:not(.done)');
-    return cells.length > 0 && pending.length === 0 &&
-      /^(done|error|failed|cannot scan)/.test(progress);
-  }, null, { timeout: 120_000 });
+  await page.locator('#wish-search-view:not([hidden])').waitFor({ timeout: 10_000 });
+  await page.waitForFunction(() => _wish?.search?.done === true, null, { timeout: 100_000 });
+  let search = await page.evaluate(() => ({
+    profile: _wish.search.profile,
+    tested: _wish.search.tested,
+    partials: _wish.search.partials,
+    verified: _wish.search.verified,
+    error: _wish.search.error || null,
+  }));
+  if (!search.verified && searchProfile === 'thorough' &&
+      await page.locator('#wish-search-deeper:not([hidden])').count()) {
+    await page.locator('#wish-search-deeper').click();
+    await page.waitForFunction(() => _wish?.search?.profile === 'thorough' &&
+      _wish.search.done === true, null, { timeout: 220_000 });
+    search = await page.evaluate(() => ({
+      profile: _wish.search.profile,
+      tested: _wish.search.tested,
+      partials: _wish.search.partials,
+      verified: _wish.search.verified,
+      error: _wish.search.error || null,
+    }));
+  }
 
-  const cells = await page.locator('#scan-map .scan-cell.done').evaluateAll((nodes) =>
-    nodes.map((node) => ({
-      id: node.id,
-      classes: [...node.classList],
-      title: node.title,
-    })));
-  const progress = await page.locator('#scan-progress').textContent();
+  const cells = await page.locator('#grid td.cell').evaluateAll((nodes) =>
+    nodes.filter((node) => [...node.classList].some((name) => name.startsWith('wish-search-')))
+      .map((node) => ({
+        position: Number(node.dataset.pos),
+        layer: Number(node.dataset.layer),
+        classes: [...node.classList],
+        title: node.title,
+      })));
+  const progress = {
+    title: await page.locator('#wish-search-title').textContent(),
+    stage: await page.locator('#wish-search-stage').textContent(),
+    stats: await page.locator('#wish-search-stats').textContent(),
+  };
   await page.screenshot({
-    path: path.join(artifactDir, `trial-${index}-scan.png`),
+    path: path.join(artifactDir, `trial-${index}-search.png`),
     fullPage: true,
   });
 
-  const green = page.locator('#scan-map .scan-cell.done.cls-success');
-  const orange = page.locator('#scan-map .scan-cell.done.cls-parrot');
-  const choice = await green.count() ? green.first()
-    : await orange.count() ? orange.first()
-      : null;
-  if (!choice) {
+  if (!search.verified) {
     return {
       index,
       ...trial,
       baseline: baseline.text,
-      status: 'no-green-or-orange-cell',
+      status: search.error ? 'search-error' : 'no-verified-recipe',
+      search,
       progress,
       cells,
     };
   }
 
-  const chosen = {
-    id: await choice.getAttribute('id'),
-    classes: await choice.getAttribute('class'),
-    title: await choice.getAttribute('title'),
-  };
-  await choice.click();
-  const rerunVisible = await page.locator('#scan-rerun:not([hidden])').count() > 0;
-  if (!rerunVisible) {
+  const applyVisible = await page.locator('#wish-search-apply:not([hidden])').count() > 0;
+  if (!applyVisible) {
     return {
       index,
       ...trial,
       baseline: baseline.text,
-      status: 'colored-cell-not-adoptable',
-      progress: await page.locator('#scan-progress').textContent(),
-      chosen,
+      status: 'verified-recipe-not-applicable',
+      search,
+      progress,
       cells,
     };
   }
 
-  await page.locator('#scan-rerun').click();
+  const chosen = search.verified;
+  await page.locator('#wish-search-apply').click();
   await page.waitForTimeout(5_000);
   const afterFiveSeconds = await browserState(page);
   const infiniteLike = afterFiveSeconds.streaming &&
@@ -220,6 +232,7 @@ async function runTrial(page, trial, index) {
       : correct ? 'correctly-intervened'
         : 'intervention-incorrect',
     chosen,
+    search: { profile: search.profile, tested: search.tested, partials: search.partials },
     afterFiveSeconds,
     final,
     done: latestDone ? latestDone.events.find((event) => event.event === 'done') : null,
@@ -246,7 +259,7 @@ async function runTrial(page, trial, index) {
         });
       }
       const response = await nativeFetch(...args);
-      if (url.endsWith('/api/chat_stream') || url.endsWith('/api/intervention_scan')) {
+      if (url.endsWith('/api/chat_stream') || url.endsWith('/api/intervention_search_adaptive')) {
         const clone = response.clone();
         clone.text().then((body) => {
           const events = body.split('\n\n').map((frame) => {
@@ -259,7 +272,10 @@ async function runTrial(page, trial, index) {
               }
             }
             return { event, data };
-          }).filter((item) => ['scan_start', 'probe', 'scan_end', 'done', 'error'].includes(item.event));
+          }).filter((item) => [
+            'search_start', 'position_ranking', 'baseline', 'stage',
+            'candidate_start', 'candidate', 'search_end', 'done', 'error',
+          ].includes(item.event));
           window.__jlensE2EStreams.push({ url, events });
         }).catch(() => {});
       }
@@ -287,7 +303,8 @@ async function runTrial(page, trial, index) {
   await browser.close();
 
   const hardFailures = results.filter((result) =>
-    ['infinite-loop-generation', 'colored-cell-not-adoptable'].includes(result.status));
+    ['infinite-loop-generation', 'verified-recipe-not-applicable', 'search-error']
+      .includes(result.status));
   if (hardFailures.length) process.exitCode = 1;
 })().catch((error) => {
   console.error(error);

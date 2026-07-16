@@ -11,7 +11,8 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
-from collections import Counter
+from collections import Counter, deque
+from difflib import SequenceMatcher
 import json
 import math
 import os
@@ -1622,6 +1623,389 @@ class InterventionSearchRequest(BaseModel):
     stop_on_success: bool = True
 
 
+class AdaptiveSearchHit(BaseModel):
+    """A source-token readout occurrence in one workspace cell."""
+
+    layer: int
+    rank: int
+
+
+class AdaptivePositionEvidence(BaseModel):
+    """Compact baseline-grid evidence for one exact prefill position.
+
+    The client already owns these readouts.  Sending only source-token hits
+    lets the search rank positions without repeating the expensive full-grid
+    lens readout on the server.
+    """
+
+    position: int
+    msg_idx: int | None = None
+    role: str = "user"
+    token_text: str = ""
+    source_hits: list[AdaptiveSearchHit] = []
+
+
+class AdaptivePromisingSingle(BaseModel):
+    """One improving single-cell result carried into a deeper search.
+
+    The endpoint validates that ``cells`` contains exactly one measured
+    workspace cell and that its recipe key is also excluded from replay.
+    ``similarity_to_desired`` is the score from the standard search's full
+    deterministic replay; it is used only to rank/seed combinations.
+    """
+
+    cells: list[InterventionSearchCell]
+    similarity_to_desired: float
+
+
+class AdaptiveInterventionSearchRequest(BaseModel):
+    """Ask the server to discover and verify an exact workspace recipe."""
+
+    messages: list[ChatMessage]
+    token: str | None = None
+    token_id: int | None = None
+    target: str | None = None
+    target_id: int | None = None
+    # User-visible replacement. This is intentionally distinct from `target`,
+    # whose leading whitespace may encode the source token's BPE boundary.
+    replacement_text: str
+    baseline_response: str
+    # Unicode code-point offsets into baseline_response (Python string
+    # indexing), not UTF-8 bytes or JavaScript UTF-16 code units.
+    selected_start: int
+    selected_end: int
+    position_evidence: list[AdaptivePositionEvidence] = []
+    # Recipe keys returned by an earlier standard search. Thorough/deeper
+    # search passes these back so its extra two minutes do not repeat work.
+    exclude_recipe_keys: list[str] = []
+    # At most sixteen improving single-cell results from the standard search.
+    # They seed the deeper combination beam but are never accepted as verified
+    # without a new full replay of the resulting pair/triple recipe.
+    prior_promising: list[AdaptivePromisingSingle] = []
+    profile: str = "standard"       # standard (<=60s) | thorough (<=180s)
+    max_tokens: int = 64
+    time_budget_seconds: float = 60.0
+    enable_thinking: bool = False
+
+
+class _AdaptiveSearchDeadlineExpired(Exception):
+    """The search deadline elapsed before queued GPU work could begin."""
+
+    def __init__(self, queue_wait_ms: float):
+        super().__init__("adaptive search deadline expired while waiting for GPU")
+        self.queue_wait_ms = queue_wait_ms
+
+
+def _adaptive_longest_layer_run(
+    hit_layers: set[int], workspace_layers: list[int]
+) -> int:
+    """Longest consecutive run in fitted-layer order, not raw layer IDs."""
+    longest = current = 0
+    for layer in workspace_layers:
+        if layer in hit_layers:
+            current += 1
+            longest = max(longest, current)
+        else:
+            current = 0
+    return longest
+
+
+def _adaptive_rank_positions(
+    evidence: list[AdaptivePositionEvidence],
+    *,
+    frontier: int,
+    workspace_layers: list[int],
+    selected_source: str,
+) -> list[dict[str, Any]]:
+    """Rank prefill positions from observed J-space coherence.
+
+    A coherent source readout is the strongest signal.  A weaker source hit
+    or literal source token in the latest user context follows, then the
+    causal frontier, remaining user rows, and older context.  All tie breaks
+    are explicit so the same grid always produces the same search order.
+    """
+    allowed = set(workspace_layers)
+    by_position: dict[int, dict[str, Any]] = {}
+    for row in evidence:
+        merged = by_position.setdefault(row.position, {
+            "position": row.position,
+            "msg_idx": row.msg_idx,
+            "role": row.role,
+            "token_text": row.token_text,
+            "hit_ranks": {},
+        })
+        # Prefer the newest/most specific metadata if duplicate rows arrive,
+        # while merging duplicate cell evidence by its best observed rank.
+        if row.msg_idx is not None:
+            merged["msg_idx"] = row.msg_idx
+        if row.role:
+            merged["role"] = row.role
+        if row.token_text:
+            merged["token_text"] = row.token_text
+        for hit in row.source_hits:
+            if hit.layer not in allowed:
+                continue
+            previous = merged["hit_ranks"].get(hit.layer)
+            if previous is None or hit.rank < previous:
+                merged["hit_ranks"][hit.layer] = hit.rank
+
+    by_position.setdefault(frontier, {
+        "position": frontier,
+        "msg_idx": None,
+        "role": "frontier",
+        "token_text": "",
+        "hit_ranks": {},
+    })
+    source_key = _normalized_probe_text(selected_source)
+    ranked: list[dict[str, Any]] = []
+    for row in by_position.values():
+        hit_ranks = row["hit_ranks"]
+        hit_layers = set(hit_ranks)
+        longest_run = _adaptive_longest_layer_run(
+            hit_layers, workspace_layers
+        )
+        top1_count = sum(rank == 1 for rank in hit_ranks.values())
+        reciprocal_rank = sum(1.0 / rank for rank in hit_ranks.values())
+        literal_source = bool(
+            source_key
+            and _normalized_probe_text(row["token_text"]) == source_key
+        )
+        coherent = longest_run >= 2 or top1_count >= 2
+        role = row["role"]
+        if coherent:
+            tier, reason = 0, "coherent_source_readout"
+        elif hit_layers or literal_source:
+            tier, reason = 1, (
+                "source_readout" if hit_layers else "literal_source_token"
+            )
+        elif row["position"] == frontier:
+            tier, reason = 2, "causal_frontier"
+        elif (role == "template"
+              and row["position"] >= max(0, frontier - 2)):
+            # The final assistant-prefix/control tokens are real prefill
+            # coordinates even though they do not belong to a chat message.
+            # They often form the last causal bridge into the first reply
+            # token, so keep them ahead of the broad user-context sweep.
+            tier, reason = 2, "causal_template_prefix"
+        elif role == "user":
+            tier, reason = 3, "recent_user_context"
+        else:
+            tier, reason = 4, "older_context"
+        ranked.append({
+            "position": row["position"],
+            "msg_idx": row["msg_idx"],
+            "role": role,
+            "token_text": row["token_text"],
+            "reason": reason,
+            "tier": tier,
+            "hit_layers": sorted(
+                hit_layers,
+                key=lambda layer: (hit_ranks[layer], -layer),
+            ),
+            "hit_ranks": {
+                str(layer): hit_ranks[layer] for layer in sorted(hit_ranks)
+            },
+            "longest_layer_run": longest_run,
+            "top1_count": top1_count,
+            "hit_count": len(hit_layers),
+            "reciprocal_rank_score": reciprocal_rank,
+            "literal_source": literal_source,
+        })
+    ranked.sort(key=lambda row: (
+        row["tier"],
+        -row["longest_layer_run"],
+        -row["top1_count"],
+        -row["hit_count"],
+        -row["reciprocal_rank_score"],
+        -(row["msg_idx"] if row["msg_idx"] is not None else -1),
+        -row["position"],
+    ))
+    return ranked
+
+
+def _adaptive_coarse_layers(workspace_layers: list[int], count: int = 7) -> list[int]:
+    """Evenly spread fitted workspace layers, searched late-first."""
+    if len(workspace_layers) <= count:
+        return list(reversed(workspace_layers))
+    picked: list[int] = []
+    for index in range(count):
+        at = round(index * (len(workspace_layers) - 1) / (count - 1))
+        layer = workspace_layers[at]
+        if layer not in picked:
+            picked.append(layer)
+    return list(reversed(picked))
+
+
+def _adaptive_recipe_key(cells: list[dict[str, Any]]) -> tuple:
+    return tuple(sorted(
+        (int(cell["position"]), int(cell["layer"]), float(cell["alpha"]))
+        for cell in cells
+    ))
+
+
+def _adaptive_recipe_string(cells: list[dict[str, Any]]) -> str:
+    """Stable wire key used to resume a deeper search without repetition."""
+    return "|".join(
+        f"p{position}:l{layer}:a{alpha:g}"
+        for position, layer, alpha in _adaptive_recipe_key(cells)
+    )
+
+
+def _adaptive_candidate(
+    stage: str,
+    cells: list[dict[str, Any]],
+    *,
+    parents: list[str] | None = None,
+) -> dict[str, Any]:
+    bits = "+".join(
+        f"p{cell['position']}l{cell['layer']}a{cell['alpha']:g}"
+        for cell in sorted(
+            cells, key=lambda value: (value["position"], value["layer"])
+        )
+    )
+    return {
+        "id": f"{stage}-{bits}",
+        "stage": stage,
+        "cells": cells,
+        "parents": list(parents or []),
+    }
+
+
+def _adaptive_initial_candidates(
+    ranked_positions: list[dict[str, Any]],
+    workspace_layers: list[int],
+) -> list[dict[str, Any]]:
+    """Round-robin source-evidence and coarse singles across positions."""
+    coarse = _adaptive_coarse_layers(workspace_layers)
+    layer_orders: list[tuple[int, list[int]]] = []
+    for row in ranked_positions:
+        layers: list[int] = []
+        for layer in row["hit_layers"][:4] + coarse:
+            if layer not in layers:
+                layers.append(layer)
+        layer_orders.append((row["position"], layers))
+    candidates: list[dict[str, Any]] = []
+    max_lanes = max((len(layers) for _, layers in layer_orders), default=0)
+    for lane in range(max_lanes):
+        for position, layers in layer_orders:
+            if lane >= len(layers):
+                continue
+            layer = layers[lane]
+            stage = "evidence_single" if lane < min(4, len(
+                next(row for row in ranked_positions
+                     if row["position"] == position)["hit_layers"]
+            )) else "coarse_single"
+            candidates.append(_adaptive_candidate(stage, [{
+                "position": position, "layer": layer, "alpha": 1.0,
+            }]))
+    # Evidence/coarse overlap can produce the same recipe at different lanes.
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple] = set()
+    for candidate in candidates:
+        key = _adaptive_recipe_key(candidate["cells"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(candidate)
+    return unique
+
+
+def _adaptive_refinement_candidates(
+    parent: dict[str, Any], workspace_layers: list[int]
+) -> list[dict[str, Any]]:
+    """Refine a safe changed single around its fitted layer and strength."""
+    if len(parent["cells"]) != 1:
+        return []
+    cell = parent["cells"][0]
+    try:
+        center = workspace_layers.index(cell["layer"])
+    except ValueError:
+        return []
+    cells = [{
+        "position": cell["position"],
+        "layer": cell["layer"],
+        "alpha": 0.5,
+    }]
+    for delta in (-1, 1, -2, 2):
+        index = center + delta
+        if 0 <= index < len(workspace_layers):
+            cells.append({
+                "position": cell["position"],
+                "layer": workspace_layers[index],
+                "alpha": 1.0,
+            })
+    return [
+        _adaptive_candidate("refinement_single", [value], parents=[parent["id"]])
+        for value in cells
+    ]
+
+
+def _adaptive_pair_candidates(
+    newest: dict[str, Any], promising: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Pair adjacent-layer or same-layer improving singles only."""
+    if len(newest["cells"]) != 1:
+        return []
+    left = newest["cells"][0]
+    out: list[dict[str, Any]] = []
+    for other in promising:
+        if other["id"] == newest["id"] or len(other["cells"]) != 1:
+            continue
+        right = other["cells"][0]
+        adjacent_layers = (
+            left["position"] == right["position"]
+            and 0 < abs(left["layer"] - right["layer"]) <= 2
+        )
+        same_layer_positions = (
+            left["layer"] == right["layer"]
+            and left["position"] != right["position"]
+        )
+        if not (adjacent_layers or same_layer_positions):
+            continue
+        cells = [
+            {"position": value["position"], "layer": value["layer"], "alpha": 0.5}
+            for value in (left, right)
+        ]
+        out.append(_adaptive_candidate(
+            "pair", cells, parents=[newest["id"], other["id"]]
+        ))
+    return out
+
+
+def _adaptive_triple_candidates(
+    pair: dict[str, Any], promising: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Extend an improving pair by one related improving single."""
+    if len(pair["cells"]) != 2:
+        return []
+    occupied = {(cell["position"], cell["layer"]) for cell in pair["cells"]}
+    out: list[dict[str, Any]] = []
+    for single in promising:
+        if len(single["cells"]) != 1:
+            continue
+        cell = single["cells"][0]
+        coordinate = (cell["position"], cell["layer"])
+        if coordinate in occupied:
+            continue
+        related = any(
+            (cell["position"] == member["position"]
+             and abs(cell["layer"] - member["layer"]) <= 2)
+            or (cell["layer"] == member["layer"]
+                and cell["position"] != member["position"])
+            for member in pair["cells"]
+        )
+        if not related:
+            continue
+        cells = [dict(member) for member in pair["cells"]] + [{
+            "position": cell["position"],
+            "layer": cell["layer"],
+            "alpha": 0.5,
+        }]
+        out.append(_adaptive_candidate(
+            "triple", cells, parents=[pair["id"], single["id"]]
+        ))
+    return out
+
+
 def _normalized_probe_text(text: str) -> str:
     """Normalize superficial presentation differences, not content.
 
@@ -2219,6 +2603,714 @@ async def intervention_search(req: InterventionSearchRequest):
                     0.0, elapsed - req.time_budget_seconds
                 ),
                 "stopped_early": tested < len(req.candidates),
+            })
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.post("/api/intervention_search_adaptive")
+async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
+    """Discover and verify an exact workspace recipe under one deadline.
+
+    Unlike :func:`intervention_search`, this production controller generates
+    candidates lazily.  Baseline J-space evidence supplied by the UI ranks
+    prefill positions; every proposed recipe is still judged by a fresh,
+    full, deterministic, lens-free replay.
+    """
+    _require_active_mode()
+    request_started = time.perf_counter()
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    if _lens is None:
+        raise HTTPException(400, "adaptive search requires a loaded lens")
+    if not req.messages:
+        raise HTTPException(400, "messages is empty")
+    bad_roles = sorted({
+        message.role for message in req.messages
+        if message.role not in ("system", "user", "assistant")
+    })
+    if bad_roles:
+        raise HTTPException(400, f"unsupported message roles: {bad_roles}")
+    if req.profile not in ("standard", "thorough"):
+        raise HTTPException(400, "profile must be 'standard' or 'thorough'")
+    profile_ceiling = 60.0 if req.profile == "standard" else 180.0
+    if (not math.isfinite(req.time_budget_seconds)
+            or req.time_budget_seconds < 0.001
+            or req.time_budget_seconds > profile_ceiling):
+        raise HTTPException(
+            400,
+            f"time_budget_seconds must be finite and in [0.001, "
+            f"{profile_ceiling:g}] for the {req.profile} profile",
+        )
+    deadline = request_started + req.time_budget_seconds
+    if not (1 <= req.max_tokens <= 128):
+        raise HTTPException(400, "max_tokens must be in [1, 128]")
+    if req.enable_thinking:
+        raise HTTPException(400, "adaptive search requires enable_thinking=false")
+    if not (0 <= req.selected_start < req.selected_end
+            <= len(req.baseline_response)):
+        raise HTTPException(
+            400, "selected_start/selected_end are outside baseline_response"
+        )
+    if len(req.position_evidence) > 4096:
+        raise HTTPException(400, "position_evidence is limited to 4096 rows")
+    if not req.replacement_text:
+        raise HTTPException(400, "replacement_text is empty")
+    if len(req.exclude_recipe_keys) > 768:
+        raise HTTPException(400, "exclude_recipe_keys is limited to 768 recipes")
+    if any(not key.strip() for key in req.exclude_recipe_keys):
+        raise HTTPException(400, "exclude_recipe_keys contains an empty key")
+    if len(req.prior_promising) > 16:
+        raise HTTPException(400, "prior_promising is limited to 16 singles")
+    if req.prior_promising and req.profile != "thorough":
+        raise HTTPException(
+            400, "prior_promising is accepted only by the thorough profile"
+        )
+
+    workspace = next(
+        (band for band in (_bands or []) if band.get("name") == "workspace"),
+        None,
+    )
+    if workspace is None:
+        raise HTTPException(
+            400, "adaptive search requires a measured workspace band"
+        )
+    workspace_start = int(workspace["start_layer"])
+    workspace_end = int(workspace["end_layer"])
+    fitted = {int(layer) for layer in _lens.source_layers}
+    workspace_layers = sorted(
+        layer for layer in fitted
+        if workspace_start <= layer <= workspace_end
+    )
+    if not workspace_layers:
+        raise HTTPException(
+            400, "measured workspace band contains no fitted lens layers"
+        )
+    allowed_layers = set(workspace_layers)
+
+    tok = _model.tokenizer
+    resolution_spec = InterventionSpec(
+        mode="swap",
+        layers=[workspace_layers[0]],
+        token=req.token,
+        token_id=req.token_id,
+        target=req.target,
+        target_id=req.target_id,
+        alpha=1.0,
+        positions=[0],
+    )
+    resolved = _validate_and_resolve_specs(
+        [resolution_spec], _lens, tok, _model.n_layers
+    )[0]
+    try:
+        prompt_ids = await asyncio.to_thread(
+            _chat_template_token_ids,
+            tok,
+            req.messages,
+            enable_thinking=False,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    if not prompt_ids:
+        raise HTTPException(400, "chat template produced no input tokens")
+    frontier = len(prompt_ids) - 1
+
+    excluded_recipe_keys = set(req.exclude_recipe_keys)
+    prior_promising: list[dict[str, Any]] = []
+    prior_recipe_keys: set[str] = set()
+    for prior_index, prior in enumerate(req.prior_promising):
+        where = f"prior_promising[{prior_index}]"
+        if len(prior.cells) != 1:
+            raise HTTPException(
+                400, f"{where}.cells must contain exactly one cell"
+            )
+        score = float(prior.similarity_to_desired)
+        if not math.isfinite(score) or not (0.0 <= score <= 1.0):
+            raise HTTPException(
+                400,
+                f"{where}.similarity_to_desired must be finite and in [0, 1]",
+            )
+        supplied = prior.cells[0]
+        if not (0 <= supplied.position <= frontier):
+            raise HTTPException(
+                400,
+                f"{where}.cells[0].position {supplied.position} is outside "
+                f"the prefill frontier {frontier}",
+            )
+        if supplied.layer not in allowed_layers:
+            raise HTTPException(
+                400, f"{where}.cells[0].layer is outside the measured workspace"
+            )
+        alpha = float(supplied.alpha)
+        if not math.isfinite(alpha) or not (0.0 < alpha <= 1.0):
+            raise HTTPException(
+                400, f"{where}.cells[0].alpha must be finite and in (0, 1]"
+            )
+        cells = [{
+            "position": int(supplied.position),
+            "layer": int(supplied.layer),
+            "alpha": alpha,
+        }]
+        recipe_key = _adaptive_recipe_string(cells)
+        if recipe_key not in excluded_recipe_keys:
+            raise HTTPException(
+                400,
+                f"{where} recipe must also appear in exclude_recipe_keys",
+            )
+        if recipe_key in prior_recipe_keys:
+            raise HTTPException(
+                400, f"{where} duplicates an earlier prior_promising recipe"
+            )
+        prior_recipe_keys.add(recipe_key)
+        promising = _adaptive_candidate("prior_single", cells)
+        promising["score"] = score
+        prior_promising.append(promising)
+
+    allowed_evidence_roles = {
+        "system", "user", "assistant", "template", "frontier",
+    }
+    for row_index, row in enumerate(req.position_evidence):
+        where = f"position_evidence[{row_index}]"
+        if not (0 <= row.position <= frontier):
+            raise HTTPException(
+                400,
+                f"{where}.position {row.position} is outside the prefill "
+                f"frontier {frontier}",
+            )
+        if row.role not in allowed_evidence_roles:
+            raise HTTPException(400, f"{where}.role is unsupported")
+        if row.msg_idx is not None:
+            if not (0 <= row.msg_idx < len(req.messages)):
+                raise HTTPException(400, f"{where}.msg_idx is outside messages")
+            expected_role = req.messages[row.msg_idx].role
+            if row.role != expected_role:
+                raise HTTPException(
+                    400,
+                    f"{where}.role {row.role!r} does not match "
+                    f"messages[{row.msg_idx}].role {expected_role!r}",
+                )
+        if len(row.source_hits) > len(workspace_layers):
+            raise HTTPException(
+                400, f"{where}.source_hits exceeds the workspace layer count"
+            )
+        seen_hit_layers: set[int] = set()
+        for hit_index, hit in enumerate(row.source_hits):
+            hit_where = f"{where}.source_hits[{hit_index}]"
+            if hit.layer not in allowed_layers:
+                raise HTTPException(
+                    400, f"{hit_where}.layer is outside the measured workspace"
+                )
+            if hit.layer in seen_hit_layers:
+                raise HTTPException(400, f"{where} has duplicate source-hit layers")
+            seen_hit_layers.add(hit.layer)
+            if not (1 <= hit.rank <= 1000):
+                raise HTTPException(400, f"{hit_where}.rank must be in [1, 1000]")
+
+    selected_source = req.baseline_response[
+        req.selected_start:req.selected_end
+    ]
+    if not selected_source:
+        raise HTTPException(400, "selected response span is empty")
+    if (_normalized_probe_text(req.replacement_text)
+            == _normalized_probe_text(selected_source)):
+        raise HTTPException(
+            400,
+            "replacement_text is equivalent to the selected response span",
+        )
+    desired_response = (
+        req.baseline_response[:req.selected_start]
+        + req.replacement_text
+        + req.baseline_response[req.selected_end:]
+    )
+    ranked_positions = _adaptive_rank_positions(
+        req.position_evidence,
+        frontier=frontier,
+        workspace_layers=workspace_layers,
+        selected_source=selected_source,
+    )
+    position_limit = 8 if req.profile == "standard" else 16
+    ranked_positions = ranked_positions[:position_limit]
+    initial = deque(_adaptive_initial_candidates(
+        ranked_positions, workspace_layers
+    ))
+    max_candidates = 384 if req.profile == "standard" else 768
+    eos_ids = _planner_eos_ids(tok)
+
+    def _compile_and_replay(candidate: dict[str, Any]):
+        from .interventions import compile_edits
+
+        candidate_started = time.perf_counter()
+        compile_started = time.perf_counter()
+        edits = []
+        for cell in candidate["cells"]:
+            edits.extend(compile_edits(
+                _lens,
+                _model,
+                mode="swap",
+                layers=[cell["layer"]],
+                token_id=resolved["token_id"],
+                target_id=resolved["target_id"],
+                alpha=cell["alpha"],
+                positions=[cell["position"]],
+                from_pos=None,
+                label=(
+                    f"adaptive {candidate['id']} L{cell['layer']} "
+                    f"p{cell['position']} a={cell['alpha']:g}"
+                ),
+            ))
+        compile_ms = 1000.0 * (time.perf_counter() - compile_started)
+        replay = _greedy_intervention_replay(
+            prompt_ids, edits, req.max_tokens, eos_ids
+        )
+        replay["timings_ms"]["compile"] = compile_ms
+        replay["timings_ms"]["total"] = 1000.0 * (
+            time.perf_counter() - candidate_started
+        )
+        return replay
+
+    async def _locked_worker(fn, *args):
+        """Start GPU work only if this request acquires the lock in time.
+
+        Once the worker has begun it is deliberately allowed to finish: MLX
+        work cannot be cancelled safely. Queueing, however, is cancellable and
+        belongs to the same global search budget as compilation and replay.
+        """
+        queue_started = time.perf_counter()
+        remaining = deadline - queue_started
+        if remaining <= 0:
+            raise _AdaptiveSearchDeadlineExpired(0.0)
+        acquired = False
+        try:
+            try:
+                await asyncio.wait_for(_gpu_lock.acquire(), timeout=remaining)
+                acquired = True
+            except asyncio.TimeoutError as error:
+                queue_wait_ms = 1000.0 * (
+                    time.perf_counter() - queue_started
+                )
+                raise _AdaptiveSearchDeadlineExpired(queue_wait_ms) from error
+            queue_wait_ms = 1000.0 * (time.perf_counter() - queue_started)
+            if time.perf_counter() >= deadline:
+                raise _AdaptiveSearchDeadlineExpired(queue_wait_ms)
+            result = await _planner_gpu_call(fn, *args)
+            return result, queue_wait_ms
+        finally:
+            if acquired:
+                _gpu_lock.release()
+
+    async def gen():
+        tested = 0
+        verified_candidate: dict[str, Any] | None = None
+        budget_exhausted = False
+        deadline_queue_wait_ms = 0.0
+        current_stage: str | None = None
+        refinement_queue: deque[dict[str, Any]] = deque()
+        pair_queue: deque[dict[str, Any]] = deque()
+        triple_queue: deque[dict[str, Any]] = deque()
+        promising_singles = [dict(candidate) for candidate in prior_promising]
+        promising_singles.sort(
+            key=lambda value: (-value["score"], value["id"])
+        )
+        scores_by_id = {
+            candidate["id"]: candidate["score"]
+            for candidate in promising_singles
+        }
+        submitted_keys: set[tuple] = set()
+        excluded_keys = set(req.exclude_recipe_keys)
+        candidate_durations: list[float] = []
+        pair_count = triple_count = 0
+
+        def _enqueue(
+            queue: deque[dict[str, Any]], candidate: dict[str, Any]
+        ) -> bool:
+            key = _adaptive_recipe_key(candidate["cells"])
+            wire_key = _adaptive_recipe_string(candidate["cells"])
+            if key in submitted_keys or wire_key in excluded_keys:
+                return False
+            submitted_keys.add(key)
+            queue.append(candidate)
+            return True
+
+        # Seed the dedupe set without changing the initial deterministic order.
+        deduped_initial: deque[dict[str, Any]] = deque()
+        while initial:
+            candidate = initial.popleft()
+            if _enqueue(deduped_initial, candidate):
+                continue
+        initial.extend(deduped_initial)
+
+        # Reuse the standard search's improving singles as evidence, not as
+        # claimed solutions: their exact recipes remain excluded above, while
+        # newly formed combinations still require a fresh full replay.  An
+        # improving pair may then seed the thorough-only triple beam below.
+        if req.profile == "thorough":
+            for newest in promising_singles:
+                for pair in _adaptive_pair_candidates(
+                    newest, promising_singles
+                ):
+                    if pair_count >= 128:
+                        break
+                    if _enqueue(pair_queue, pair):
+                        pair_count += 1
+                if pair_count >= 128:
+                    break
+
+        # Do not let a large coarse/refinement sweep consume the entire
+        # deadline after the search has enough evidence to try a combination.
+        # A pair gets one deterministic slot after at most two single-cell
+        # probes; an improving pair's thorough-only triple gets the next
+        # combination slot. Seeded prior singles therefore yield an early
+        # pair in a deeper search instead of waiting behind fresh singles.
+        singles_since_combination = 2 if pair_queue else 0
+
+        try:
+            yield _sse("search_start", {
+                "profile": req.profile,
+                "time_budget_seconds": req.time_budget_seconds,
+                "max_candidates": max_candidates,
+                "max_tokens": req.max_tokens,
+                "input_tokens": len(prompt_ids),
+                "frontier_position": frontier,
+                "token_id": resolved["token_id"],
+                "token_str": resolved["token_str"],
+                "target_id": resolved["target_id"],
+                "target_str": resolved["target_str"],
+                "replacement_text": req.replacement_text,
+                "selected_source": selected_source,
+                "desired_response": desired_response,
+                "prior_promising_count": len(prior_promising),
+                "workspace": {
+                    "start_layer": workspace_start,
+                    "end_layer": workspace_end,
+                    "layers": workspace_layers,
+                },
+            })
+            yield _sse("position_ranking", {
+                "frontier_position": frontier,
+                "limit": position_limit,
+                "positions": ranked_positions,
+            })
+
+            try:
+                baseline, baseline_queue_ms = await _locked_worker(
+                    _greedy_intervention_replay,
+                    prompt_ids,
+                    None,
+                    req.max_tokens,
+                    eos_ids,
+                )
+            except _AdaptiveSearchDeadlineExpired as expired:
+                deadline_queue_wait_ms = expired.queue_wait_ms
+                elapsed = time.perf_counter() - request_started
+                yield _sse("search_end", {
+                    "status": "budget_exhausted",
+                    "stop_reason": "time_budget",
+                    "tested": 0,
+                    "max_candidates": max_candidates,
+                    "verified_candidate_id": None,
+                    "verified_cells": None,
+                    "desired_response": desired_response,
+                    "elapsed_seconds": elapsed,
+                    "time_budget_seconds": req.time_budget_seconds,
+                    "budget_exhausted": True,
+                    "budget_overshoot_seconds": max(
+                        0.0, elapsed - req.time_budget_seconds
+                    ),
+                    "deadline_queue_wait_ms": deadline_queue_wait_ms,
+                })
+                return
+            # The chat UI cumulatively decodes generated ids with the
+            # tokenizer's default behavior. Use the same representation here
+            # so equality means byte-for-byte equality with what was shown.
+            baseline_text = tok.decode(baseline["ids"])
+            baseline_matches = bool(
+                baseline["eos"]
+                and not baseline["repetition"]
+                and baseline_text == req.baseline_response
+            )
+            baseline_timings = dict(baseline["timings_ms"])
+            baseline_timings["queue_wait"] = baseline_queue_ms
+            baseline_timings["total_with_queue"] = (
+                baseline_timings["total"] + baseline_queue_ms
+            )
+            candidate_durations.append(
+                baseline_timings["total_with_queue"] / 1000.0
+            )
+            yield _sse("baseline", {
+                "text": baseline_text,
+                "displayed_text": req.baseline_response,
+                "matches_displayed": baseline_matches,
+                "eos": baseline["eos"],
+                "repetition": baseline["repetition"],
+                "stop_reason": baseline["stop_reason"],
+                "timings_ms": baseline_timings,
+            })
+            if not baseline_matches:
+                elapsed = time.perf_counter() - request_started
+                yield _sse("search_end", {
+                    "status": "baseline_mismatch",
+                    "stop_reason": "baseline_mismatch",
+                    "tested": 0,
+                    "verified_candidate_id": None,
+                    "verified_cells": None,
+                    "elapsed_seconds": elapsed,
+                    "time_budget_seconds": req.time_budget_seconds,
+                    "budget_exhausted": False,
+                    "budget_overshoot_seconds": max(
+                        0.0, elapsed - req.time_budget_seconds
+                    ),
+                })
+                return
+
+            desired_norm = _normalized_probe_text(desired_response)
+            baseline_norm = _normalized_probe_text(baseline_text)
+            baseline_similarity = SequenceMatcher(
+                None, baseline_norm, desired_norm
+            ).ratio()
+
+            while tested < max_candidates:
+                singles_available = bool(refinement_queue or initial)
+                if req.profile == "thorough" and triple_queue:
+                    candidate = triple_queue.popleft()
+                elif (pair_queue
+                      and (singles_since_combination >= 2
+                           or not singles_available)):
+                    candidate = pair_queue.popleft()
+                elif refinement_queue:
+                    candidate = refinement_queue.popleft()
+                elif initial:
+                    candidate = initial.popleft()
+                elif pair_queue:
+                    candidate = pair_queue.popleft()
+                elif req.profile == "thorough" and triple_queue:
+                    candidate = triple_queue.popleft()
+                else:
+                    break
+
+                if len(candidate["cells"]) == 1:
+                    singles_since_combination += 1
+                else:
+                    singles_since_combination = 0
+
+                elapsed = time.perf_counter() - request_started
+                ordered_durations = sorted(candidate_durations)
+                p95_index = round(0.95 * (len(ordered_durations) - 1))
+                estimated_atomic = ordered_durations[p95_index]
+                reserve = max(0.05, min(5.0, 2.0 * estimated_atomic))
+                if elapsed + reserve >= req.time_budget_seconds:
+                    budget_exhausted = True
+                    break
+
+                if candidate["stage"] != current_stage:
+                    current_stage = candidate["stage"]
+                    yield _sse("stage", {
+                        "stage": current_stage,
+                        "tested": tested,
+                        "elapsed_seconds": elapsed,
+                        "budget_remaining_seconds": max(
+                            0.0, req.time_budget_seconds - elapsed
+                        ),
+                    })
+
+                candidate_elapsed = time.perf_counter() - request_started
+                yield _sse("candidate_start", {
+                    "id": candidate["id"],
+                    "recipe_key": _adaptive_recipe_string(candidate["cells"]),
+                    "stage": candidate["stage"],
+                    "parents": candidate["parents"],
+                    "index": tested + 1,
+                    "max_candidates": max_candidates,
+                    "cells": candidate["cells"],
+                    "elapsed_seconds": candidate_elapsed,
+                    "budget_remaining_seconds": max(
+                        0.0, req.time_budget_seconds - candidate_elapsed
+                    ),
+                })
+
+                try:
+                    replay, queue_wait_ms = await _locked_worker(
+                        _compile_and_replay, candidate
+                    )
+                except _AdaptiveSearchDeadlineExpired as expired:
+                    deadline_queue_wait_ms = expired.queue_wait_ms
+                    budget_exhausted = True
+                    break
+                tested += 1
+                candidate_durations.append(
+                    (replay["timings_ms"]["total"] + queue_wait_ms) / 1000.0
+                )
+                text = tok.decode(replay["ids"])
+                text_norm = _normalized_probe_text(text)
+                exact = text == desired_response
+                changed = text != baseline_text
+                verified = bool(
+                    replay["eos"]
+                    and not replay["repetition"]
+                    and exact
+                    and changed
+                )
+                safe_changed = bool(
+                    replay["eos"] and not replay["repetition"] and changed
+                )
+                similarity = SequenceMatcher(
+                    None, text_norm, desired_norm
+                ).ratio()
+                improvement = similarity - baseline_similarity
+                target_count = _bounded_phrase_count(text, req.replacement_text)
+                source_count = _bounded_phrase_count(text, selected_source)
+                improving = bool(
+                    safe_changed
+                    and (improvement > 1e-9
+                         or (target_count >= 1 and source_count == 0))
+                )
+                if verified:
+                    classification = "verified"
+                elif replay["repetition"]:
+                    classification = "repetition"
+                elif not changed:
+                    classification = "unchanged"
+                elif target_count >= 1 and source_count == 0:
+                    classification = "partial"
+                else:
+                    classification = "off_target"
+
+                scores_by_id[candidate["id"]] = similarity
+                elapsed = time.perf_counter() - request_started
+                timings = dict(replay["timings_ms"])
+                timings["queue_wait"] = queue_wait_ms
+                timings["total_with_queue"] = timings["total"] + queue_wait_ms
+                yield _sse("candidate", {
+                    "id": candidate["id"],
+                    "recipe_key": _adaptive_recipe_string(candidate["cells"]),
+                    "stage": candidate["stage"],
+                    "parents": candidate["parents"],
+                    "index": tested,
+                    "max_candidates": max_candidates,
+                    "cells": candidate["cells"],
+                    "text": text,
+                    "eos": replay["eos"],
+                    "repetition": replay["repetition"],
+                    "stop_reason": replay["stop_reason"],
+                    "class": classification,
+                    "verified": verified,
+                    "exact_response_match": exact,
+                    "safe_changed": safe_changed,
+                    "improving": improving,
+                    "similarity_to_desired": similarity,
+                    "improvement_over_baseline": improvement,
+                    "timings_ms": timings,
+                    "elapsed_seconds": elapsed,
+                    "budget_remaining_seconds": max(
+                        0.0, req.time_budget_seconds - elapsed
+                    ),
+                    "progress": {
+                        "tested": tested,
+                        "limit": max_candidates,
+                        "initial_queued": len(initial),
+                        "refinements_queued": len(refinement_queue),
+                        "pairs_queued": len(pair_queue),
+                        "triples_queued": len(triple_queue),
+                    },
+                })
+                if verified:
+                    verified_candidate = candidate
+                    break
+
+                if len(candidate["cells"]) == 1:
+                    if (safe_changed
+                            and candidate["stage"] != "refinement_single"):
+                        for refined in _adaptive_refinement_candidates(
+                            candidate, workspace_layers
+                        ):
+                            _enqueue(refinement_queue, refined)
+                    if improving:
+                        promising = dict(candidate)
+                        promising["score"] = similarity
+                        promising_singles.append(promising)
+                        promising_singles.sort(
+                            key=lambda value: (-value["score"], value["id"])
+                        )
+                        promising_singles[:] = promising_singles[:16]
+                        pair_limit = 48 if req.profile == "standard" else 128
+                        if pair_count < pair_limit:
+                            for pair in _adaptive_pair_candidates(
+                                promising, promising_singles
+                            ):
+                                if pair_count >= pair_limit:
+                                    break
+                                if _enqueue(pair_queue, pair):
+                                    pair_count += 1
+                elif len(candidate["cells"]) == 2 and req.profile == "thorough":
+                    parent_score = max(
+                        (scores_by_id.get(parent, baseline_similarity)
+                         for parent in candidate["parents"]),
+                        default=baseline_similarity,
+                    )
+                    if safe_changed and similarity > parent_score + 1e-9:
+                        for triple in _adaptive_triple_candidates(
+                            candidate, promising_singles
+                        ):
+                            if triple_count >= 64:
+                                break
+                            if _enqueue(triple_queue, triple):
+                                triple_count += 1
+                await asyncio.sleep(0)
+
+            elapsed = time.perf_counter() - request_started
+            if (not verified_candidate and elapsed >= req.time_budget_seconds):
+                budget_exhausted = True
+            if verified_candidate:
+                status, stop_reason = "success", "verified"
+            elif budget_exhausted:
+                status, stop_reason = "budget_exhausted", "time_budget"
+            else:
+                status, stop_reason = "no_verified_recipe", "exhausted_candidates"
+            yield _sse("search_end", {
+                "status": status,
+                "stop_reason": stop_reason,
+                "tested": tested,
+                "max_candidates": max_candidates,
+                "verified_candidate_id": (
+                    verified_candidate["id"] if verified_candidate else None
+                ),
+                "verified_cells": (
+                    verified_candidate["cells"] if verified_candidate else None
+                ),
+                "desired_response": desired_response,
+                "elapsed_seconds": elapsed,
+                "time_budget_seconds": req.time_budget_seconds,
+                "budget_exhausted": budget_exhausted,
+                "budget_overshoot_seconds": max(
+                    0.0, elapsed - req.time_budget_seconds
+                ),
+                "deadline_queue_wait_ms": deadline_queue_wait_ms,
+                "stage_counts": {
+                    "prior_promising_singles": len(prior_promising),
+                    "promising_singles": len(promising_singles),
+                    "pairs_enqueued": pair_count,
+                    "triples_enqueued": triple_count,
+                },
+            })
+        except Exception as error:
+            print(
+                f"[intervention_search_adaptive] error: {error}\n"
+                f"{traceback.format_exc()}",
+                flush=True,
+            )
+            elapsed = time.perf_counter() - request_started
+            yield _sse("error", {"error": str(error)})
+            yield _sse("search_end", {
+                "status": "error",
+                "stop_reason": "error",
+                "tested": tested,
+                "verified_candidate_id": None,
+                "verified_cells": None,
+                "elapsed_seconds": elapsed,
+                "time_budget_seconds": req.time_budget_seconds,
+                "budget_exhausted": False,
+                "budget_overshoot_seconds": max(
+                    0.0, elapsed - req.time_budget_seconds
+                ),
             })
 
     return StreamingResponse(gen(), media_type="text/event-stream")
