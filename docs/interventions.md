@@ -89,6 +89,39 @@ consequences everywhere else.
 - `POST /api/intervene` remains as a legacy single-layer, uncached
   reference matching `scripts/intervention_sanity.py`.
 
+### Bounded recipe verification
+
+`POST /api/intervention_search` is the lens-free evaluator for backward
+search. The caller supplies an ordered list of recipes; each recipe contains
+one to eight exact workspace cells:
+
+```json
+{
+  "messages": [{"role": "user", "content": "Complete with one city name: The capital of France is the city of"}],
+  "token": "Paris",
+  "target": "Beijing",
+  "source_text": "Paris",
+  "goal_text": "Beijing",
+  "time_budget_seconds": 60,
+  "max_tokens": 64,
+  "stop_on_success": true,
+  "candidates": [{
+    "id": "frontier-l59",
+    "cells": [{"layer": 59, "position": 25, "alpha": 1.0}]
+  }]
+}
+```
+
+It streams `search_start`, `baseline`, `candidate`, and `search_end` SSE
+events with compile/prefill/decode timings. Every candidate uses a fresh bare
+model session—no activation capture or readout—and the deadline is checked
+between candidates. A recipe is `verified` only when deterministic replay
+reaches EOS without repetition, contains exactly one bounded goal phrase, and
+contains no old source phrase. Time-budget, max-token, and repetition stops are
+never verified. Multi-cell recipes list each `(layer, position)` separately;
+combining arrays in one normal intervention spec would instead create their
+Cartesian product.
+
 ## Engine
 
 - `jlens_qwen/interventions.py` — `compile_edits()` turns a resolved spec

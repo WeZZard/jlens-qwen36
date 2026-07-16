@@ -11,12 +11,16 @@ Endpoints:
 from __future__ import annotations
 
 import asyncio
+from collections import Counter
 import json
+import math
 import os
 import re
 import subprocess
 import sys
 import time
+import traceback
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -678,6 +682,309 @@ class ChatStreamRequest(BaseModel):
     interventions: list[InterventionSpec] = []
 
 
+# A planner probe is deliberately narrower than /api/chat_stream: it reuses
+# the resident language model but never captures activations or computes a
+# J-space readout.  The explicit limits make long-context timing experiments
+# fail loudly instead of inheriting MLXLensModel.encode()'s 512-token tail
+# truncation.
+_PLANNER_CONTEXT_LIMIT = int(
+    os.environ.get("JLENS_PLANNER_CONTEXT_LIMIT", "262144")
+)
+_PLANNER_MAX_OUTPUT_TOKENS = 256
+
+
+class PlannerProbeRequest(BaseModel):
+    messages: list[ChatMessage]
+    max_tokens: int = 64
+    temperature: float = 0.0
+    enable_thinking: bool = False
+    prefill_chunk_size: int = 2048
+    time_budget_seconds: float = 180.0
+    max_input_tokens: int = 80000
+
+
+async def _planner_gpu_call(fn, *args):
+    """Run one GPU-bearing call off-loop without unsafe cancellation.
+
+    Cancelling ``asyncio.to_thread`` cannot stop the underlying worker.  If
+    the awaiter simply unwinds, its surrounding ``async with _gpu_lock`` can
+    release the lock while MLX is still executing.  Shield the worker and, on
+    cancellation, wait until it has really finished before re-raising so the
+    shared lock remains authoritative.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(fn, *args))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError as cancelled:
+        # A caller may cancel more than once.  Keep shielding until the worker
+        # has actually stopped; an MLX kernel already in flight is not
+        # preemptible from Python.
+        while not worker.done():
+            try:
+                await asyncio.shield(worker)
+            except asyncio.CancelledError:
+                continue
+        # Retrieve a possible worker exception to avoid an unobserved-task
+        # warning.  Cancellation remains the externally visible result.
+        try:
+            worker.result()
+        except BaseException:
+            pass
+        raise cancelled
+
+
+def _planner_eos_ids(tokenizer) -> set[int]:
+    value = getattr(tokenizer, "eos_token_id", None)
+    if value is None:
+        return set()
+    if isinstance(value, (list, tuple, set)):
+        return {int(token_id) for token_id in value}
+    return {int(value)}
+
+
+@app.post("/api/planner_probe")
+async def planner_probe(req: PlannerProbeRequest):
+    """Run a timed, lens-free planner generation on the resident model.
+
+    This endpoint is intended for intervention-planner experiments.  It uses
+    the real chat template and cached inference session, but ``make_stream()``
+    is called without capture layers and no readout helper is involved.
+    Prefill is chunked so the time budget can be checked between bounded GPU
+    calls.  The budget is cooperative: a single MLX call already in flight is
+    allowed to finish before the request stops.
+    """
+    _require_active_mode()
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    if not req.messages:
+        raise HTTPException(400, "messages is empty")
+    bad_roles = sorted({
+        message.role for message in req.messages
+        if message.role not in ("system", "user", "assistant")
+    })
+    if bad_roles:
+        raise HTTPException(400, f"unsupported message roles: {bad_roles}")
+    if not (1 <= req.max_tokens <= _PLANNER_MAX_OUTPUT_TOKENS):
+        raise HTTPException(
+            400,
+            f"max_tokens must be in [1, {_PLANNER_MAX_OUTPUT_TOKENS}]",
+        )
+    if not (0.0 <= req.temperature <= 2.0):
+        raise HTTPException(400, "temperature must be in [0, 2]")
+    if not (1 <= req.prefill_chunk_size <= 8192):
+        raise HTTPException(400, "prefill_chunk_size must be in [1, 8192]")
+    if not (0.001 <= req.time_budget_seconds <= 300.0):
+        raise HTTPException(400, "time_budget_seconds must be in [0.001, 300]")
+    if not (1 <= req.max_input_tokens <= _PLANNER_CONTEXT_LIMIT):
+        raise HTTPException(
+            400,
+            f"max_input_tokens must be in [1, {_PLANNER_CONTEXT_LIMIT}]",
+        )
+
+    request_started = time.perf_counter()
+    tok = _model.tokenizer
+    prompt_messages = [
+        {"role": message.role, "content": message.content}
+        for message in req.messages
+    ]
+
+    tokenize_started = time.perf_counter()
+
+    def _apply_template():
+        ids = tok.apply_chat_template(
+            prompt_messages,
+            add_generation_prompt=True,
+            enable_thinking=req.enable_thinking,
+        )
+        # transformers v5 may return a BatchEncoding even for one text
+        # sequence.  Normalize its input_ids explicitly rather than iterating
+        # the mapping keys ("input_ids", "attention_mask").
+        if isinstance(ids, dict) or hasattr(ids, "keys"):
+            try:
+                ids = ids["input_ids"]
+            except (KeyError, TypeError):
+                raise ValueError(
+                    "chat template result does not contain input_ids"
+                )
+        if hasattr(ids, "tolist"):
+            ids = ids.tolist()
+        # Some tokenizer configurations retain a batch dimension of one.
+        if (isinstance(ids, (list, tuple)) and len(ids) == 1
+                and isinstance(ids[0], (list, tuple))):
+            ids = ids[0]
+        if isinstance(ids, list):
+            return [int(token_id) for token_id in ids]
+        return [int(token_id) for token_id in ids]
+
+    # Tokenization can itself be noticeable for paper-sized context, so keep
+    # it off the event loop too.  It is CPU-only and therefore does not need
+    # the GPU lock.
+    input_ids = await asyncio.to_thread(_apply_template)
+    tokenize_ms = 1000.0 * (time.perf_counter() - tokenize_started)
+    input_tokens = len(input_ids)
+    if input_tokens == 0:
+        raise HTTPException(400, "chat template produced no input tokens")
+    if input_tokens > req.max_input_tokens:
+        raise HTTPException(
+            413,
+            f"templated input has {input_tokens} tokens; "
+            f"max_input_tokens is {req.max_input_tokens} (not truncated)",
+        )
+    if input_tokens + req.max_tokens > _PLANNER_CONTEXT_LIMIT:
+        raise HTTPException(
+            413,
+            f"input ({input_tokens}) + max_tokens ({req.max_tokens}) exceeds "
+            f"model context {_PLANNER_CONTEXT_LIMIT} (not truncated)",
+        )
+
+    def _budget_expired() -> bool:
+        return time.perf_counter() - request_started >= req.time_budget_seconds
+
+    queue_wait_ms = 0.0
+    session_setup_ms = 0.0
+    prefill_ms = 0.0
+    decode_ms = 0.0
+    total_service_ms = 0.0
+    ttft_ms: float | None = None
+    input_tokens_processed = 0
+    prefill_chunks = 0
+    decode_steps = 0
+    output_ids: list[int] = []
+    stop_reason = "time_budget" if _budget_expired() else ""
+    eos_ids = _planner_eos_ids(tok)
+
+    if not stop_reason:
+        queue_started = time.perf_counter()
+        async with _gpu_lock:
+            lock_acquired = time.perf_counter()
+            queue_wait_ms = 1000.0 * (lock_acquired - queue_started)
+            service_started = lock_acquired
+            session = None
+            logits = None
+            try:
+                if _budget_expired():
+                    stop_reason = "time_budget"
+                else:
+                    setup_started = time.perf_counter()
+                    # No capture_layers argument: the returned activation dict
+                    # stays empty and no J-space readout is possible.
+                    session = await _planner_gpu_call(_model.make_stream)
+                    session_setup_ms = 1000.0 * (
+                        time.perf_counter() - setup_started
+                    )
+
+                    for offset in range(
+                        0, input_tokens, req.prefill_chunk_size
+                    ):
+                        if _budget_expired():
+                            stop_reason = "time_budget"
+                            break
+                        chunk = input_ids[
+                            offset:offset + req.prefill_chunk_size
+                        ]
+                        prefill_started = time.perf_counter()
+                        logits, _ = await _planner_gpu_call(
+                            session.extend, chunk
+                        )
+                        prefill_ms += 1000.0 * (
+                            time.perf_counter() - prefill_started
+                        )
+                        input_tokens_processed += len(chunk)
+                        prefill_chunks += 1
+
+                    if (not stop_reason
+                            and input_tokens_processed == input_tokens):
+                        if _budget_expired():
+                            stop_reason = "time_budget"
+                        else:
+                            next_token = await _planner_gpu_call(
+                                _sample_tok, logits, req.temperature
+                            )
+                            ttft_ms = 1000.0 * (
+                                time.perf_counter() - request_started
+                            )
+                            if next_token in eos_ids:
+                                stop_reason = "eos"
+                            else:
+                                output_ids.append(next_token)
+
+                    while not stop_reason:
+                        if len(output_ids) >= req.max_tokens:
+                            stop_reason = "max_tokens"
+                            break
+                        if _budget_expired():
+                            stop_reason = "time_budget"
+                            break
+
+                        # The first output token is predicted by prefill.  Each
+                        # subsequent decision is one cached decode step.
+                        decode_started = time.perf_counter()
+                        logits, _ = await _planner_gpu_call(
+                            session.extend, [output_ids[-1]]
+                        )
+                        next_token = await _planner_gpu_call(
+                            _sample_tok, logits, req.temperature
+                        )
+                        decode_ms += 1000.0 * (
+                            time.perf_counter() - decode_started
+                        )
+                        decode_steps += 1
+                        if next_token in eos_ids:
+                            stop_reason = "eos"
+                            break
+                        output_ids.append(next_token)
+            finally:
+                # Drop references to this request's potentially large caches
+                # before another waiter acquires the GPU lock.
+                logits = None
+                session = None
+                total_service_ms = 1000.0 * (
+                    time.perf_counter() - service_started
+                )
+
+    # Decoding text is CPU-only and need not hold up the next GPU request.
+    if output_ids:
+        output_text = await asyncio.to_thread(
+            tok.decode, output_ids, skip_special_tokens=True
+        )
+    else:
+        output_text = ""
+    total_request_ms = 1000.0 * (time.perf_counter() - request_started)
+
+    prefill_seconds = prefill_ms / 1000.0
+    decode_seconds = decode_ms / 1000.0
+    return {
+        "text": output_text,
+        "token_ids": output_ids,
+        "input_tokens": input_tokens,
+        "input_tokens_processed": input_tokens_processed,
+        "output_tokens": len(output_ids),
+        "prefill_chunks": prefill_chunks,
+        "decode_steps": decode_steps,
+        "tokenize_ms": tokenize_ms,
+        "queue_wait_ms": queue_wait_ms,
+        "session_setup_ms": session_setup_ms,
+        "prefill_ms": prefill_ms,
+        "ttft_ms": ttft_ms,
+        "decode_ms": decode_ms,
+        "total_service_ms": total_service_ms,
+        "total_request_ms": total_request_ms,
+        "prefill_tokens_per_second": (
+            input_tokens_processed / prefill_seconds
+            if prefill_seconds > 0 else 0.0
+        ),
+        "decode_tokens_per_second": (
+            decode_steps / decode_seconds if decode_seconds > 0 else 0.0
+        ),
+        "stop_reason": stop_reason or "error",
+        "lens_readout": False,
+        "model_id": _model_id,
+        "lens_n_prompts": (
+            int(_lens.n_prompts) if _lens is not None else None
+        ),
+    }
+
+
 
 def _token_segments(tok, ids: list[int]) -> list[str]:
     """Per-token text segments that concatenate to the exact decoded text.
@@ -1166,6 +1473,7 @@ async def chat_stream(req: ChatStreamRequest):
                 gen_prev = ""
                 eos_id = getattr(tok, "eos_token_id", None)
                 eos_hit = eos_id is not None and next_tok == eos_id
+                generation_stop_reason = "eos" if eos_hit else None
                 while not eos_hit and n_gen < max_tokens:
                     # Block here if the client has paused generation.
                     await pause_event.wait()
@@ -1204,12 +1512,24 @@ async def chat_stream(req: ChatStreamRequest):
                     del acts
                     global_pos += 1
                     n_gen += 1
+                    # A malformed intervention can otherwise keep a very large
+                    # max-token run in a short token loop indefinitely. Baseline
+                    # generation is deliberately untouched by this breaker.
+                    if resolved_specs and _intervention_repetition(gen_ids):
+                        generation_stop_reason = "repetition"
+                        break
                     next_tok = new_next_tok
                     if eos_id is not None and next_tok == eos_id:
                         eos_hit = True
+                        generation_stop_reason = "eos"
                     await asyncio.sleep(0)
 
-                yield _sse("done", {"msg_idx": msg_idx, "n_tokens": n_gen})
+                if generation_stop_reason is None:
+                    generation_stop_reason = "max_tokens"
+                yield _sse("done", {
+                    "msg_idx": msg_idx, "n_tokens": n_gen,
+                    "stop_reason": generation_stop_reason,
+                })
         except Exception as e:
             import traceback
             tb = traceback.format_exc()
@@ -1231,9 +1551,11 @@ async def chat_stream(req: ChatStreamRequest):
 # can paint the map incrementally:
 #   unchanged   output identical to the baseline        (too weak)
 #   derived     changed, not the literal target          (the win)
-#   parrot      output IS the literal target token       (too strong — the
-#                                                         mouth, not the mind)
+#   parrot      target appears, but the result is not a
+#               strict conclusion success                (partial/off-target)
 #   degenerate  repetition / collapse                    (way too strong)
+#   success     terminated conclusion output contains one bounded goal and
+#               no bounded occurrence of the old source
 # Probes intentionally skip activation capture (make_stream() bare), so a
 # probe costs a prefill + max_tokens decode steps and nothing else.
 # ---------------------------------------------------------------------------
@@ -1245,23 +1567,211 @@ class InterventionScanRequest(BaseModel):
     token_id: int | None = None
     target: str | None = None
     target_id: int | None = None
+    # Full selected source word/phrase for conclusion-goal validation. This
+    # can differ from the single token direction used by the intervention.
+    source_text: str | None = None
+    # Optional behavioral goal used only to classify probe output. The
+    # intervention itself may resolve a multi-piece concept to one token,
+    # while success should still mean producing the complete requested text.
+    goal_text: str | None = None
     layers: list[int] | None = None       # default: spread across the workspace band
     alphas: list[float] | None = None     # default: mode-appropriate ladder
-    from_position: int = 0
+    # Exactly one effective scope is used. Omitting both preserves the old
+    # scan default (from position zero); supplying `positions` selects only
+    # those global token coordinates.
+    positions: list[int] | None = None
+    from_position: int | None = None
     max_tokens: int = 4
     enable_thinking: bool = False
 
 
-def _classify_probe(ids: list[int], text: str, baseline: str, target_str: str | None) -> str:
-    t = text.strip().lower()
-    if t == baseline.strip().lower():
+class InterventionSearchCell(BaseModel):
+    """One exact write site in an explicit intervention recipe."""
+
+    layer: int
+    position: int
+    alpha: float
+
+
+class InterventionSearchCandidate(BaseModel):
+    """A caller-supplied recipe; cells are applied together."""
+
+    id: str
+    cells: list[InterventionSearchCell]
+
+
+class InterventionSearchRequest(BaseModel):
+    """Evaluate explicit swap recipes under a cooperative wall-time budget.
+
+    This endpoint deliberately does not generate candidate coordinates.  A
+    planner or UI supplies exact workspace cells and the server verifies each
+    recipe with a fresh, full greedy replay.
+    """
+
+    messages: list[ChatMessage]
+    token: str | None = None
+    token_id: int | None = None
+    target: str | None = None
+    target_id: int | None = None
+    source_text: str
+    goal_text: str
+    candidates: list[InterventionSearchCandidate]
+    max_tokens: int = 64
+    time_budget_seconds: float = 60.0
+    enable_thinking: bool = False
+    stop_on_success: bool = True
+
+
+def _normalized_probe_text(text: str) -> str:
+    """Normalize superficial presentation differences, not content.
+
+    Goal checks deliberately retain punctuation and words so bounded phrase
+    matching can distinguish a selected word from malformed adjacency.
+    """
+    return " ".join(unicodedata.normalize("NFKC", text).split()).casefold()
+
+
+def _probe_is_degenerate(ids: list[int]) -> bool:
+    """Detect short repetitive collapses before considering goal success."""
+    n = len(ids)
+    if n < 4:
+        return False
+
+    counts = Counter(ids)
+    # Low-diversity/token-loop collapse, including A A * A A * ... .
+    if len(counts) <= 2:
+        return True
+    most_common = counts.most_common(1)[0][1]
+    if most_common >= 3 and most_common * 2 >= n:
+        return True
+
+    # Three adjacent copies of any short token pattern. This also catches
+    # multi-piece words whose BPE ids alternate and evade a token-count test.
+    for width in range(1, min(4, n // 3) + 1):
+        for start in range(0, n - 3 * width + 1):
+            chunk = ids[start:start + width]
+            if (ids[start + width:start + 2 * width] == chunk
+                    and ids[start + 2 * width:start + 3 * width] == chunk):
+                return True
+    return False
+
+
+def _bounded_phrase_pattern(phrase: str) -> re.Pattern[str] | None:
+    """Compile the same conservative lexical boundary used by goal checks."""
+    needle = _normalized_probe_text(phrase)
+    if not needle:
+        return None
+    # Apply lexical boundaries to ASCII word edges (the failure we need to
+    # reject is e.g. BeijingParis). CJK and other scripts commonly have no
+    # whitespace word separators, so a Python `\w` boundary would incorrectly
+    # reject 北京 inside a normal Chinese sentence.
+    def _ascii_word(ch: str) -> bool:
+        return ch.isascii() and (ch.isalnum() or ch == "_")
+
+    left = r"(?<![A-Za-z0-9_])" if _ascii_word(needle[0]) else ""
+    right = r"(?![A-Za-z0-9_])" if _ascii_word(needle[-1]) else ""
+    return re.compile(left + re.escape(needle) + right)
+
+
+def _bounded_phrase_count(text: str, phrase: str) -> int:
+    """Count a normalized phrase only at Unicode word boundaries."""
+    pattern = _bounded_phrase_pattern(phrase)
+    if pattern is None:
+        return 0
+    return len(pattern.findall(_normalized_probe_text(text)))
+
+
+def _expected_single_source_replacement(
+    baseline: str,
+    source_text: str,
+    goal_text: str,
+) -> str | None:
+    """Normalized literal replacement oracle, when it is unambiguous.
+
+    Behavioral success does not require this stricter oracle: a sound edit can
+    legitimately change surrounding grammar.  It is reported separately as a
+    useful high-precision signal when the baseline contains the old source
+    exactly once.
+    """
+    pattern = _bounded_phrase_pattern(source_text)
+    normalized = _normalized_probe_text(baseline)
+    if pattern is None or len(pattern.findall(normalized)) != 1:
+        return None
+    return pattern.sub(_normalized_probe_text(goal_text), normalized, count=1)
+
+
+def _classify_probe(
+    ids: list[int],
+    text: str,
+    baseline: str,
+    target_str: str | None,
+    *,
+    eos: bool,
+    goal_text: str | None = None,
+    source_text: str | None = None,
+) -> str:
+    t = _normalized_probe_text(text)
+    if t == _normalized_probe_text(baseline):
         return "unchanged"
-    tgt = (target_str or "").strip().lower()
+    # A loop that happens to begin with the goal is still a failed probe.
+    if _probe_is_degenerate(ids):
+        return "degenerate"
+    if goal_text is not None:
+        # Conclusion scans have a behavioral goal that may be a phrase inside
+        # a longer answer. A valid result must terminate, contain the goal
+        # exactly once as a bounded phrase, and no longer contain the old word.
+        # In particular, `BeijingParis`, repeated Beijing, Paris+Beijing, and
+        # max-token truncations are not successes.
+        goal_count = _bounded_phrase_count(text, goal_text)
+        source_gone = (
+            not source_text or _bounded_phrase_count(text, source_text) == 0
+        )
+        if eos and goal_count == 1 and source_gone:
+            return "success"
+        # Orange conclusion cells are useful partial candidates: the requested
+        # output appeared and the source disappeared, but the probe did not
+        # satisfy the stricter green contract (for example, it hit max_tokens
+        # after "... Beijing. Wait,"). Degeneration remains authoritative
+        # because it is checked above this branch.
+        if goal_count >= 1 and source_gone:
+            return "parrot"
+        return "derived"
+    tgt = _normalized_probe_text(target_str or "")
+    # Preserve the generic intervention-panel taxonomy: a literal target is a
+    # `parrot`, while another changed answer is `derived`. Degeneration is
+    # checked first so a target-prefixed loop is never adopted as healthy.
     if tgt and t.startswith(tgt):
         return "parrot"
-    if len(ids) >= 4 and len(set(ids)) <= 2:
-        return "degenerate"
     return "derived"
+
+
+def _intervention_repetition(ids: list[int]) -> bool:
+    """Conservative circuit breaker for runaway intervened generation.
+
+    Require at least twelve generated tokens, then detect a short cycle whose
+    repeated suffix spans at least twelve tokens, or an extremely low-diversity
+    sixteen-token tail. This is intentionally less eager than scan-probe
+    classification because it terminates a live generation.
+    """
+    n = len(ids)
+    if n < 12:
+        return False
+    for width in range(1, 5):
+        repeats = max(3, (12 + width - 1) // width)
+        span = width * repeats
+        if n < span:
+            continue
+        pattern = ids[-width:]
+        start = n - span
+        if all(ids[start + i:start + i + width] == pattern
+               for i in range(0, span, width)):
+            return True
+    if n >= 16:
+        tail = ids[-16:]
+        counts = Counter(tail)
+        if len(counts) <= 3 or counts.most_common(1)[0][1] >= 12:
+            return True
+    return False
 
 
 def _scan_default_layers(fitted: set[int]) -> list[int]:
@@ -1283,6 +1793,437 @@ def _scan_default_layers(fitted: set[int]) -> list[int]:
     return picked[:7]
 
 
+def _chat_template_token_ids(
+    tokenizer,
+    messages: list[ChatMessage],
+    *,
+    enable_thinking: bool,
+) -> list[int]:
+    """Apply the model's real chat template and normalize common containers."""
+    prompt_messages = [
+        {"role": message.role, "content": message.content}
+        for message in messages
+    ]
+    ids = tokenizer.apply_chat_template(
+        prompt_messages,
+        add_generation_prompt=True,
+        enable_thinking=enable_thinking,
+    )
+    if isinstance(ids, dict) or hasattr(ids, "keys"):
+        try:
+            ids = ids["input_ids"]
+        except (KeyError, TypeError):
+            raise ValueError("chat template result does not contain input_ids")
+    if hasattr(ids, "tolist"):
+        ids = ids.tolist()
+    if (isinstance(ids, (list, tuple)) and len(ids) == 1
+            and isinstance(ids[0], (list, tuple))):
+        ids = ids[0]
+    return [int(token_id) for token_id in ids]
+
+
+def _greedy_intervention_replay(
+    prompt_ids: list[int],
+    edits,
+    max_tokens: int,
+    eos_ids: set[int],
+) -> dict[str, Any]:
+    """Run one fresh bare stream; safe to execute inside the GPU worker."""
+    replay_started = time.perf_counter()
+
+    setup_started = time.perf_counter()
+    # Intentionally bare: no capture layers and therefore no lens readout.
+    session = _model.make_stream()
+    if edits:
+        session.set_edits(edits)
+    setup_ms = 1000.0 * (time.perf_counter() - setup_started)
+
+    prefill_started = time.perf_counter()
+    logits, _ = session.extend(prompt_ids)
+    prefill_ms = 1000.0 * (time.perf_counter() - prefill_started)
+
+    output_ids: list[int] = []
+    eos = False
+    repetition = False
+    stop_reason = "max_tokens"
+    decode_started = time.perf_counter()
+    for _ in range(max_tokens):
+        token_id = int(mx.argmax(logits.astype(mx.float32)).tolist())
+        if token_id in eos_ids:
+            eos = True
+            stop_reason = "eos"
+            break
+        output_ids.append(token_id)
+        if _intervention_repetition(output_ids):
+            repetition = True
+            stop_reason = "repetition"
+            break
+        if len(output_ids) >= max_tokens:
+            break
+        logits, _ = session.extend([token_id])
+    decode_ms = 1000.0 * (time.perf_counter() - decode_started)
+
+    return {
+        "ids": output_ids,
+        "eos": eos,
+        "repetition": repetition,
+        "stop_reason": stop_reason,
+        "timings_ms": {
+            "setup": setup_ms,
+            "prefill": prefill_ms,
+            "decode": decode_ms,
+            "total": 1000.0 * (time.perf_counter() - replay_started),
+        },
+    }
+
+
+@app.post("/api/intervention_search")
+async def intervention_search(req: InterventionSearchRequest):
+    """Verify caller-supplied workspace recipes within a wall-time budget.
+
+    The budget is cooperative between candidates: once a candidate starts,
+    its compile and replay are allowed to finish.  Consequently the response
+    reports any wall-time overshoot rather than pretending an in-flight MLX
+    kernel was cancelled.  This is an evaluator, not a coordinate planner.
+    """
+    _require_active_mode()
+    request_started = time.perf_counter()
+    if _model is None:
+        raise HTTPException(503, "model not loaded")
+    if _lens is None:
+        raise HTTPException(400, "intervention search requires a loaded lens")
+    if not req.messages:
+        raise HTTPException(400, "messages is empty")
+    bad_roles = sorted({
+        message.role for message in req.messages
+        if message.role not in ("system", "user", "assistant")
+    })
+    if bad_roles:
+        raise HTTPException(400, f"unsupported message roles: {bad_roles}")
+    if not req.source_text.strip():
+        raise HTTPException(400, "source_text is empty")
+    if not req.goal_text.strip():
+        raise HTTPException(400, "goal_text is empty")
+    if not (1 <= req.max_tokens <= 128):
+        raise HTTPException(400, "max_tokens must be in [1, 128]")
+    if not (math.isfinite(req.time_budget_seconds)
+            and 0.001 <= req.time_budget_seconds <= 300.0):
+        raise HTTPException(
+            400, "time_budget_seconds must be finite and in [0.001, 300]"
+        )
+    if not (1 <= len(req.candidates) <= 256):
+        raise HTTPException(400, "candidates must contain 1 to 256 recipes")
+
+    workspace = next(
+        (band for band in (_bands or []) if band.get("name") == "workspace"),
+        None,
+    )
+    if workspace is None:
+        raise HTTPException(
+            400, "intervention search requires a measured workspace band"
+        )
+    workspace_start = int(workspace["start_layer"])
+    workspace_end = int(workspace["end_layer"])
+    fitted = {int(layer) for layer in _lens.source_layers}
+    workspace_layers = sorted(
+        layer for layer in fitted
+        if workspace_start <= layer <= workspace_end
+    )
+    if not workspace_layers:
+        raise HTTPException(
+            400, "measured workspace band contains no fitted lens layers"
+        )
+    allowed_layers = set(workspace_layers)
+
+    candidate_ids: set[str] = set()
+    for index, candidate in enumerate(req.candidates):
+        where = f"candidates[{index}]"
+        if not candidate.id.strip():
+            raise HTTPException(400, f"{where}.id is empty")
+        if candidate.id in candidate_ids:
+            raise HTTPException(400, f"duplicate candidate id {candidate.id!r}")
+        candidate_ids.add(candidate.id)
+        if not (1 <= len(candidate.cells) <= 8):
+            raise HTTPException(400, f"{where}.cells must contain 1 to 8 cells")
+        for cell_index, cell in enumerate(candidate.cells):
+            cell_where = f"{where}.cells[{cell_index}]"
+            if cell.layer not in allowed_layers:
+                raise HTTPException(
+                    400,
+                    f"{cell_where}.layer L{cell.layer} is outside the measured "
+                    f"workspace fitted layers {workspace_layers}",
+                )
+            if cell.position < 0:
+                raise HTTPException(400, f"{cell_where}.position must be >= 0")
+            if not math.isfinite(cell.alpha):
+                raise HTTPException(400, f"{cell_where}.alpha must be finite")
+
+    tok = _model.tokenizer
+    # Reuse the production intervention validator and its exact token-id-first
+    # resolution. The stand-in scope/layer is discarded after resolution.
+    resolution_spec = InterventionSpec(
+        mode="swap",
+        layers=[workspace_layers[0]],
+        token=req.token,
+        token_id=req.token_id,
+        target=req.target,
+        target_id=req.target_id,
+        alpha=1.0,
+        positions=[0],
+    )
+    resolved = _validate_and_resolve_specs(
+        [resolution_spec], _lens, tok, _model.n_layers
+    )[0]
+    try:
+        prompt_ids = await asyncio.to_thread(
+            _chat_template_token_ids,
+            tok,
+            req.messages,
+            enable_thinking=req.enable_thinking,
+        )
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from error
+    if not prompt_ids:
+        raise HTTPException(400, "chat template produced no input tokens")
+    for candidate_index, candidate in enumerate(req.candidates):
+        for cell_index, cell in enumerate(candidate.cells):
+            if cell.position >= len(prompt_ids):
+                raise HTTPException(
+                    400,
+                    f"candidates[{candidate_index}].cells[{cell_index}].position "
+                    f"{cell.position} is outside the templated input "
+                    f"(length {len(prompt_ids)})",
+                )
+    eos_ids = _planner_eos_ids(tok)
+
+    def _compile_and_replay(candidate: InterventionSearchCandidate):
+        from .interventions import compile_edits
+
+        candidate_started = time.perf_counter()
+        compile_started = time.perf_counter()
+        edits = []
+        # Compile every exact cell independently. Passing all layers and all
+        # positions to one compile_edits call would create the Cartesian
+        # product rather than the requested (layer, position) pairs.
+        for cell in candidate.cells:
+            cell_edits = compile_edits(
+                _lens,
+                _model,
+                mode="swap",
+                layers=[cell.layer],
+                token_id=resolved["token_id"],
+                target_id=resolved["target_id"],
+                alpha=cell.alpha,
+                positions=[cell.position],
+                from_pos=None,
+                label=(
+                    f"search {candidate.id} L{cell.layer} "
+                    f"p{cell.position} a={cell.alpha:g}"
+                ),
+            )
+            edits.extend(cell_edits)
+        compile_ms = 1000.0 * (time.perf_counter() - compile_started)
+        replay = _greedy_intervention_replay(
+            prompt_ids, edits, req.max_tokens, eos_ids
+        )
+        replay["timings_ms"]["compile"] = compile_ms
+        replay["timings_ms"]["total"] = 1000.0 * (
+            time.perf_counter() - candidate_started
+        )
+        return replay
+
+    async def _locked_worker(fn, *args):
+        queue_started = time.perf_counter()
+        async with _gpu_lock:
+            queue_wait_ms = 1000.0 * (
+                time.perf_counter() - queue_started
+            )
+            result = await _planner_gpu_call(fn, *args)
+        return result, queue_wait_ms
+
+    async def gen():
+        tested = 0
+        verified_ids: list[str] = []
+        stopped_for_budget = False
+        try:
+            yield _sse("search_start", {
+                "token_id": resolved["token_id"],
+                "token_str": resolved["token_str"],
+                "target_id": resolved["target_id"],
+                "target_str": resolved["target_str"],
+                "source_text": req.source_text,
+                "goal_text": req.goal_text,
+                "workspace": {
+                    "start_layer": workspace_start,
+                    "end_layer": workspace_end,
+                    "layers": workspace_layers,
+                },
+                "n_candidates": len(req.candidates),
+                "max_tokens": req.max_tokens,
+                "time_budget_seconds": req.time_budget_seconds,
+                "enable_thinking": req.enable_thinking,
+                "stop_on_success": req.stop_on_success,
+                "input_tokens": len(prompt_ids),
+            })
+
+            baseline, baseline_queue_ms = await _locked_worker(
+                _greedy_intervention_replay,
+                prompt_ids,
+                None,
+                req.max_tokens,
+                eos_ids,
+            )
+            baseline_text = tok.decode(
+                baseline["ids"], skip_special_tokens=True
+            )
+            expected_replacement = _expected_single_source_replacement(
+                baseline_text, req.source_text, req.goal_text
+            )
+            baseline_timings = dict(baseline["timings_ms"])
+            baseline_timings["queue_wait"] = baseline_queue_ms
+            yield _sse("baseline", {
+                "text": baseline_text,
+                "eos": baseline["eos"],
+                "repetition": baseline["repetition"],
+                "stop_reason": baseline["stop_reason"],
+                "source_count": _bounded_phrase_count(
+                    baseline_text, req.source_text
+                ),
+                "goal_count": _bounded_phrase_count(
+                    baseline_text, req.goal_text
+                ),
+                "expected_replacement_text": expected_replacement,
+                "timings_ms": baseline_timings,
+            })
+
+            for index, candidate in enumerate(req.candidates, start=1):
+                elapsed = time.perf_counter() - request_started
+                if elapsed >= req.time_budget_seconds:
+                    stopped_for_budget = True
+                    break
+
+                replay, queue_wait_ms = await _locked_worker(
+                    _compile_and_replay, candidate
+                )
+                tested += 1
+                text = tok.decode(replay["ids"], skip_special_tokens=True)
+                goal_count = _bounded_phrase_count(text, req.goal_text)
+                source_count = _bounded_phrase_count(text, req.source_text)
+                verified = bool(
+                    replay["eos"]
+                    and not replay["repetition"]
+                    and goal_count == 1
+                    and source_count == 0
+                )
+                if verified:
+                    classification = "verified"
+                    verified_ids.append(candidate.id)
+                elif replay["repetition"]:
+                    classification = "repetition"
+                elif (_normalized_probe_text(text)
+                      == _normalized_probe_text(baseline_text)):
+                    classification = "unchanged"
+                elif goal_count >= 1 and source_count == 0:
+                    classification = "partial"
+                else:
+                    classification = "off_target"
+
+                exact_match = (
+                    None if expected_replacement is None
+                    else _normalized_probe_text(text) == expected_replacement
+                )
+                elapsed = time.perf_counter() - request_started
+                timings = dict(replay["timings_ms"])
+                timings["queue_wait"] = queue_wait_ms
+                yield _sse("candidate", {
+                    "id": candidate.id,
+                    "index": index,
+                    "total": len(req.candidates),
+                    "cells": [cell.model_dump() for cell in candidate.cells],
+                    "text": text,
+                    "eos": replay["eos"],
+                    "repetition": replay["repetition"],
+                    "stop_reason": replay["stop_reason"],
+                    "class": classification,
+                    "verified": verified,
+                    "goal_count": goal_count,
+                    "source_count": source_count,
+                    "exact_replacement_applicable": (
+                        expected_replacement is not None
+                    ),
+                    "exact_replacement_match": exact_match,
+                    "timings_ms": timings,
+                    "elapsed_seconds": elapsed,
+                    "budget_remaining_seconds": max(
+                        0.0, req.time_budget_seconds - elapsed
+                    ),
+                })
+                if verified and req.stop_on_success:
+                    break
+                await asyncio.sleep(0)
+
+            elapsed = time.perf_counter() - request_started
+            if (tested < len(req.candidates)
+                    and not (verified_ids and req.stop_on_success)
+                    and elapsed >= req.time_budget_seconds):
+                stopped_for_budget = True
+            if verified_ids:
+                status = "success"
+                stop_reason = (
+                    "verified" if req.stop_on_success else "exhausted_candidates"
+                )
+            elif stopped_for_budget:
+                status = "budget_exhausted"
+                stop_reason = "time_budget"
+            else:
+                status = "no_verified_recipe"
+                stop_reason = "exhausted_candidates"
+            yield _sse("search_end", {
+                "status": status,
+                "stop_reason": stop_reason,
+                "tested": tested,
+                "total": len(req.candidates),
+                "verified_candidate_id": (
+                    verified_ids[0] if verified_ids else None
+                ),
+                "verified_candidate_ids": verified_ids,
+                "elapsed_seconds": elapsed,
+                "time_budget_seconds": req.time_budget_seconds,
+                "budget_exhausted": stopped_for_budget,
+                "budget_overshoot_seconds": max(
+                    0.0, elapsed - req.time_budget_seconds
+                ),
+                "stopped_early": tested < len(req.candidates),
+            })
+        except Exception as error:
+            print(
+                f"[intervention_search] error: {error}\n"
+                f"{traceback.format_exc()}",
+                flush=True,
+            )
+            elapsed = time.perf_counter() - request_started
+            yield _sse("error", {"error": str(error)})
+            yield _sse("search_end", {
+                "status": "error",
+                "stop_reason": "error",
+                "tested": tested,
+                "total": len(req.candidates),
+                "verified_candidate_id": (
+                    verified_ids[0] if verified_ids else None
+                ),
+                "verified_candidate_ids": verified_ids,
+                "elapsed_seconds": elapsed,
+                "time_budget_seconds": req.time_budget_seconds,
+                "budget_exhausted": False,
+                "budget_overshoot_seconds": max(
+                    0.0, elapsed - req.time_budget_seconds
+                ),
+                "stopped_early": tested < len(req.candidates),
+            })
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 @app.post("/api/intervention_scan")
 async def intervention_scan(req: InterventionScanRequest):
     _require_active_mode()
@@ -1297,13 +2238,25 @@ async def intervention_scan(req: InterventionScanRequest):
     tok = _model.tokenizer
     fitted = set(_lens.source_layers)
 
+    if req.positions is not None and req.from_position is not None:
+        raise HTTPException(
+            400, "exactly one of positions / from_position may be supplied")
+    # Backward compatibility: scans that omit scope retain the historic
+    # from-position-zero behavior. Once positions are supplied they are the
+    # only scope passed through to compile_edits().
+    scan_positions = req.positions
+    scan_from_position = req.from_position
+    if scan_positions is None and scan_from_position is None:
+        scan_from_position = 0
+
     # Reuse the spec validator for concept-token resolution (mode checks,
     # text→first-token, swap-needs-target); the probe layer is a stand-in.
     probe_spec = InterventionSpec(
         mode=req.mode, layers=[sorted(fitted)[0]],
         token=req.token, token_id=req.token_id,
         target=req.target, target_id=req.target_id,
-        alpha=1.0, from_position=req.from_position,
+        alpha=1.0, positions=scan_positions,
+        from_position=scan_from_position,
     )
     resolved = _validate_and_resolve_specs(
         [probe_spec], _lens, tok, _model.n_layers)[0]
@@ -1326,7 +2279,7 @@ async def intervention_scan(req: InterventionScanRequest):
 
     eos_id = tok.eos_token_id
 
-    def _probe(edits) -> list[int]:
+    def _probe(edits) -> tuple[list[int], bool, str]:
         session = _model.make_stream()
         if edits:
             session.set_edits(edits)
@@ -1335,25 +2288,33 @@ async def intervention_scan(req: InterventionScanRequest):
         for _ in range(req.max_tokens):
             t = int(mx.argmax(logits.astype(mx.float32)).tolist())
             if t == eos_id:
-                break
+                return out, True, "eos"
             out.append(t)
             logits, _ = session.extend([t])
-        return out
+        return out, False, "max_tokens"
 
     async def gen():
         from .interventions import compile_edits
         try:
             yield _sse("scan_start", {
                 "mode": req.mode, "layers": layers, "alphas": alphas,
+                "token_id": resolved["token_id"],
                 "token_str": resolved["token_str"],
+                "target_id": resolved["target_id"],
                 "target_str": resolved["target_str"],
-                "from_position": req.from_position,
+                "goal_text": req.goal_text,
+                "source_text": req.source_text,
+                "positions": resolved["positions"],
+                "from_position": resolved["from_position"],
                 "n_probes": len(layers) * len(alphas),
             })
             async with _gpu_lock:
-                base_ids = await asyncio.to_thread(_probe, None)
+                base_ids, base_eos, base_stop = await asyncio.to_thread(_probe, None)
             base_text = tok.decode(base_ids, skip_special_tokens=True)
-            yield _sse("probe", {"kind": "baseline", "text": base_text})
+            yield _sse("probe", {
+                "kind": "baseline", "text": base_text,
+                "eos": base_eos, "stop_reason": base_stop,
+            })
             k, total = 0, len(layers) * len(alphas)
             for a in alphas:
                 for l in layers:
@@ -1363,18 +2324,26 @@ async def intervention_scan(req: InterventionScanRequest):
                                 _lens, _model, mode=req.mode, layers=[l],
                                 token_id=resolved["token_id"],
                                 target_id=resolved["target_id"],
-                                alpha=a, positions=None,
-                                from_pos=req.from_position,
+                                alpha=a, positions=resolved["positions"],
+                                from_pos=resolved["from_position"],
                                 label=f"scan L{l} a={a:g}"))
-                        out_ids = await asyncio.to_thread(_probe, edits)
+                        out_ids, eos, stop_reason = await asyncio.to_thread(
+                            _probe, edits)
                     text = tok.decode(out_ids, skip_special_tokens=True)
+                    cls = _classify_probe(
+                        out_ids, text, base_text,
+                        resolved["target_str"] or resolved["token_str"],
+                        eos=eos,
+                        goal_text=req.goal_text,
+                        source_text=req.source_text or req.token
+                        or resolved["token_str"],
+                    )
                     k += 1
                     yield _sse("probe", {
                         "kind": "probe", "layer": l, "alpha": a,
                         "text": text,
-                        "cls": _classify_probe(
-                            out_ids, text, base_text,
-                            resolved["target_str"] or resolved["token_str"]),
+                        "cls": cls, "success": cls == "success",
+                        "eos": eos, "stop_reason": stop_reason,
                         "index": k, "total": total,
                     })
                     await asyncio.sleep(0)

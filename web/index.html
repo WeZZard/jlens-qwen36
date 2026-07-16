@@ -84,10 +84,12 @@
     --grid-scrollbar-clearance: 12px;
     --grid-bottom-clearance: 120px;
     --chat-bottom-clearance: 120px;
+    --center-panel-width: 720px;
     --detail-bottom: 100px;
     --detail-clearance-gap: 16px;
-    /* 20px header + five 18px rows + four 4px gaps. */
-    --detail-readout-max-height: 126px;
+    /* Ten 20px rows + nine 4px gaps. Compact viewports override this
+       with the height of five rows so the card stays clear of the grid. */
+    --detail-readout-body-max-height: 236px;
     --corner-button-bar-divider-inset: 10px;
     --visible-band-edge-color: var(--paper-bg);
   }
@@ -195,7 +197,7 @@
   #chat-input {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: var(--bottom-control-inset); z-index: 10;
-    width: min(640px, 92vw);
+    width: min(var(--center-panel-width), calc(100vw - 32px));
     display: flex; flex-direction: column; gap: 8px;
     padding: 12px 16px 10px;
     background: var(--glass-panel);
@@ -305,6 +307,12 @@
   /* Compact laptop layouts omit the owner prefix but retain the repository. */
   @media (max-width: 1600px) {
     .github-owner { display: none; }
+  }
+  /* CSS cannot detect a display's physical diagonal, so use the available
+     viewport: laptop-width or short windows show five rows; roomy desktop
+     windows show all ten default readout rows. */
+  @media (max-width: 1600px), (max-height: 1000px) {
+    :root { --detail-readout-body-max-height: 116px; }
   }
   #clear-btn:disabled { background: var(--text-3); cursor: not-allowed; }
   #sessions-menu {
@@ -1191,7 +1199,7 @@
     position: fixed;
     left: 50%; bottom: var(--detail-bottom);
     transform: translateX(-50%) translateY(0);
-    width: min(640px, 92vw);
+    width: min(var(--center-panel-width), calc(100vw - 32px));
     background: var(--glass-panel);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
@@ -1233,25 +1241,36 @@
     --readout-cols: 28px minmax(72px, 1.2fr) minmax(54px, 0.65fr) minmax(96px, 2fr) 46px;
     font-family: ui-monospace, Menlo, monospace;
     font-size: 12px;
-    max-height: var(--detail-readout-max-height); overflow-y: auto; overscroll-behavior: contain;
-    scrollbar-gutter: stable;
-    padding-inline: 0 28px;
+  }
+  #detail .readout.with-intervene {
+    --readout-cols: 28px minmax(72px, 1.2fr) minmax(54px, 0.65fr) minmax(96px, 2fr) 46px 72px;
+  }
+  #detail .readout.comparing {
+    --readout-cols: 28px minmax(72px, 1.05fr) minmax(54px, 0.55fr) 86px minmax(96px, 1.75fr) 46px;
+  }
+  #detail .readout.comparing.with-intervene {
+    --readout-cols: 28px minmax(72px, 1.05fr) minmax(54px, 0.55fr) 86px minmax(96px, 1.75fr) 46px 72px;
   }
   #detail .readout-head {
     display: grid; grid-template-columns: var(--readout-cols); column-gap: 10px;
-    align-items: center; min-height: 20px; padding: 0 0 4px 0;
+    align-items: center; min-height: 20px; padding: 0 0 4px;
     color: var(--text-3); font-size: 10px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.04em;
-    position: sticky; top: 0; z-index: 1; background: transparent;
+    overflow-y: hidden; scrollbar-gutter: stable;
   }
   #detail .readout-head span:first-child,
-  #detail .readout-head span:last-child { text-align: right; }
+  #detail .readout-head .score-head { text-align: right; }
+  #detail .readout-head .rank-delta-head { text-align: center; white-space: nowrap; }
+  #detail .readout-head .intervene-head { text-align: center; white-space: nowrap; }
   #detail .readout-body {
     display: flex; flex-direction: column; gap: 4px;
+    max-height: var(--detail-readout-body-max-height);
+    overflow-y: auto; overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
   #detail .readout .row {
     display: grid; grid-template-columns: var(--readout-cols); column-gap: 10px;
-    align-items: center; min-height: 18px;
+    align-items: center; min-height: 20px;
   }
   #detail .readout .idx { color: var(--text-3); text-align: right; }
   #detail .readout .tok { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1310,18 +1329,11 @@
     opacity: 0.58;
     cursor: default;
   }
-  /* Intervene button, left of the Markup button. */
-  #detail .intervene-save { right: 118px; }
-  /* Per-row quick actions on the readout list (hover-revealed, overlay
-     the score column so the fixed grid template stays untouched). */
-  #detail .readout .row { position: relative; }
+  /* Per-token intervention controls occupy their own table column so
+     scores and readout bars remain visible. */
   #detail .readout .row .row-actions {
-    position: absolute; right: -24px; top: 50%;
-    transform: translateY(-50%);
-    display: none; gap: 4px;
-    padding-left: 8px;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
   }
-  #detail .readout .row:hover .row-actions { display: inline-flex; }
   .row-action {
     width: 20px; height: 20px;
     border: 1px solid var(--border-2);
@@ -1335,13 +1347,18 @@
     transition: background 0.12s, color 0.12s, border-color 0.12s;
   }
   .row-action:hover { border-color: var(--highlight-orange); color: var(--highlight-orange); }
-  /* Compare affordances: other-run note under the context line, and
-     per-row rank deltas appended to the token-id column. */
+  .row-action:disabled,
+  .row-action:disabled:hover {
+    border-color: var(--border-2); color: var(--text-3);
+    opacity: 0.45; cursor: not-allowed;
+  }
+  /* Compare affordances: other-run note under the context line, plus a
+     dedicated rank-change column on completed intervened runs. */
   #detail .compare-note { font-size: 11px; color: var(--text-3); margin: -6px 0 10px; }
   #detail .compare-note b { color: var(--text-2); font-family: ui-monospace, Menlo, monospace; }
   #detail .readout .rank-delta {
     font-size: 10px; font-variant-numeric: tabular-nums;
-    margin-left: 5px; color: var(--text-3);
+    color: var(--text-3); text-align: center; white-space: nowrap;
   }
   #detail .readout .rank-delta.up { color: var(--frontier); }
   #detail .readout .rank-delta.down { color: #e0483e; }
@@ -1558,11 +1575,17 @@
     border: 1px dashed var(--border-2);
     background: transparent;
   }
-  .scan-cell.done { border-style: solid; cursor: pointer; color: transparent; }
-  .scan-cell.done:hover { filter: brightness(0.94); }
+  .scan-cell.done { border-style: solid; cursor: default; color: transparent; }
+  .scan-cell.done.adoptable { cursor: pointer; }
+  .scan-cell.done.adoptable:hover { filter: brightness(0.94); }
+  .scan-cell.done.cls-unchanged { color: var(--text-3); }
   .scan-cell.armed { outline: 2px solid #e0483e; outline-offset: 1px; }
   .scan-cell.cls-unchanged { background: rgba(60, 50, 30, 0.07); border-color: rgba(60, 50, 30, 0.14); }
+  .scan-cell.cls-success,
   .scan-cell.cls-derived { background: #3f9d63; border-color: #37905a; }
+  #scan-backdrop[data-scan-context="wish-conclusion"] .scan-cell.cls-derived {
+    background: #8b98a5; border-color: #7c8996;
+  }
   .scan-cell.cls-parrot { background: var(--highlight-orange); border-color: #e87900; }
   .scan-cell.cls-degenerate { background: #e0483e; border-color: #c93a31; }
   .scan-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-2); margin-bottom: 10px; }
@@ -1571,7 +1594,9 @@
     margin-right: 5px; vertical-align: -1px;
   }
   .scan-legend .sw-unchanged { background: rgba(60, 50, 30, 0.12); }
+  .scan-legend .sw-success,
   .scan-legend .sw-derived { background: #3f9d63; }
+  #scan-backdrop[data-scan-context="wish-conclusion"] .scan-legend .sw-derived { background: #8b98a5; }
   .scan-legend .sw-parrot { background: var(--highlight-orange); }
   .scan-legend .sw-degenerate { background: #e0483e; }
   .scan-foot { display: flex; align-items: center; gap: 10px; }
@@ -1584,12 +1609,15 @@
   #chat-log .msg.assistant .tok { cursor: pointer; }
   html.presentation #chat-log .msg.assistant .tok { cursor: default; }
   #wish-pop {
-    position: fixed; z-index: 320;
+    position: fixed;
+    left: 50%; bottom: var(--detail-bottom); z-index: 11;
+    transform: translateX(-50%);
     background: #fffdf3;
     border: 1px solid var(--border-2);
     border-radius: 14px; corner-shape: squircle;
     box-shadow: 0 14px 40px rgba(60, 50, 30, 0.22);
-    padding: 12px 14px; width: 300px;
+    padding: 12px 14px;
+    width: min(var(--center-panel-width), calc(100vw - 32px));
   }
   #wish-pop[hidden] { display: none; }
   .wish-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
@@ -1654,7 +1682,6 @@
   html.presentation .session-delete,
   html.presentation .markup-delete,
   html.presentation #detail .markup-save,
-  html.presentation #detail .intervene-save,
   html.presentation #detail .row-actions,
   html.presentation #rerun-btn,
   html.presentation #iv-scan,
@@ -1897,10 +1924,10 @@
 
   <!-- ===== Output-first wish: click an answer token, say what it should
        have been, and scan for the edits that make it happen ===== -->
-  <div id="wish-pop" hidden>
-    <div class="wish-title">Make it say…</div>
+  <div id="wish-pop" role="dialog" aria-labelledby="wish-title" hidden>
+    <div id="wish-title" class="wish-title">Make it say…</div>
     <div class="wish-row">
-      <input id="wish-input" type="text" placeholder="the answer you want" autocomplete="off">
+      <input id="wish-input" type="text" aria-label="What should the reply say?" placeholder="the answer you want" autocomplete="off">
       <button id="wish-go" type="button" class="ok">Find how</button>
     </div>
     <div class="wish-hint">instead of ⟨<span id="wish-current"></span>⟩ — scans for edits that make it happen</div>
@@ -1930,6 +1957,7 @@
       <div id="scan-map"></div>
       <div class="scan-legend">
         <span><i class="sw-unchanged"></i><span id="scan-lg-unchanged">unchanged — too weak</span></span>
+        <span><i class="sw-success"></i><span id="scan-lg-success">exact requested output — works</span></span>
         <span><i class="sw-derived"></i><span id="scan-lg-derived">derived answer — works</span></span>
         <span><i class="sw-parrot"></i><span id="scan-lg-parrot">literal target — forced</span></span>
         <span><i class="sw-degenerate"></i><span id="scan-lg-degenerate">degenerate — far too strong</span></span>
@@ -2153,7 +2181,7 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     messages: state.messages.map(m => ({
       role: m.role,
       content: m.content,
-      tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
+      tokens: m.tokens.map(t => ({ id: t.id ?? null, text: t.text, globalPos: t.globalPos })),
       prefillSnapshotId: m.prefillSnapshotId,
     })),
     // The other (inactive) run's snapshots ride along tagged
@@ -2171,13 +2199,14 @@ function serializableConversation({ trimForLocalStorage = false } = {}) {
     compare: state.compare ? {
       msgIdx: state.compare.msgIdx,
       activeIsIntervened: !!state.compare.activeIsIntervened,
+      completed: !!state.compare.completed,
       specs: (state.compare.specs || []).map(persistSpec),
       baselineHadInterventions: !!state.compare.baselineHadInterventions,
       otherApplied: (state.compare.other.appliedInterventions || []).map(persistSpec),
       otherMessages: state.compare.other.messages.map(m => ({
         role: m.role,
         content: m.content,
-        tokens: m.tokens.map(t => ({ text: t.text, globalPos: t.globalPos })),
+        tokens: m.tokens.map(t => ({ id: t.id ?? null, text: t.text, globalPos: t.globalPos })),
         prefillSnapshotId: m.prefillSnapshotId,
       })),
     } : null,
@@ -2240,7 +2269,19 @@ function flushSaveState() {
 window.addEventListener('beforeunload', flushSaveState);
 
 function reviveSpec(s) {
-  return persistSpec(s);
+  const spec = persistSpec(s);
+  // Older conclusion scans could save a late/output swap from row zero at
+  // alpha=8. Merely restoring one made the next Re-run collapse into a token
+  // loop. Preserve workspace premise swaps (alpha=2 is valid there), while
+  // making this legacy conclusion signature safe and opt-in.
+  const unsafeLegacyConclusion = spec.mode === 'swap' && Number(spec.alpha) > 1 &&
+    spec.scope?.type === 'from' && Number(spec.scope.pos) === 0 &&
+    spec.layers.some((layer) => Number(layer) >= 59);
+  if (unsafeLegacyConclusion) {
+    spec.alpha = 1;
+    spec.enabled = false;
+  }
+  return spec;
 }
 
 function validSpecShape(s) {
@@ -2266,7 +2307,8 @@ function restoreConversation(saved) {
     role: m.role,
     content: m.content,
     tokens: (m.tokens || []).map(t => ({
-      id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
+      id: Number.isInteger(t.id) ? t.id : null,
+      text: t.text, globalPos: t.globalPos, snapshotId: -1,
     })),
     prefillSnapshotId: m.prefillSnapshotId || null,
   }));
@@ -2310,7 +2352,8 @@ function restoreConversation(saved) {
         role: m.role,
         content: m.content,
         tokens: (m.tokens || []).map(t => ({
-          id: 0, text: t.text, globalPos: t.globalPos, snapshotId: -1,
+          id: Number.isInteger(t.id) ? t.id : null,
+          text: t.text, globalPos: t.globalPos, snapshotId: -1,
         })),
         prefillSnapshotId: m.prefillSnapshotId || null,
       }));
@@ -2324,6 +2367,9 @@ function restoreConversation(saved) {
       state.compare = {
         msgIdx: saved.compare.msgIdx,
         activeIsIntervened: !!saved.compare.activeIsIntervened,
+        // Older saves have no completion flag; preserve those existing
+        // comparisons while keeping newly persisted partial runs hidden.
+        completed: saved.compare.completed !== false,
         specs: (saved.compare.specs || []).filter(validSpecShape).map(reviveSpec),
         baselineHadInterventions: !!saved.compare.baselineHadInterventions,
         other,
@@ -2357,9 +2403,15 @@ function _applyRestoredSnapshot(snap, run = state) {
     if (snap.role === 'user' || (snap.role === 'assistant' && snap.n_tokens > 0)) {
       const strs = snap.token_strs || [];
       if (strs.length) {
-        m.tokens = strs.map((str, i) => ({
-          id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
-        }));
+        const persistedByPos = new Map(m.tokens.map((t) => [t.globalPos, t]));
+        m.tokens = strs.map((str, i) => {
+          const globalPos = snap.prefill_pos + i;
+          const persisted = persistedByPos.get(globalPos);
+          return {
+            id: persisted?.text === str && Number.isInteger(persisted.id) ? persisted.id : null,
+            text: str, globalPos, snapshotId: snap.snapshot_id,
+          };
+        });
         m.content = strs.join('');
       }
       strs.forEach((str, i) => {
@@ -2752,11 +2804,27 @@ async function loadGithubStars() {
 }
 
 // ----- Lens + model info -----
+let _infoReadyPromise = null;
+function ensureInfoReady() {
+  if (!_infoReadyPromise) {
+    _infoReadyPromise = loadInfo().then((ok) => {
+      if (!ok) _infoReadyPromise = null;
+      return ok;
+    });
+  }
+  return _infoReadyPromise;
+}
+
 async function loadInfo() {
   try {
     const meta = await apiGetMeta();
     state.modelId = (meta.model && meta.model.model_id) || 'unknown model';
-    state.lensInfo = meta.lens || null;
+    // layerIntervenable() also admits the final layer (identity transport),
+    // but /api/lens only reports fitted source layers. Carry model depth
+    // alongside the lens metadata so output-band scans can include it.
+    state.lensInfo = meta.lens
+      ? { ...meta.lens, n_layers: meta.model && meta.model.n_layers }
+      : null;
     applyLayerBands(state.lensInfo, meta.model || null);
     if (state.gridRows.length) renderGrid({ keepScroll: true });
     // Interventions gate on lensInfo (interventionsAvailable), and a
@@ -2764,8 +2832,10 @@ async function loadInfo() {
     // it so the Re-run play button isn't stuck in its pre-lens disabled
     // state on first load.
     renderInterventions();
+    return true;
   } catch (e) {
     console.warn('loadInfo failed:', e);
+    return false;
   }
 }
 
@@ -2794,7 +2864,7 @@ function bottomStackClearance({ ignoreDetail = false, gapMode = 'detail', ids = 
   let blockerTop = window.innerHeight;
   let detailVisible = false;
   let blockerVisible = false;
-  (ids || ['chat-input', 'detail', 'intervene-popup', 'settings-btn', 'clear-btn', 'sessions-btn']).forEach((id) => {
+  (ids || ['chat-input', 'detail', 'wish-pop', 'intervene-popup', 'settings-btn', 'clear-btn', 'sessions-btn']).forEach((id) => {
     if (id === 'detail' && ignoreDetail) return;
     const el = $(id);
     if (!el) return;
@@ -2827,7 +2897,7 @@ function updateScrollClearance(opts = {}) {
   // floats over the CHAT column only, so it pads the chat, never the grid.
   const gridIds = isPresentation()
     ? ['detail']
-    : ['chat-input', 'detail', 'settings-btn', 'clear-btn', 'sessions-btn'];
+    : ['chat-input', 'detail', 'wish-pop', 'settings-btn', 'clear-btn', 'sessions-btn'];
   const gridClearance = bottomStackClearance({ ...opts, gapMode: 'always', ids: gridIds });
   // The chat also always gets the breathing gap above whatever floats at
   // the bottom (input box, or just the corner buttons in presentation
@@ -2954,6 +3024,7 @@ function dismissDetailCard() {
 }
 
 function closeDetailCard() {
+  dismissWishPopover({ updateClearance: false });
   state.selectedCell = null;
   state.selectedToken = null;
   dismissDetailCard();
@@ -4460,6 +4531,7 @@ function specToPayload(s) {
 }
 
 function quickAddIntervention(mode, pos, layer, tokText, tokId) {
+  if (isPresentation() || state.streaming || !interventionsAvailable() || !layerIntervenable(layer)) return;
   addIntervention({
     id: nextInterventionId(),
     enabled: true,
@@ -5121,21 +5193,6 @@ function renderDetail() {
       : 'Save this block as a markup';
     if (!alreadyMarked) mark.onclick = () => addMarkup(pos, layer);
     col.appendChild(mark);
-    // Intervene button, left of Markup: open the J-space edit editor
-    // seeded with this cell.
-    const iv = document.createElement('button');
-    iv.className = 'markup-save intervene-save';
-    iv.type = 'button';
-    iv.textContent = 'Intervene';
-    const usable = interventionsAvailable() && layerIntervenable(layer);
-    iv.disabled = !usable;
-    iv.title = !interventionsAvailable()
-      ? 'Interventions need a fitted lens'
-      : (usable
-          ? 'Edit what the model is thinking at this cell'
-          : `L${layer} has no fitted Jacobian`);
-    if (usable) iv.onclick = () => openInterventionEditor({ seed: { pos, layer } });
-    col.appendChild(iv);
   }
   const h3 = document.createElement('h3');
   h3.textContent = 'Detail';
@@ -5155,10 +5212,11 @@ function renderDetail() {
   // baseline-vs-intervened compare exists.
   const cmp = state.compare;
   const otherCell = cmp && cmp.other.gridRows[pos] && cmp.other.gridRows[pos][layer];
+  const baselineName = cmp && cmp.baselineHadInterventions ? 'run A' : 'baseline';
   if (otherCell && otherCell.top_tokens && otherCell.top_tokens.length) {
     const note = document.createElement('div');
     note.className = 'compare-note';
-    const otherName = cmp.activeIsIntervened ? 'baseline' : 'intervened';
+    const otherName = cmp.activeIsIntervened ? baselineName : 'intervened';
     note.innerHTML = `top-1 in ${otherName}: <b>${escapeHtml(otherCell.top_tokens[0] || '·')}</b>`;
     col.appendChild(note);
   }
@@ -5167,36 +5225,73 @@ function renderDetail() {
   const maxScore = Math.max(...scores.map(s => Math.max(s, 0)), 1);
   const readout = document.createElement('div');
   readout.className = 'readout';
+  // A compare object exists as soon as a rerun starts. Wait for its done
+  // event, and show baseline-relative deltas only on the intervened view.
+  const showRankDelta = !!(
+    cmp && cmp.completed && !state.streaming && cmp.activeIsIntervened &&
+    otherCell && Array.isArray(otherCell.top_ids)
+  );
+  const showInterveneColumn = !isPresentation();
+  if (showRankDelta) readout.classList.add('comparing');
+  if (showInterveneColumn) readout.classList.add('with-intervene');
   const head = document.createElement('div');
   head.className = 'readout-head';
-  ['#', 'Token', 'ID', '', 'Score'].forEach((label) => {
-    const cell = document.createElement('span');
-    cell.textContent = label;
-    head.appendChild(cell);
+  const headLabels = [
+    { text: '#' },
+    { text: 'Token' },
+    { text: 'ID' },
+    ...(showRankDelta ? [{
+      text: `Δ vs ${baselineName}`,
+      className: 'rank-delta-head',
+      title: `Rank change from ${baselineName} to intervention`,
+    }] : []),
+    { text: '' },
+    { text: 'Score', className: 'score-head' },
+    ...(showInterveneColumn ? [{
+      text: 'Intervene',
+      className: 'intervene-head',
+      title: 'Intervene on this exact readout token',
+    }] : []),
+  ];
+  headLabels.forEach(({ text: label, className = '', title = '' }) => {
+    const heading = document.createElement('span');
+    heading.textContent = label;
+    heading.className = className;
+    if (title) heading.title = title;
+    head.appendChild(heading);
   });
   readout.appendChild(head);
   const body = document.createElement('div');
   body.className = 'readout-body';
-  const rowActionsUsable = !isPresentation() && interventionsAvailable() && layerIntervenable(layer);
+  const rowActionsUnavailableTitle = state.streaming
+    ? 'Wait for the current run to finish'
+    : (!interventionsAvailable()
+        ? 'Interventions need a fitted lens'
+        : (!layerIntervenable(layer) ? `L${layer} has no fitted Jacobian` : ''));
+  const rowActionsUsable = showInterveneColumn && !rowActionsUnavailableTitle;
   cell.top_tokens.forEach((tok, i) => {
     const row = document.createElement('div');
     row.className = 'row' + (i === 0 ? ' top1' : '');
     const idx = document.createElement('span'); idx.className = 'idx'; idx.textContent = (i+1);
     const t = document.createElement('span'); t.className = 'tok'; t.textContent = tok;
     const id = document.createElement('span'); id.className = 'id'; id.textContent = cell.top_ids[i];
-    // Rank delta vs the other run's readout at the same cell.
-    if (otherCell && otherCell.top_ids) {
+    let rankDelta = null;
+    // Rank delta from the completed baseline readout at the same cell.
+    if (showRankDelta) {
       const oi = otherCell.top_ids.indexOf(cell.top_ids[i]);
-      const d = document.createElement('span');
-      d.className = 'rank-delta';
-      if (oi === -1) { d.classList.add('new'); d.textContent = 'new'; }
-      else if (oi > i) { d.classList.add('up'); d.textContent = '▲' + (oi - i); }
-      else if (oi < i) { d.classList.add('down'); d.textContent = '▼' + (i - oi); }
-      else { d.textContent = '='; }
-      d.title = oi === -1
-        ? 'Not in the other run’s top readout here'
-        : `Rank ${oi + 1} in the other run`;
-      id.appendChild(d);
+      rankDelta = document.createElement('span');
+      rankDelta.className = 'rank-delta';
+      if (oi === -1) {
+        rankDelta.classList.add('new');
+        rankDelta.textContent = 'NEW';
+        rankDelta.title = `Outside ${baselineName} top-${otherCell.top_ids.length} → intervention #${i + 1}`;
+      } else {
+        if (oi > i) { rankDelta.classList.add('up'); rankDelta.textContent = '↑' + (oi - i); }
+        else if (oi < i) { rankDelta.classList.add('down'); rankDelta.textContent = '↓' + (i - oi); }
+        else { rankDelta.textContent = '—'; }
+        const sourceName = baselineName === 'baseline' ? 'Baseline' : 'Run A';
+        rankDelta.title = `${sourceName} #${oi + 1} → intervention #${i + 1}`;
+      }
     }
     const bar = document.createElement('span'); bar.className = 'bar';
     const fill = document.createElement('div');
@@ -5205,9 +5300,11 @@ function renderDetail() {
     const scoreValue = document.createElement('span');
     scoreValue.className = 'score-value';
     scoreValue.textContent = formatDetailScore(scores[i]);
-    row.appendChild(idx); row.appendChild(t); row.appendChild(id); row.appendChild(bar); row.appendChild(scoreValue);
-    // Hover quick actions: amplify / suppress / swap this readout token.
-    if (rowActionsUsable) {
+    row.appendChild(idx); row.appendChild(t); row.appendChild(id);
+    if (rankDelta) row.appendChild(rankDelta);
+    row.appendChild(bar); row.appendChild(scoreValue);
+    // Dedicated exact-token actions: amplify / suppress / replace.
+    if (showInterveneColumn) {
       const actions = document.createElement('span');
       actions.className = 'row-actions';
       const tokId = cell.top_ids[i];
@@ -5216,8 +5313,10 @@ function renderDetail() {
         b.className = 'row-action';
         b.type = 'button';
         b.textContent = labelText;
-        b.title = title;
-        b.onclick = (e) => { e.stopPropagation(); fn(); };
+        b.title = rowActionsUsable ? title : rowActionsUnavailableTitle;
+        b.setAttribute('aria-label', b.title);
+        b.disabled = !rowActionsUsable;
+        if (rowActionsUsable) b.onclick = (e) => { e.stopPropagation(); fn(); };
         return b;
       };
       actions.appendChild(mk('＋', `Make it think ${JSON.stringify(tok)} harder (from here on, at L${layer})`,
@@ -5278,6 +5377,7 @@ function isFrontier(msgIdx, tokenIdx) {
 function selectBlock(msgIdx, tokenIdx) {
   const token = state.messages[msgIdx]?.tokens[tokenIdx];
   if (!token) return;
+  dismissWishPopover({ updateClearance: false });
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
   const layer = token.globalPos >= 0 ? defaultLayerForPosition(token.globalPos) : null;
   state.selectedCell = layer == null ? null : { pos: token.globalPos, layer };
@@ -5289,6 +5389,7 @@ function selectBlock(msgIdx, tokenIdx) {
 function selectTokenInChat(msgIdx, tokenIdx) {
   const token = state.messages[msgIdx]?.tokens[tokenIdx];
   if (!token) return;
+  dismissWishPopover({ updateClearance: false });
   const hadCellSelection = !!state.selectedCell;
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
   state.selectedCell = null;
@@ -5297,10 +5398,12 @@ function selectTokenInChat(msgIdx, tokenIdx) {
   if (hadCellSelection) dismissDetailCard();
   updateAutoFollowUI();
   renderAll();
+  openWishForReplyToken(msgIdx, tokenIdx);
 }
 function selectTokenHeader(pos) {
   const ref = tokenRefForPosition(pos);
   if (!ref) return;
+  dismissWishPopover({ updateClearance: false });
   const hadCellSelection = !!state.selectedCell;
   state.selectedToken = ref;
   state.selectedCell = null;
@@ -5309,8 +5412,10 @@ function selectTokenHeader(pos) {
   if (hadCellSelection) dismissDetailCard();
   updateAutoFollowUI();
   renderAll();
+  openWishForReplyToken(ref.msgIdx, ref.tokenIdx);
 }
 function selectCell(pos, layer) {
+  dismissWishPopover({ updateClearance: false });
   state.selectedCell = { pos, layer };
   state.selectedToken = tokenRefForPosition(pos);
   state.selectedSnapshotId = null;
@@ -5323,6 +5428,11 @@ function updateAutoFollowUI() {
   if (input) input.classList.toggle('streaming', state.streaming);
 }
 function renderAll() {
+  const selectedReply = state.selectedToken &&
+    state.messages[state.selectedToken.msgIdx]?.role === 'assistant';
+  if (state.streaming || isPresentation() || !selectedReply) {
+    dismissWishPopover({ updateClearance: false });
+  }
   const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
   const shouldFocusSelection = focusSelectionOnRender;
   focusSelectionOnRender = false;
@@ -5383,9 +5493,15 @@ function ingestSnapshot(snap) {
       // blocks in the timeline can drive selection.
       const strs = snap.token_strs || [];
       m.content = strs.join('');
-      m.tokens = strs.map((str, i) => ({
-        id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
-      }));
+      const existingByPos = new Map(m.tokens.map((t) => [t.globalPos, t]));
+      m.tokens = strs.map((str, i) => {
+        const globalPos = snap.prefill_pos + i;
+        const existing = existingByPos.get(globalPos);
+        return {
+          id: existing?.text === str && Number.isInteger(existing.id) ? existing.id : null,
+          text: str, globalPos, snapshotId: snap.snapshot_id,
+        };
+      });
       strs.forEach((str, i) => {
         const globalPos = snap.prefill_pos + i;
         ensureGridRow(globalPos, str, { msgIdx: snap.msg_idx, isGen: false });
@@ -5397,9 +5513,15 @@ function ingestSnapshot(snap) {
       // bubble + timeline render them, without re-generation.
       const strs = snap.token_strs || [];
       m.content = strs.join('');
-      m.tokens = strs.map((str, i) => ({
-        id: 0, text: str, globalPos: snap.prefill_pos + i, snapshotId: snap.snapshot_id,
-      }));
+      const existingByPos = new Map(m.tokens.map((t) => [t.globalPos, t]));
+      m.tokens = strs.map((str, i) => {
+        const globalPos = snap.prefill_pos + i;
+        const existing = existingByPos.get(globalPos);
+        return {
+          id: existing?.text === str && Number.isInteger(existing.id) ? existing.id : null,
+          text: str, globalPos, snapshotId: snap.snapshot_id,
+        };
+      });
       strs.forEach((str, i) => {
         const globalPos = snap.prefill_pos + i;
         ensureGridRow(globalPos, str, { msgIdx: snap.msg_idx, isGen: true });
@@ -5590,8 +5712,10 @@ function handleSSEFrame(frame) {
   } else if (event === 'snapshot') {
     ingestSnapshot(obj);
   } else if (event === 'done') {
+    if (state.compare) state.compare.completed = true;
     console.log('done ·', obj.n_tokens, 'tokens');
   } else if (event === 'error') {
+    if (state.compare) state.compare.completed = false;
     console.error('stream error', obj);
   }
 }
@@ -5665,6 +5789,7 @@ async function rerunWithInterventions() {
   state.compare = {
     msgIdx,
     activeIsIntervened: true,
+    completed: false,
     specs,
     baselineHadInterventions: (baseline.appliedInterventions || []).length > 0,
     other: baseline,
@@ -6297,15 +6422,22 @@ function openInterventionScan(opts = {}) {
 }
 
 async function _runInterventionScan(body, uiMode) {
+  if (_scanAbort) _scanAbort.abort();
+  _scanArmed = null;
   $('scan-backdrop').hidden = false;
+  $('scan-backdrop').dataset.scanContext = _scanContext;
   $('scan-map').innerHTML = '';
   const what = uiMode === 'swap'
     ? `Replace ⟨${body.token.trim()}⟩ → ⟨${(body.target || '').trim()}⟩`
     : `${uiMode === 'suppress' ? 'Remove' : 'Add'} ⟨${body.token.trim()}⟩`;
-  $('scan-sub').textContent = `${what} · from row ${body.from_position}`;
+  const rowScope = Array.isArray(body.positions)
+    ? `at row ${body.positions.join(', ')}`
+    : `from row ${body.from_position}`;
+  $('scan-sub').textContent = `${what} · ${rowScope}`;
   $('scan-progress').textContent = 'starting…';
   const ctrl = new AbortController();
   _scanAbort = ctrl;
+  const outcomes = { probes: 0, unchanged: 0, success: 0, derived: 0, parrot: 0, degenerate: 0 };
   const cellId = (l, a) =>
     'scan-c-' + l + '-' + String(a).replace('.', '_').replace('-', 'm');
   try {
@@ -6344,28 +6476,64 @@ async function _runInterventionScan(body, uiMode) {
             $('scan-sub').textContent = `${what} · baseline: “${obj.text.trim()}”`;
             if (_scanContext !== 'panel' && _wish) _wish.outcomes.baseline = obj.text.trim();
           } else {
+            // Green is a verified result. Orange is a bounded, non-degenerate
+            // partial candidate that may be applied only so the user can test
+            // it with a full re-run. Off-target and degenerate probes stay
+            // diagnostic-only.
+            const shown = (obj.success === true || obj.cls === 'success')
+              ? 'success' : obj.cls;
+            outcomes.probes++;
+            if (Object.prototype.hasOwnProperty.call(outcomes, shown)) outcomes[shown]++;
             const el = document.getElementById(cellId(obj.layer, obj.alpha));
             if (el) {
-              // In a wish-CONCLUSION scan the wish word IS the swap target,
-              // so "says the wish" arrives as `parrot` and `derived` means
-              // the answer strayed to some OTHER word. Swap the hues so
-              // green is always "achieves this stage's goal".
-              let shown = obj.cls;
-              if (_scanContext === 'wish-conclusion') {
-                if (obj.cls === 'parrot') shown = 'derived';
-                else if (obj.cls === 'derived') shown = 'parrot';
-              }
               const label = _scanLegendText(_scanContext)[shown] || shown;
+              const wishConclusion = _scanContext === 'wish-conclusion';
+              const adoptable = !wishConclusion || shown === 'success' || shown === 'parrot';
+              const choiceHint = !wishConclusion
+                ? 'click to use these settings'
+                : shown === 'success'
+                  ? 'click to apply this verified result'
+                  : shown === 'parrot'
+                    ? 'click to apply this partial candidate, then re-run to verify it'
+                    : 'diagnostic only — cannot be applied';
               el.classList.add('done', 'cls-' + shown);
-              el.title = `L${obj.layer} · α ${obj.alpha}\n${label}: “${obj.text.trim()}”\nclick to use these settings`;
-              el.onclick = _scanContext === 'panel'
-                ? () => _applyScanChoice(obj.layer, obj.alpha, uiMode)
-                : () => _wishCellClick(el, obj, shown);
+              if (adoptable) el.classList.add('adoptable');
+              el.textContent = shown === 'unchanged' ? '—' : '';
+              el.title = `L${obj.layer} · α ${obj.alpha}\n${label}: “${obj.text.trim()}”\n` +
+                choiceHint;
+              el.onclick = wishConclusion && !adoptable
+                ? null
+                : _scanContext === 'panel'
+                  ? () => _applyScanChoice(obj.layer, obj.alpha, uiMode)
+                  : () => _wishCellClick(el, obj, shown);
             }
             $('scan-progress').textContent = `probe ${obj.index}/${obj.total}`;
           }
         } else if (event === 'scan_end') {
-          $('scan-progress').textContent = 'done — click a cell to adopt its settings';
+          if (outcomes.probes > 0 && outcomes.unchanged === outcomes.probes) {
+            $('scan-progress').textContent =
+              `done — ${outcomes.unchanged}/${outcomes.probes} unchanged; no effective setting found`;
+          } else if (_scanContext === 'wish-conclusion') {
+            if (outcomes.success > 0 || outcomes.parrot > 0) {
+              const candidates = [];
+              if (outcomes.success > 0) candidates.push(`${outcomes.success} exact/verified green`);
+              if (outcomes.parrot > 0) candidates.push(`${outcomes.parrot} partial/risky orange`);
+              const action = outcomes.success > 0 && outcomes.parrot > 0
+                ? 'click green to apply, or orange to test with a full re-run'
+                : outcomes.success > 0
+                  ? 'click a green cell to apply it'
+                  : 'click an orange cell, then use a full re-run to verify it';
+              $('scan-progress').textContent =
+                `done — ${candidates.join(' · ')} · ${action}`;
+            } else {
+              $('scan-progress').textContent =
+                'done — no usable conclusion setting; gray and red cells are diagnostics only';
+            }
+          } else {
+            const changed = outcomes.probes - outcomes.unchanged;
+            $('scan-progress').textContent =
+              `done — ${changed}/${outcomes.probes} changed · click a cell to use its settings`;
+          }
         } else if (event === 'error') {
           $('scan-progress').textContent = 'error: ' + obj.error;
         }
@@ -6384,14 +6552,16 @@ async function _runInterventionScan(body, uiMode) {
 function _scanLegendText(context) {
   if (context === 'wish-conclusion') {
     return {
-      unchanged: 'unchanged — too weak',
-      derived: 'says your word — the word flips',
-      parrot: 'strays to another word — off target',
-      degenerate: 'degenerate — far too strong',
+      unchanged: 'unchanged — too weak, not selectable',
+      success: 'exact, terminated result — verified',
+      derived: 'changed off target — not selectable',
+      parrot: 'target appears, but result is incomplete/uncertain — re-run to test',
+      degenerate: 'repetition or collapse — blocked',
     };
   }
   return {
     unchanged: 'unchanged — too weak',
+    success: 'requested output — works',
     derived: 'derived answer — works',
     parrot: 'literal target — forced',
     degenerate: 'degenerate — far too strong',
@@ -6401,9 +6571,32 @@ function _scanLegendText(context) {
 function _applyScanLegend(context) {
   const t = _scanLegendText(context);
   $('scan-lg-unchanged').textContent = t.unchanged;
+  $('scan-lg-success').textContent = t.success;
   $('scan-lg-derived').textContent = t.derived;
   $('scan-lg-parrot').textContent = t.parrot;
   $('scan-lg-degenerate').textContent = t.degenerate;
+}
+
+// Pick an evenly spread, bounded set of writable layers from a semantic
+// band. Conclusion edits operate where an answer is emitted; premise edits
+// keep using the endpoint's workspace-band default.
+function _scanLayersForBand(bandId, limit = 7) {
+  const band = LAYER_BANDS.find((b) => b.id === bandId);
+  if (!band) return [];
+  const fitted = new Set(state.lensInfo?.source_layers || []);
+  const available = [];
+  for (let layer = band.coreStart; layer <= band.coreEnd; layer++) {
+    // Scans must use fitted transport only. The generic editor permits the
+    // final identity layer, but L63 has no fitted Jacobian in these lenses.
+    if (fitted.has(layer)) available.push(layer);
+  }
+  if (available.length <= limit) return available;
+  const picked = [];
+  for (let i = 0; i < limit; i++) {
+    const index = Math.round(i * (available.length - 1) / (limit - 1));
+    if (picked[picked.length - 1] !== available[index]) picked.push(available[index]);
+  }
+  return picked;
 }
 
 function _buildScanMap(g, cellId) {
@@ -6448,6 +6641,7 @@ function _applyScanChoice(layer, alpha, uiMode) {
 
 function closeInterventionScan() {
   if (_scanAbort) { _scanAbort.abort(); _scanAbort = null; }
+  _wishScanGen++;
   $('scan-backdrop').hidden = true;
 }
 
@@ -6461,58 +6655,143 @@ $('scan-backdrop').addEventListener('click', (e) => {
 // The wish is a small persistent journey object; the learning arc is
 // conclusion edit (force the word) → inspect the workspace (it still
 // thinks the old concept) → premise edit (change the thought) → recap.
-let _wish = null;       // { pos, outputTok, wishText, stage, pending, specIds, outcomes, dismissed }
+let _wish = null;       // { pos, outputTok, wishText, stage, pending, specIds, scanSpecs, outcomes, dismissed }
 let _wishSeed = null;   // pending popover target
+let _wishScanGen = 0;
+const _wishTokenizationCache = new Map();
 
-$('chat-log').addEventListener('click', (e) => {
-  const t = e.target.closest('.tok');
-  if (!t || isPresentation() || state.streaming) return;
-  const mi = +t.dataset.msgIdx;
-  const m = state.messages[mi];
-  if (!m || m.role !== 'assistant') return;
-  const ti = +t.dataset.tokenIdx;
+async function _wishTokenization(text) {
+  if (_wishTokenizationCache.has(text)) return _wishTokenizationCache.get(text);
+  const request = fetch(API + '/api/tokenize', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).then(async (resp) => {
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    return Array.isArray(data.tokens) ? data.tokens : [];
+  }).catch(() => {
+    _wishTokenizationCache.delete(text);
+    return null;
+  });
+  _wishTokenizationCache.set(text, request);
+  return request;
+}
+
+// Keep the target at the same token boundary as the exact clicked source.
+// `Paris` → bare `Beijing` (first piece "Be"); ` Paris` → ` Beijing`.
+// Choosing the globally shortest tokenization instead inserted a space into
+// Markdown (`** Beijing**`) and changed the requested surface form.
+async function _canonicalWishTarget(text, sourceText) {
+  const bare = (text || '').trim();
+  const canonical = /^\s/.test(sourceText || '') ? ' ' + bare : bare;
+  const tokens = canonical ? await _wishTokenization(canonical) : [];
+  const first = tokens && tokens[0];
+  return {
+    text: canonical,
+    id: first && Number.isInteger(first.id) ? first.id : null,
+  };
+}
+
+async function _wishExactTokenId(text) {
+  const tokens = await _wishTokenization(text);
+  const first = tokens && tokens[0];
+  return first && Number.isInteger(first.id) ? first.id : null;
+}
+
+function _wishWordFragment(text) {
+  return /^\s*[\p{L}\p{M}]+$/u.test(text || '');
+}
+
+// Expand only tokenizer fragments made entirely of letters. This turns
+// Be+ijing into Beijing for labels and success checks, but deliberately
+// stops at Markdown markers, punctuation, and symbols such as adjacent **.
+function _wishDisplayWord(tokens, tokenIdx) {
+  if (!_wishWordFragment(tokens[tokenIdx]?.text)) {
+    return { word: tokens[tokenIdx]?.text || '', lo: tokenIdx, hi: tokenIdx };
+  }
+  let lo = tokenIdx;
+  while (lo > 0 && !/^\s/.test(tokens[lo].text) &&
+         _wishWordFragment(tokens[lo - 1]?.text)) lo--;
+  let hi = tokenIdx;
+  while (hi + 1 < tokens.length && !/^\s/.test(tokens[hi + 1].text) &&
+         _wishWordFragment(tokens[hi + 1]?.text)) hi++;
+  return { word: tokens.slice(lo, hi + 1).map((t) => t.text).join(''), lo, hi };
+}
+
+function dismissWishPopover({ updateClearance = true } = {}) {
+  const pop = $('wish-pop');
+  if (!pop) return;
+  const wasVisible = !pop.hidden;
+  pop.hidden = true;
+  _wishSeed = null;
+  if (wasVisible && updateClearance) updateScrollClearance();
+}
+
+// Chat tokens and token-rail labels share this path. Keeping wish creation
+// attached to selection (rather than to one DOM surface's click event)
+// makes both representations of the same reply token behave identically.
+function openWishForReplyToken(msgIdx, tokenIdx) {
+  if (isPresentation() || state.streaming) {
+    dismissWishPopover();
+    return false;
+  }
+  const m = state.messages[msgIdx];
+  if (!m || m.role !== 'assistant') {
+    dismissWishPopover();
+    return false;
+  }
+  const ti = tokenIdx;
   const tok = m.tokens[ti];
-  if (!tok || !normalizeTokenText(tok.text)) return;
-  // BPE splits words ("Beijing" → "Be"+"ijing"): expand the click to the
-  // whole word so the wish targets the word, anchored at its first token
-  // (the app's first-token convention everywhere else).
-  let lo = ti;
-  while (lo > 0 && !/^\s/.test(m.tokens[lo].text) &&
-         m.tokens[lo - 1] && !/\s$/.test(m.tokens[lo - 1].text) &&
-         normalizeTokenText(m.tokens[lo - 1].text) && ti - lo < 6) lo--;
-  let hi = ti;
-  while (hi + 1 < m.tokens.length && !/^\s/.test(m.tokens[hi + 1].text) &&
-         !/\s$/.test(m.tokens[hi].text) &&
-         normalizeTokenText(m.tokens[hi + 1].text) && hi - ti < 6) hi++;
-  const word = m.tokens.slice(lo, hi + 1).map((x) => x.text).join('');
-  _wishSeed = { pos: m.tokens[lo].globalPos, outputTok: word };
-  $('wish-current').textContent = word.trim();
+  if (!tok || !normalizeTokenText(tok.text)) {
+    dismissWishPopover();
+    return false;
+  }
+  const lexical = _wishDisplayWord(m.tokens, ti);
+  const sourceTok = m.tokens[lexical.lo];
+  // Intervention identity always comes from the exact clicked model token.
+  // For a split lexical word, anchor its first fragment; the expanded word
+  // is display/classification context only.
+  _wishSeed = {
+    pos: sourceTok.globalPos,
+    msgIdx,
+    tokenIdx: lexical.lo,
+    selectedTokenIdx: ti,
+    outputTok: sourceTok.text,
+    outputTokId: Number.isInteger(sourceTok.id) ? sourceTok.id : null,
+    outputWord: lexical.word,
+  };
+  $('wish-current').textContent = lexical.word.trim();
   $('wish-input').value = '';
   const pop = $('wish-pop');
   pop.hidden = false;
-  const r = t.getBoundingClientRect();
-  const pr = pop.getBoundingClientRect();
-  let x = Math.min(innerWidth - pr.width - 8, r.left);
-  let y = r.bottom + 8;
-  if (y + pr.height > innerHeight - 8) y = r.top - pr.height - 8;
-  pop.style.left = Math.max(8, x) + 'px';
-  pop.style.top = Math.max(8, y) + 'px';
+  updateScrollClearance();
   $('wish-input').focus();
-  e.stopPropagation();
-});
+  return true;
+}
+
 document.addEventListener('click', (e) => {
   const pop = $('wish-pop');
   if (pop.hidden || pop.contains(e.target)) return;
-  if (e.target.closest && e.target.closest('.tok')) return;
-  pop.hidden = true;
+  // Selection rerenders the chat/grid before this same click reaches the
+  // document, detaching e.target from its old ancestors. composedPath()
+  // preserves the dispatch-time route, so neither token representation is
+  // mistaken for a later outside click.
+  const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+  const hasClassOnPath = (className) => path.some((node) =>
+    node instanceof Element && node.classList.contains(className));
+  const fromReplyToken = path.includes($('chat-log')) && hasClassOnPath('tok');
+  const fromRailToken = path.includes($('grid-body')) && hasClassOnPath('clickable-token');
+  if (fromReplyToken || fromRailToken) return;
+  dismissWishPopover();
 });
 
 function startWish() {
   const wishText = $('wish-input').value.trim();
   if (!wishText || !_wishSeed) return;
   _wish = { ..._wishSeed, wishText, stage: null, pending: null,
-            specIds: {}, outcomes: {}, dismissed: false };
-  $('wish-pop').hidden = true;
+            specIds: {}, scanSpecs: {}, outcomes: {}, dismissed: false };
+  dismissWishPopover();
   openWishModal('conclusion');
 }
 $('wish-go').onclick = startWish;
@@ -6528,25 +6807,32 @@ function openWishModal(strategy) {
   $('scan-progress').textContent = '';
   $('scan-rerun').hidden = true;
   $('scan-strategies').hidden = false;
+  const sourceWord = (_wish.outputWord || _wish.outputTok).trim();
   $('scan-sub').textContent =
-    `Make it say ⟨${_wish.wishText}⟩ instead of ⟨${_wish.outputTok.trim()}⟩`;
+    `Make it say ⟨${_wish.wishText}⟩ instead of ⟨${sourceWord}⟩`;
   $('scan-card-conclusion-body').textContent =
-    `Replace ⟨${_wish.outputTok.trim()}⟩ → ⟨${_wish.wishText}⟩ — swap the answer word itself: “just change the word.”`;
+    `Replace ⟨${sourceWord}⟩ → ⟨${_wish.wishText}⟩ — swap the answer word itself: “just change the word.”`;
   document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
   $('scan-card-' + strategy).classList.add('active');
 }
 
-function runWishScan(strategy, opts = {}) {
+async function runWishScan(strategy, opts = {}) {
   if (!_wish) return;
-  let token, target, fromPos;
+  const wish = _wish;
+  const scanGen = ++_wishScanGen;
+  let token, target, tokenId = null, positions = null, fromPos = null;
   if (strategy === 'conclusion') {
-    token = _wish.outputTok;
-    target = _wish.wishText;
-    // Swap the answer word's coordinates EVERYWHERE: the word's concept
-    // is loaded across the late prompt rows and reaches the emitting
-    // position via attention — anchoring at the answer position alone
-    // is provably too late (the logits form at p-1 from earlier rows).
-    fromPos = 0;
+    token = wish.outputTok;
+    tokenId = wish.outputTokId;
+    target = wish.wishText;
+    // Token p is selected by logits formed at causal predecessor p-1.
+    // Editing from row zero rewrites the entire prompt and every generated
+    // step, which is what caused the observed repetition collapse.
+    if (!Number.isFinite(wish.pos) || wish.pos < 1) {
+      $('scan-progress').textContent = 'cannot scan: the selected token has no causal predecessor';
+      return;
+    }
+    positions = [wish.pos - 1];
   } else {
     token = $('wish-premise-src').value;
     target = $('wish-premise-dst').value;
@@ -6554,61 +6840,132 @@ function runWishScan(strategy, opts = {}) {
     if (!target) { $('wish-premise-dst').focus(); return; }
     fromPos = 0;
   }
-  // Concepts usually live as space-prefixed tokens; mirror the source's
-  // leading space onto a bare typed target.
-  if (!/^\s/.test(target) && /^\s/.test(token)) target = ' ' + target;
   const msgs = _scanMessages();
   if (!msgs.length) return;
+  $('scan-progress').textContent = 'resolving concept tokens…';
+  const requiredConclusionTokens = Math.min(16, Math.max(8, (wish.tokenIdx || 0) + 6));
+  const requestedMax = Number.isFinite(+opts.maxTokens) ? +opts.maxTokens : 0;
+  const maxTokens = strategy === 'conclusion'
+    ? Math.min(16, Math.max(requiredConclusionTokens, requestedMax))
+    : Math.min(16, Math.max(1, requestedMax || 4));
+  const [, resolvedTokenId, canonicalTarget] = await Promise.all([
+    ensureInfoReady(),
+    tokenId != null ? Promise.resolve(tokenId) : _wishExactTokenId(token),
+    _canonicalWishTarget(target, token),
+  ]);
+  tokenId = resolvedTokenId;
+  target = canonicalTarget.text;
+  if (_wish !== wish || scanGen !== _wishScanGen) return;
+  wish.scanSpecs[strategy] = {
+    token,
+    tokenId,
+    target,
+    targetId: canonicalTarget.id,
+    positions: positions ? positions.slice() : null,
+    fromPosition: fromPos,
+  };
   _scanContext = 'wish-' + strategy;
   document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
   $('scan-card-' + strategy).classList.add('active');
   $('scan-rerun').hidden = true;
-  const body = { messages: msgs, mode: 'swap', token, target,
-                 from_position: fromPos, max_tokens: opts.maxTokens || 4 };
-  if (opts.layers) body.layers = opts.layers;
-  if (opts.alphas) body.alphas = opts.alphas;
-  _runInterventionScan(body, 'swap');
+  const body = {
+    messages: msgs,
+    mode: 'swap',
+    token,
+    token_id: tokenId,
+    target,
+    target_id: canonicalTarget.id,
+    max_tokens: maxTokens,
+  };
+  if (positions) body.positions = positions;
+  else body.from_position = fromPos;
+  if (strategy === 'conclusion') {
+    body.goal_text = wish.wishText.trim();
+    body.source_text = (wish.outputWord || wish.outputTok).trim();
+  }
+  if (opts.layers) {
+    if (strategy === 'conclusion') {
+      const fitted = new Set(state.lensInfo?.source_layers || []);
+      body.layers = [...new Set(opts.layers.map(Number).filter((layer) => fitted.has(layer)))];
+      if (!body.layers.length) body.layers = _scanLayersForBand('late');
+    } else {
+      body.layers = opts.layers;
+    }
+  } else if (strategy === 'conclusion') {
+    // The answer token is formed in the motor/output band. The generic
+    // endpoint default intentionally samples the workspace band, which is
+    // appropriate for premise edits but made conclusion scans all-grey.
+    const outputLayers = _scanLayersForBand('late');
+    if (outputLayers.length) body.layers = outputLayers;
+  }
+  if (strategy === 'conclusion' && (!body.layers || !body.layers.length)) {
+    $('scan-progress').textContent = 'cannot scan: no fitted motor/output layer is available';
+    return;
+  }
+  if (strategy === 'conclusion') {
+    const requestedAlphas = Array.isArray(opts.alphas) ? opts.alphas : [0.5, 1];
+    body.alphas = [...new Set(requestedAlphas
+      .map(Number)
+      .filter((alpha) => Number.isFinite(alpha) && alpha > 0 && alpha <= 1))];
+    if (!body.alphas.length) body.alphas = [0.5, 1];
+  } else if (Array.isArray(opts.alphas)) {
+    body.alphas = opts.alphas;
+  }
+  return _runInterventionScan(body, 'swap');
 }
 document.querySelectorAll('.scan-card-go').forEach((b) => {
   b.onclick = () => runWishScan(b.dataset.strategy);
 });
 
-// Wish-context cell click: a GREEN cell (this stage's goal) adopts at
-// once; any other outcome must be confirmed with a second click, with
-// the probe's actual output spelled out — no silent adoption of a
-// setting that was measured to fail.
+// Conclusion scans allow a backend-declared exact success immediately, or an
+// orange partial candidate for a full re-run. The latter is not represented
+// as verified: the post-run wish banner still judges the actual generation.
+// Premise scans retain their semantic "derived answer" win.
 let _scanArmed = null;
 function _wishCellClick(el, obj, shown) {
   const said = (obj.text || '').trim();
-  if (shown === 'derived') {
+  const explicitSuccess = obj.success === true || obj.cls === 'success';
+  const partialCandidate = obj.cls === 'parrot' && shown === 'parrot';
+  const strategy = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
+  if ((strategy === 'conclusion' &&
+       ((explicitSuccess && shown === 'success') || partialCandidate)) ||
+      (strategy === 'premise' && shown === 'derived')) {
     _scanArmed = null;
-    _wishAdopt(obj.layer, obj.alpha, said);
+    _wishAdopt(obj.layer, obj.alpha, said, shown);
     return;
   }
-  if (_scanArmed === el) {
+  if (strategy === 'premise' && _scanArmed === el) {
     _scanArmed = null;
     el.classList.remove('armed');
-    _wishAdopt(obj.layer, obj.alpha, said);
+    _wishAdopt(obj.layer, obj.alpha, said, shown);
     return;
   }
-  if (_scanArmed) _scanArmed.classList.remove('armed');
-  _scanArmed = el;
-  el.classList.add('armed');
+  if (strategy === 'premise') {
+    if (_scanArmed) _scanArmed.classList.remove('armed');
+    _scanArmed = el;
+    el.classList.add('armed');
+    $('scan-progress').textContent =
+      `this premise setting produced “${said || '—'}” — click again to adopt anyway`;
+    return;
+  }
   $('scan-progress').textContent =
-    `⚠ this setting produced “${said}”, not ⟨${_wish ? _wish.wishText : ''}⟩ — click again to adopt anyway`;
+    `not adopted — this setting produced “${said || '—'}”, not one exact safe result`;
 }
 
-function _wishAdopt(layer, alpha, said) {
+function _wishAdopt(layer, alpha, said, quality = '') {
   if (!_wish) return;
   const strategy = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
-  let token, target, pos;
-  if (strategy === 'conclusion') {
-    token = _wish.outputTok; target = _wish.wishText;
-    pos = 0;   // see runWishScan: the word's coordinates live across rows
-  } else {
-    token = $('wish-premise-src').value; target = $('wish-premise-dst').value; pos = 0;
+  const scanned = _wish.scanSpecs && _wish.scanSpecs[strategy];
+  if (!scanned || !scanned.token || !scanned.target) {
+    $('scan-progress').textContent = 'scan settings expired — run the scan again';
+    return;
   }
-  if (!/^\s/.test(target) && /^\s/.test(token)) target = ' ' + target;
+  const safeAlpha = Number(alpha);
+  if (!Number.isFinite(safeAlpha) || safeAlpha <= 0 ||
+      (strategy === 'conclusion' && safeAlpha > 1)) {
+    $('scan-progress').textContent = 'not adopted — unsafe swap strength';
+    return;
+  }
   // The premise stage isolates itself: switch the conclusion edit off so
   // the re-run shows the premise edit alone.
   if (strategy === 'premise' && _wish.specIds.conclusion) {
@@ -6616,15 +6973,23 @@ function _wishAdopt(layer, alpha, said) {
     if (prev && prev.enabled) toggleIntervention(prev.id);
   }
   if (_wish.specIds[strategy]) removeIntervention(_wish.specIds[strategy]);
+  const predecessor = strategy === 'conclusion' ? _wish.pos - 1 : null;
+  const scope = strategy === 'conclusion'
+    ? { type: 'at', pos: predecessor }
+    : { type: 'from', pos: scanned.fromPosition ?? 0 };
   const spec = { id: nextInterventionId(), enabled: true, mode: 'swap',
-    token, tokenId: null, target, targetId: null,
-    alpha, layers: [layer],
-    scope: { type: 'from', pos },
-    origin: { pos: strategy === 'conclusion' ? _wish.pos : 0, layer },
+    token: scanned.token, tokenId: scanned.tokenId,
+    target: scanned.target, targetId: scanned.targetId,
+    alpha: safeAlpha, layers: [layer],
+    scope,
+    origin: { pos: strategy === 'conclusion' ? predecessor : 0, layer },
     ablateTokenIds: null };
   addIntervention(spec);
   _wish.specIds[strategy] = spec.id;
-  let note = `adopted L${layer} · α ${alpha} — the probe said “${said}”`;
+  const partial = strategy === 'conclusion' && quality === 'parrot';
+  let note = `${partial ? 'adopted partial/risky candidate' : 'adopted'} ` +
+    `L${layer} · α ${alpha} — the probe said “${said}”`;
+  if (partial) note += ' · use Re-run now to verify the complete response';
   if ((state.settings.temp || 0) > 0) {
     note += ` · temp ${state.settings.temp} adds sampling noise on re-run`;
   }
@@ -6649,6 +7014,39 @@ function _wishTick() {
   _wish.pending = null;
 }
 
+function _wishBoundedPhraseCount(text, phrase) {
+  const normalize = (value) => (value || '').normalize('NFKC')
+    .trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
+  const haystack = normalize(text);
+  const needle = normalize(phrase);
+  if (!needle) return 0;
+  // Match the server: lexical boundaries protect ASCII words such as
+  // Beijing from BeijingParis, without rejecting CJK phrases inside normal
+  // unspaced Chinese text.
+  const startsWord = /^[A-Za-z0-9_]/.test(needle);
+  const endsWord = /[A-Za-z0-9_]$/.test(needle);
+  let count = 0;
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    const before = haystack.slice(0, index);
+    const after = haystack.slice(index + needle.length);
+    const leftBounded = !startsWord || !/[A-Za-z0-9_]$/.test(before);
+    const rightBounded = !endsWord || !/^[A-Za-z0-9_]/.test(after);
+    if (leftBounded && rightBounded) count++;
+    offset = index + Math.max(needle.length, 1);
+  }
+  return count;
+}
+
+function _wishConclusionSucceeded(text, wish) {
+  const targetCount = _wishBoundedPhraseCount(text, wish.wishText);
+  const oldWord = (wish.outputWord || wish.outputTok || '').trim();
+  const oldCount = oldWord ? _wishBoundedPhraseCount(text, oldWord) : 0;
+  return targetCount === 1 && oldCount === 0;
+}
+
 function _wishBanner() {
   if (!_wish || _wish.dismissed || isPresentation()) return null;
   if (_wish.pending || !_wish.stage) return null;
@@ -6666,7 +7064,7 @@ function _wishBanner() {
   if (_wish.stage === 'inspect') {
     const msg = document.createElement('span');
     const got = (_wish.outcomes.conclusion || '').trim();
-    const hit = got.toLowerCase().startsWith(_wish.wishText.trim().toLowerCase());
+    const hit = _wishConclusionSucceeded(got, _wish);
     msg.innerHTML = hit
       ? `It says ⟨${escapeHtml(got)}⟩ — but look at the workspace band: what does it still <b>think</b>?`
       : `It changed — but to ⟨${escapeHtml(got)}⟩, not ⟨${escapeHtml(_wish.wishText)}⟩: swapping the word's coordinates knocked it off course without landing your word. Changing the <b>thought</b> is more reliable:`;
@@ -6748,9 +7146,11 @@ $('grid-body').addEventListener('mouseleave', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
+  if (!$('scan-backdrop').hidden) { closeInterventionScan(); return; }
   if ($('intervene-backdrop').classList.contains('visible')) { cancelInterventionEditor(); return; }
   if ($('settings-backdrop').classList.contains('visible')) { cancelSettings(); return; }
-  if ($('sessions-menu').classList.contains('visible')) closeSessionsMenu();
+  if ($('sessions-menu').classList.contains('visible')) { closeSessionsMenu(); return; }
+  if (!$('wish-pop').hidden) dismissWishPopover();
 });
 
 function escapeHtml(s) {
@@ -6761,7 +7161,7 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/"/g, '&quot;');
 }
 
-loadInfo();
+ensureInfoReady();
 loadGithubStars();
 loadSettings();
 if (isPresentation()) {
