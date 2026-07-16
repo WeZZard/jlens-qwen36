@@ -198,8 +198,8 @@
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: var(--bottom-control-inset); z-index: 10;
     width: min(var(--center-panel-width), calc(100vw - 32px));
-    display: flex; flex-direction: column; gap: 8px;
-    padding: 12px 16px 10px;
+    display: flex; flex-direction: column; gap: 0;
+    padding: 0;
     background: var(--glass-panel);
     border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
@@ -213,6 +213,7 @@
   #chat-input-row {
     position: relative; z-index: 2;
     display: flex; gap: 8px; align-items: center;
+    padding: 12px 16px 10px;
     overflow: clip;
   }
   #chat-editor {
@@ -1611,14 +1612,18 @@
   #wish-pop {
     position: static; z-index: auto; transform: none;
     background: transparent; border: 0; border-radius: 0;
-    box-shadow: none; padding: 0; width: 100%;
+    box-shadow: none; padding: 12px 16px; width: 100%;
   }
   #wish-pop[hidden] { display: none; }
   #wish-pop.search-mode {
-    width: 100%; padding: 0;
+    width: 100%;
   }
-  #chat-input.wishing { width: min(820px, calc(100vw - 32px)); }
-  #chat-input.wishing #chat-input-row { display: none; }
+  /* Search is a background task, not a replacement composer. Both sections
+     share this one glass surface and one continuous squircle. */
+  #chat-input.wishing { width: min(var(--center-panel-width), calc(100vw - 32px)); }
+  #chat-input.wishing #wish-pop {
+    border-bottom: 1px solid rgba(60, 60, 67, 0.12);
+  }
   .wish-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
   .wish-row { display: flex; gap: 8px; }
   #wish-input {
@@ -1709,6 +1714,9 @@
     color: #fff; font-weight: 650;
   }
   .wish-search-actions button[hidden] { display: none; }
+  .wish-search-actions button:disabled {
+    opacity: 0.42; cursor: default;
+  }
 
   /* Backward search keeps the J-Space table live, but makes the exact
      prefill cells under evaluation visually explicit. Search state is
@@ -2027,9 +2035,9 @@
           <div id="wish-search-diagnostics"></div>
         </div>
         <div class="wish-search-actions">
-          <button id="wish-search-stop" type="button">Stop</button>
+          <button id="wish-search-stop" type="button" disabled>Pause</button>
           <span class="spacer"></span>
-          <button id="wish-search-deeper" type="button" hidden>Search deeper · up to 3 min</button>
+          <button id="wish-search-deeper" type="button" disabled>Search deeper · +2 min</button>
           <button id="wish-search-apply" class="primary" type="button" hidden>Apply &amp; re-run</button>
         </div>
       </div>
@@ -3174,7 +3182,9 @@ function dismissDetailCard() {
 }
 
 function closeDetailCard() {
-  dismissWishPopover({ updateClearance: false });
+  if (!(_wish && _wish.search)) {
+    dismissWishPopover({ updateClearance: false });
+  }
   state.selectedCell = null;
   state.selectedToken = null;
   dismissDetailCard();
@@ -5538,7 +5548,9 @@ function isFrontier(msgIdx, tokenIdx) {
 function selectBlock(msgIdx, tokenIdx) {
   const token = state.messages[msgIdx]?.tokens[tokenIdx];
   if (!token) return;
-  dismissWishPopover({ updateClearance: false });
+  if (!(_wish && _wish.search)) {
+    dismissWishPopover({ updateClearance: false });
+  }
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
   const layer = token.globalPos >= 0 ? defaultLayerForPosition(token.globalPos) : null;
   state.selectedCell = layer == null ? null : { pos: token.globalPos, layer };
@@ -5576,7 +5588,9 @@ function selectTokenHeader(pos) {
   openWishForReplyToken(ref.msgIdx, ref.tokenIdx);
 }
 function selectCell(pos, layer) {
-  dismissWishPopover({ updateClearance: false });
+  if (!(_wish && _wish.search)) {
+    dismissWishPopover({ updateClearance: false });
+  }
   state.selectedCell = { pos, layer };
   state.selectedToken = tokenRefForPosition(pos);
   state.selectedSnapshotId = null;
@@ -5591,7 +5605,11 @@ function updateAutoFollowUI() {
 function renderAll() {
   const selectedReply = state.selectedToken &&
     state.messages[state.selectedToken.msgIdx]?.role === 'assistant';
-  if (state.streaming || isPresentation() || !selectedReply) {
+  const backgroundWishSearch = !!(_wish && _wish.search);
+  // A running/paused backward search owns a frozen copy of its original
+  // context and stays visible while the normal composer starts another turn.
+  // A not-yet-started "Make it say" draft still follows selection normally.
+  if (isPresentation() || (!backgroundWishSearch && (state.streaming || !selectedReply))) {
     dismissWishPopover({ updateClearance: false });
   }
   const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
@@ -5622,6 +5640,7 @@ function renderAll() {
   chatDetailClearanceApplied = !!state.selectedCell;
   renderGrid({ focusSelection: shouldFocusSelection });
   renderTimeline();
+  if (backgroundWishSearch) updateWishSearchStatus();
 }
 
 // ----- Ingest a snapshot -----
@@ -7111,18 +7130,51 @@ function formatWishElapsed(seconds) {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
 
+function wishSearchContextKey(messages = _scanMessages()) {
+  return JSON.stringify(messages.map((message) => ({
+    role: message.role, content: message.content,
+  })));
+}
+
+function wishSearchContextIsCurrent(wish = _wish) {
+  return !!wish?.search &&
+    wish.search.contextKey === wishSearchContextKey() &&
+    !(state.appliedInterventions || []).length &&
+    enabledInterventions().length === 0;
+}
+
+function syncWishSearchClock(search, obj = {}) {
+  const reported = Number(obj.elapsed_active_seconds ?? obj.elapsed_seconds);
+  if (Number.isFinite(reported)) search.elapsedSeconds = Math.max(0, reported);
+  const budget = Number(obj.time_budget_seconds);
+  if (Number.isFinite(budget) && budget > 0) search.budgetSeconds = budget;
+  search.clockStartedAt = performance.now();
+}
+
+function currentWishSearchElapsed(search) {
+  let elapsed = search.elapsedSeconds || 0;
+  if (search.running && !search.paused) {
+    elapsed += (performance.now() - search.clockStartedAt) / 1000;
+  }
+  return Math.min(search.budgetSeconds, Math.max(0, elapsed));
+}
+
 function updateWishSearchStatus() {
   const search = _wish?.search;
   if (!search) return;
-  const elapsed = Math.min(
-    search.budgetSeconds,
-    Math.max(search.elapsedSeconds || 0, (performance.now() - search.startedAt) / 1000),
-  );
-  const fraction = search.done && search.verified
-    ? 1 : Math.min(1, elapsed / search.budgetSeconds);
+  const elapsed = currentWishSearchElapsed(search);
+  const fraction = Math.min(1, elapsed / search.budgetSeconds);
   $('wish-search-fill').style.width = `${fraction * 100}%`;
   $('wish-search-stats').textContent =
     `${search.tested} tested · ${search.partials} leads · ${formatWishElapsed(elapsed)} / ${formatWishElapsed(search.budgetSeconds)}`;
+  if (search.verified) {
+    const contextCurrent = wishSearchContextIsCurrent();
+    $('wish-search-apply').disabled = state.streaming || !contextCurrent;
+    if (search.done && !contextCurrent) {
+      $('wish-search-stage').textContent =
+        'Verified for the earlier reply; the conversation has since advanced, so it cannot be re-run safely here.';
+    }
+  }
 }
 
 function beginWishSearchTimer() {
@@ -7141,6 +7193,7 @@ function showWishSearchResult(kind, copy, recipe = '') {
   result.className = kind === 'verified' ? 'verified' : '';
   $('wish-search-result-copy').textContent = copy;
   $('wish-search-recipe').textContent = recipe;
+  if (kind === 'verified') $('wish-search-diagnostics').replaceChildren();
 }
 
 function renderWishSearchDiagnostics(search) {
@@ -7166,26 +7219,31 @@ function renderWishSearchDiagnostics(search) {
 function finishWishSearch(data = {}) {
   const search = _wish?.search;
   if (!search || search.done) return;
+  syncWishSearchClock(search, data);
   search.done = true;
   search.running = false;
-  search.elapsedSeconds = Number(data.elapsed_seconds) ||
-    (performance.now() - search.startedAt) / 1000;
+  search.paused = false;
+  search.pauseRequested = false;
   endWishSearchTimer();
   search.visual.current.clear();
   paintWishSearchCells();
   $('wish-search-stop').hidden = true;
+  $('wish-search-deeper').disabled = true;
 
   if (search.verified) {
+    const contextCurrent = wishSearchContextIsCurrent();
     $('wish-search-view').classList.add('success');
     $('wish-search-title').textContent = 'Verified recipe found';
-    $('wish-search-stage').textContent =
-      `Full deterministic replay said “${search.verified.text.trim()}” and terminated normally.`;
+    $('wish-search-stage').textContent = contextCurrent
+      ? `Full deterministic replay said “${search.verified.text.trim()}” and terminated normally.`
+      : 'Verified for the earlier reply; the conversation has since advanced, so it cannot be re-run safely here.';
     showWishSearchResult(
       'verified',
       `${search.verified.cells.length}-cell workspace recipe`,
       wishSearchRecipeText(search.verified.cells),
     );
     $('wish-search-apply').hidden = false;
+    $('wish-search-apply').disabled = !contextCurrent || state.streaming;
   } else if (data.stop_reason === 'dirty_baseline') {
     $('wish-search-title').textContent = 'Start from a clean baseline';
     $('wish-search-stage').textContent =
@@ -7197,24 +7255,90 @@ function finishWishSearch(data = {}) {
       'The deterministic baseline no longer matches this displayed response.';
     showWishSearchResult('', 'Re-run the clean baseline, then select the reply token again.');
   } else if (search.cancelled) {
-    $('wish-search-title').textContent = 'Search stopped';
+    $('wish-search-title').textContent = 'Search cancelled';
     $('wish-search-stage').textContent = `${search.tested} complete recipes were checked safely.`;
-    if (search.profile === 'standard') $('wish-search-deeper').hidden = false;
   } else if (data.status === 'error') {
     $('wish-search-title').textContent = 'Search failed';
     $('wish-search-stage').textContent = search.error || 'The search could not be completed.';
     showWishSearchResult('', 'No intervention was applied.');
   } else {
     $('wish-search-title').textContent = 'No verified recipe yet';
-    $('wish-search-stage').textContent =
-      `No exact, normally terminated replacement was found within ${search.profile === 'standard' ? 'one minute' : 'three minutes'}.`;
+    $('wish-search-stage').textContent = data.stop_reason === 'exhausted_candidates'
+      ? `Every bounded workspace recipe in this search was exhausted after ${formatWishElapsed(search.elapsedSeconds)}.`
+      : `No exact, normally terminated replacement was found within ${search.budgetSeconds > 60 ? 'three minutes' : 'the available search space'}.`;
     const diagnostic = search.partials
       ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} were kept as diagnostics, not solutions.`
       : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
     showWishSearchResult('', diagnostic);
     renderWishSearchDiagnostics(search);
-    if (search.profile === 'standard') $('wish-search-deeper').hidden = false;
   }
+  updateWishSearchStatus();
+  updateScrollClearance();
+}
+
+function pauseWishSearchUI(obj) {
+  const search = _wish?.search;
+  if (!search || search.done) return;
+  syncWishSearchClock(search, obj);
+  search.running = false;
+  search.paused = true;
+  search.pauseRequested = false;
+  search.awaitingExtension = !!obj.awaiting_extension;
+  endWishSearchTimer();
+  search.visual.current.clear();
+  paintWishSearchCells();
+
+  if (search.awaitingExtension) {
+    // The server reserves enough time not to begin a replay it cannot finish,
+    // then charges the logical clock exactly to 1:00 at this phase boundary.
+    search.elapsedSeconds = search.budgetSeconds;
+    $('wish-search-title').textContent = 'No verified recipe yet';
+    $('wish-search-stage').textContent = 'The one-minute search is paused. Add two minutes to continue the same search.';
+    const diagnostic = search.partials
+      ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} remain leads, not verified solutions.`
+      : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
+    showWishSearchResult('', diagnostic);
+    renderWishSearchDiagnostics(search);
+    $('wish-search-stop').hidden = true;
+    $('wish-search-deeper').disabled = false;
+  } else {
+    $('wish-search-title').textContent = 'Search paused';
+    $('wish-search-stage').textContent = `${search.tested} complete recipes checked · active search time is not advancing.`;
+    $('wish-search-stop').hidden = false;
+    $('wish-search-stop').textContent = 'Resume';
+    $('wish-search-stop').disabled = false;
+    $('wish-search-deeper').disabled = true;
+  }
+  updateWishSearchStatus();
+  updateScrollClearance();
+}
+
+function resumeWishSearchUI(obj) {
+  const search = _wish?.search;
+  if (!search || search.done) return;
+  syncWishSearchClock(search, obj);
+  search.running = true;
+  search.paused = false;
+  search.pauseRequested = false;
+  search.awaitingExtension = false;
+  search.extended = !!obj.extended || Number(obj.added_time_seconds) === 120;
+  $('wish-search-result').hidden = true;
+  $('wish-search-view').classList.remove('success');
+  $('wish-search-title').textContent = search.extended
+    ? 'Searching deeper' : 'Searching backward';
+  if (search.extended && _wish) {
+    $('wish-search-sub').textContent =
+      `⟨${wishSelectedText(_wish)}⟩ → ⟨${_wish.wishText}⟩ · up to 3 minutes`;
+  }
+  $('wish-search-stage').textContent = search.extended
+    ? 'Continuing the retained search with two additional minutes…'
+    : 'Resuming the retained search…';
+  $('wish-search-stop').hidden = false;
+  $('wish-search-stop').textContent = 'Pause';
+  $('wish-search-stop').disabled = false;
+  $('wish-search-deeper').textContent = 'Search deeper · +2 min';
+  $('wish-search-deeper').disabled = true;
+  beginWishSearchTimer();
   updateWishSearchStatus();
   updateScrollClearance();
 }
@@ -7223,8 +7347,11 @@ function handleWishSearchEvent(event, obj) {
   const search = _wish?.search;
   if (!search) return;
   if (event === 'search_start') {
+    search.searchId = obj.search_id || search.searchId;
     if (Number.isInteger(obj.token_id)) search.tokenId = obj.token_id;
     if (Number.isInteger(obj.target_id)) search.targetId = obj.target_id;
+    syncWishSearchClock(search, obj);
+    $('wish-search-stop').disabled = !search.searchId;
     $('wish-search-stage').textContent = 'Ranking J-Space evidence across prefilled positions…';
   } else if (event === 'position_ranking' || event === 'ranking') {
     const positions = obj.positions || obj.ranked_positions || [];
@@ -7234,11 +7361,13 @@ function handleWishSearchEvent(event, obj) {
     }
     if (positions.length) renderGrid({ keepScroll: true });
   } else if (event === 'stage') {
+    syncWishSearchClock(search, obj);
     search.stage = obj.stage || obj.name || 'search';
     const labels = {
       evidence_single: 'Testing coherent source-token tracks…',
       coarse_single: 'Sweeping the workspace band…',
       refinement_single: 'Refining nearby layers and strengths…',
+      deep_single: 'Sweeping every fitted workspace layer…',
       pair: 'Combining promising workspace cells…',
       triple: 'Testing a final three-cell combination…',
     };
@@ -7246,10 +7375,11 @@ function handleWishSearchEvent(event, obj) {
       obj.label || obj.message || labels[search.stage] || 'Testing workspace recipes…';
     wishSearchSetCurrent(obj.cells || []);
   } else if (event === 'candidate_start') {
+    syncWishSearchClock(search, obj);
     wishSearchSetCurrent(obj.cells || []);
   } else if (event === 'candidate') {
     search.tested = Math.max(search.tested + 1, Number(obj.index) || 0);
-    search.elapsedSeconds = Number(obj.elapsed_seconds) || search.elapsedSeconds;
+    syncWishSearchClock(search, obj);
     if (obj.recipe_key) search.recipeKeys.add(obj.recipe_key);
     const classification = obj.class === 'verified' ? 'verified'
       : obj.class === 'partial' ? 'partial'
@@ -7302,6 +7432,10 @@ function handleWishSearchEvent(event, obj) {
     }
     paintWishSearchCells();
     updateWishSearchStatus();
+  } else if (event === 'search_paused') {
+    pauseWishSearchUI(obj);
+  } else if (event === 'search_resumed') {
+    resumeWishSearchUI(obj);
   } else if (event === 'search_end') {
     finishWishSearch(obj);
   } else if (event === 'error') {
@@ -7341,51 +7475,106 @@ async function streamWishSearch(payload, controller) {
   }
 }
 
+async function controlWishSearch(action) {
+  const search = _wish?.search;
+  if (!search?.searchId || search.done) return false;
+  const response = await fetch(API + '/api/intervention_search_adaptive_control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      search_id: search.searchId,
+      action,
+      ...(action === 'extend' ? { additional_time_seconds: 120 } : {}),
+    }),
+  });
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+async function toggleWishSearchPause() {
+  const search = _wish?.search;
+  if (!search || search.done || search.awaitingExtension) return;
+  const button = $('wish-search-stop');
+  const action = search.paused ? 'resume' : 'pause';
+  button.disabled = true;
+  button.textContent = search.paused ? 'Resuming…' : 'Pausing…';
+  if (!search.paused) search.pauseRequested = true;
+  try {
+    await controlWishSearch(action);
+  } catch (error) {
+    search.pauseRequested = false;
+    button.disabled = false;
+    button.textContent = search.paused ? 'Resume' : 'Pause';
+    search.error = String(error.message || error);
+    console.error('adaptive search control failed:', error);
+  }
+}
+
+async function extendWishSearch() {
+  const search = _wish?.search;
+  if (!search || search.done || !search.awaitingExtension) return;
+  const button = $('wish-search-deeper');
+  button.disabled = true;
+  button.textContent = 'Adding 2 minutes…';
+  try {
+    await controlWishSearch('extend');
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'Search deeper · +2 min';
+    search.error = String(error.message || error);
+    console.error('adaptive search extension failed:', error);
+  }
+}
+
 function stopWishSearch({ silent = false } = {}) {
   const search = _wish?.search;
-  if (!search || !search.running) return;
+  if (!search || search.done) return;
   search.cancelled = true;
   search.running = false;
+  search.paused = false;
   if (search.controller) search.controller.abort();
   endWishSearchTimer();
   search.visual.current.clear();
   if (!silent) finishWishSearch({ status: 'cancelled', stop_reason: 'cancelled' });
 }
 
-async function runAdaptiveWishSearch(profile = 'standard') {
+async function runAdaptiveWishSearch() {
   if (!_wish) return;
   const wish = _wish;
-  const previous = wish.search;
-  const budgetSeconds = profile === 'thorough' ? 180 : 60;
-  const visual = previous?.visual || {
+  const budgetSeconds = 60;
+  const messages = _scanMessages();
+  const visual = {
     cells: new Map(), current: new Set(), positions: new Set(), details: new Map(),
   };
-  if (!visual.details) visual.details = new Map();
   const controller = new AbortController();
   wish.search = {
-    profile, budgetSeconds, controller, visual,
-    running: true, done: false, cancelled: false, verified: null,
-    tested: profile === 'thorough' ? (previous?.tested || 0) : 0,
-    partials: profile === 'thorough' ? (previous?.partials || 0) : 0,
-    diagnostics: profile === 'thorough' ? [...(previous?.diagnostics || [])] : [],
-    recipeKeys: previous?.recipeKeys || new Set(),
-    priorPromising: previous?.priorPromising || [],
-    startedAt: performance.now(), elapsedSeconds: 0,
+    profile: 'standard', budgetSeconds, controller, visual,
+    running: true, paused: false, pauseRequested: false,
+    awaitingExtension: false, extended: false,
+    done: false, cancelled: false, verified: null,
+    tested: 0, partials: 0, diagnostics: [],
+    recipeKeys: new Set(), priorPromising: [],
+    contextKey: wishSearchContextKey(messages),
+    clockStartedAt: performance.now(), elapsedSeconds: 0,
+    searchId: null,
   };
   document.documentElement.classList.add('wish-search-active');
   $('wish-pop').classList.add('search-mode');
   $('wish-compose').hidden = true;
   $('wish-search-view').hidden = false;
   $('wish-search-view').classList.remove('success');
-  $('wish-search-title').textContent = profile === 'thorough'
-    ? 'Searching deeper' : 'Searching backward';
+  $('wish-search-title').textContent = 'Searching backward';
   $('wish-search-sub').textContent =
-    `⟨${wishSelectedText(wish)}⟩ → ⟨${wish.wishText}⟩ · ${profile === 'thorough' ? 'up to 3 minutes' : 'up to 1 minute'}`;
+    `⟨${wishSelectedText(wish)}⟩ → ⟨${wish.wishText}⟩ · up to 1 minute`;
   $('wish-search-stage').textContent = 'Resolving token boundaries…';
   $('wish-search-result').hidden = true;
   $('wish-search-diagnostics').replaceChildren();
   $('wish-search-stop').hidden = false;
-  $('wish-search-deeper').hidden = true;
+  $('wish-search-stop').textContent = 'Pause';
+  $('wish-search-stop').disabled = true;
+  $('wish-search-deeper').hidden = false;
+  $('wish-search-deeper').textContent = 'Search deeper · +2 min';
+  $('wish-search-deeper').disabled = true;
   $('wish-search-apply').hidden = true;
   $('wish-search-fill').style.width = '0';
   updateScrollClearance();
@@ -7411,7 +7600,6 @@ async function runAdaptiveWishSearch(profile = 'standard') {
     wish.search.tokenId = resolvedSourceId;
     wish.search.target = canonicalTarget.text;
     wish.search.targetId = canonicalTarget.id;
-    const messages = _scanMessages();
     const evidence = wishSearchPositionEvidence(wish);
     const reply = state.messages[wish.msgIdx];
     const payload = {
@@ -7428,17 +7616,13 @@ async function runAdaptiveWishSearch(profile = 'standard') {
       selected_end: wish.sourceEnd,
       selected_token_index: wish.selectedTokenIdx,
       position_evidence: evidence,
-      exclude_recipe_keys: profile === 'thorough' ? [...wish.search.recipeKeys] : [],
-      prior_promising: profile === 'thorough'
-        ? wish.search.priorPromising.map((item) => ({
-            cells: item.cells,
-            similarity_to_desired: item.similarity_to_desired,
-          }))
-        : [],
-      profile,
+      exclude_recipe_keys: [],
+      prior_promising: [],
+      profile: 'standard',
       max_tokens: Math.min(128, Math.max(32, (reply?.tokens.length || 1) + 16)),
       time_budget_seconds: budgetSeconds,
       enable_thinking: false,
+      allow_continuation: true,
     };
     await streamWishSearch(payload, controller);
     if (_wish === wish && wish.search && !wish.search.done && !wish.search.cancelled) {
@@ -7461,7 +7645,8 @@ function applyVerifiedWishRecipe() {
   const wish = _wish;
   const search = wish?.search;
   const result = search?.verified;
-  if (!wish || !result || !Array.isArray(result.cells) || !result.cells.length) return;
+  if (!wish || !result || state.streaming || !wishSearchContextIsCurrent(wish) ||
+      !Array.isArray(result.cells) || !result.cells.length) return;
   const ids = [];
   for (const cell of result.cells) {
     const id = nextInterventionId();
@@ -7489,7 +7674,7 @@ function startWish() {
   _wish = { ..._wishSeed, wishText, stage: null, pending: null,
             specIds: {}, scanSpecs: {}, outcomes: {}, dismissed: false };
   _wishSeed = null;
-  runAdaptiveWishSearch('standard');
+  runAdaptiveWishSearch();
 }
 $('wish-go').onclick = startWish;
 $('wish-input').addEventListener('input', () => {
@@ -7498,9 +7683,9 @@ $('wish-input').addEventListener('input', () => {
 $('wish-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); startWish(); }
 });
-$('wish-search-stop').onclick = () => stopWishSearch();
+$('wish-search-stop').onclick = () => toggleWishSearchPause();
 $('wish-search-close').onclick = () => dismissWishPopover();
-$('wish-search-deeper').onclick = () => runAdaptiveWishSearch('thorough');
+$('wish-search-deeper').onclick = () => extendWishSearch();
 $('wish-search-apply').onclick = applyVerifiedWishRecipe;
 
 function openWishModal(strategy) {

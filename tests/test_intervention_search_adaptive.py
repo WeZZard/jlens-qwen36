@@ -159,6 +159,14 @@ async def _run(request):
     return _parse_sse(raw)
 
 
+async def _next_event(iterator):
+    chunk = await iterator.__anext__()
+    encoded = chunk if isinstance(chunk, bytes) else chunk.encode()
+    parsed = _parse_sse(encoded)
+    assert len(parsed) == 1
+    return parsed[0]
+
+
 def _request(**overrides):
     values = {
         "messages": [serve.ChatMessage(role="user", content="Name a city")],
@@ -305,6 +313,26 @@ def test_initial_singles_are_round_robin_across_ranked_positions():
         for candidate in candidates
         for cell in candidate["cells"]
     )
+
+
+def test_deep_singles_cover_every_workspace_layer_and_two_strengths():
+    ranked = [{"position": 7}, {"position": 11}]
+
+    candidates = serve._adaptive_deep_single_candidates(
+        ranked, [15, 16, 17]
+    )
+
+    assert len(candidates) == 12
+    assert all(candidate["stage"] == "deep_single" for candidate in candidates)
+    assert [candidate["cells"][0] for candidate in candidates[:4]] == [
+        {"position": 7, "layer": 17, "alpha": 1.0},
+        {"position": 11, "layer": 17, "alpha": 1.0},
+        {"position": 7, "layer": 16, "alpha": 1.0},
+        {"position": 11, "layer": 16, "alpha": 1.0},
+    ]
+    assert {candidate["cells"][0]["alpha"] for candidate in candidates} == {
+        0.5, 1.0,
+    }
 
 
 def test_refinement_pairs_and_triples_preserve_exact_cells():
@@ -713,6 +741,216 @@ def test_deadline_expires_while_candidate_waits_without_starting_replay(
     assert ending["deadline_queue_wait_ms"] > 0
     # Only the baseline session was created; queued candidate work never ran.
     assert len(model.sessions) == 1
+
+
+def test_live_search_pause_resume_keeps_one_stream_and_active_clock(
+    adaptive_env,
+):
+    model, _ = adaptive_env
+
+    async def scenario():
+        response = await serve.intervention_search_adaptive(_request(
+            allow_continuation=True,
+        ))
+        iterator = response.body_iterator
+        events = [await _next_event(iterator)]
+        search_id = events[0][1]["search_id"]
+        assert search_id in serve._adaptive_search_controls
+
+        pause = await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=search_id,
+                action="pause",
+            )
+        )
+        assert pause["pause_requested"] is True
+        events.append(await _next_event(iterator))  # position ranking
+        events.append(await _next_event(iterator))  # acknowledged pause
+        paused = events[-1][1]
+        assert paused["reason"] == "user"
+        assert paused["paused"] is True
+        before = paused["elapsed_active_seconds"]
+
+        await asyncio.sleep(0.02)
+        still_paused = await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=search_id,
+                action="pause",
+            )
+        )
+        assert still_paused["elapsed_active_seconds"] == pytest.approx(
+            before, abs=0.003
+        )
+        await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=search_id,
+                action="resume",
+            )
+        )
+        async for chunk in iterator:
+            encoded = chunk if isinstance(chunk, bytes) else chunk.encode()
+            events.extend(_parse_sse(encoded))
+        return search_id, events
+
+    search_id, events = asyncio.run(scenario())
+
+    names = [name for name, _ in events]
+    assert names[:4] == [
+        "search_start", "position_ranking", "search_paused", "search_resumed",
+    ]
+    assert names.count("baseline") == 1
+    assert names.count("candidate") == 1
+    assert events[-1][1]["status"] == "success"
+    assert len(model.sessions) == 2
+    assert search_id not in serve._adaptive_search_controls
+
+
+def test_live_pause_interrupts_gpu_queue_without_starting_or_losing_work(
+    adaptive_env, monkeypatch,
+):
+    model, _ = adaptive_env
+
+    async def scenario():
+        lock = asyncio.Lock()
+        await lock.acquire()
+        monkeypatch.setattr(serve, "_gpu_lock", lock)
+        response = await serve.intervention_search_adaptive(_request(
+            allow_continuation=True,
+        ))
+        iterator = response.body_iterator
+        start = await _next_event(iterator)
+        await _next_event(iterator)  # position ranking
+
+        waiting = asyncio.create_task(_next_event(iterator))
+        await asyncio.sleep(0)
+        await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=start[1]["search_id"],
+                action="pause",
+            )
+        )
+        paused = await asyncio.wait_for(waiting, timeout=0.1)
+        assert paused[0] == "search_paused"
+        assert model.sessions == []
+        # This is still the lock held by the simulated competing request; the
+        # interrupted acquire did not leak a second ownership.
+        assert lock.locked()
+        lock.release()
+
+        await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=start[1]["search_id"],
+                action="resume",
+            )
+        )
+        events = []
+        async for chunk in iterator:
+            encoded = chunk if isinstance(chunk, bytes) else chunk.encode()
+            events.extend(_parse_sse(encoded))
+        return events, lock
+
+    events, lock = asyncio.run(scenario())
+    assert events[0][0] == "search_resumed"
+    assert sum(name == "baseline" for name, _ in events) == 1
+    assert events[-1][1]["status"] == "success"
+    assert len(model.sessions) == 2
+    assert not lock.locked()
+
+
+def test_initial_phase_extends_same_scheduler_without_recipe_replay(
+    adaptive_env, monkeypatch,
+):
+    del adaptive_env
+    model = _RecipeModel({
+        0: [1, 0],
+        1: [2, 4, 0],       # improving single: "Beijing wrong"
+        2: [2, 3, 0],       # improving pair: "Beijing is"
+        3: [2, 0],          # exact triple
+    })
+    monkeypatch.setattr(serve, "_model", model)
+
+    async def scenario():
+        response = await serve.intervention_search_adaptive(_request(
+            allow_continuation=True,
+        ))
+        iterator = response.body_iterator
+        events = []
+        while True:
+            event = await _next_event(iterator)
+            events.append(event)
+            if event[0] == "search_paused":
+                break
+        paused = events[-1][1]
+        assert paused["reason"] == "initial_candidates_exhausted"
+        assert paused["elapsed_active_seconds"] == pytest.approx(60.0)
+        assert paused["time_budget_seconds"] == 60.0
+        assert paused["awaiting_extension"] is True
+
+        control = await serve.intervention_search_adaptive_control(
+            serve.AdaptiveInterventionSearchControlRequest(
+                search_id=paused["search_id"],
+                action="extend",
+                additional_time_seconds=120.0,
+            )
+        )
+        assert control["time_budget_seconds"] == 180.0
+        assert control["budget_remaining_seconds"] == pytest.approx(120.0)
+        async for chunk in iterator:
+            encoded = chunk if isinstance(chunk, bytes) else chunk.encode()
+            events.extend(_parse_sse(encoded))
+        return events
+
+    events = asyncio.run(scenario())
+
+    paused_index = next(
+        index for index, (name, _) in enumerate(events)
+        if name == "search_paused"
+    )
+    before = {
+        data["recipe_key"]
+        for name, data in events[:paused_index]
+        if name == "candidate"
+    }
+    after = {
+        data["recipe_key"]
+        for name, data in events[paused_index + 1:]
+        if name == "candidate"
+    }
+    assert before
+    assert after
+    assert before.isdisjoint(after)
+    assert sum(name == "baseline" for name, _ in events) == 1
+    assert any(
+        name == "search_resumed"
+        and data["reason"] == "extended"
+        and data["added_time_seconds"] == 120.0
+        for name, data in events
+    )
+    assert events[-1][1]["status"] == "success"
+    verified = next(
+        data for name, data in events
+        if name == "candidate" and data["verified"]
+    )
+    assert verified["stage"] == "triple"
+    assert len(model.sessions) == 1 + len(before) + len(after)
+
+
+def test_live_search_disconnect_discards_continuation(adaptive_env):
+    del adaptive_env
+
+    async def scenario():
+        response = await serve.intervention_search_adaptive(_request(
+            allow_continuation=True,
+        ))
+        iterator = response.body_iterator
+        start = await _next_event(iterator)
+        search_id = start[1]["search_id"]
+        assert search_id in serve._adaptive_search_controls
+        await iterator.aclose()
+        return search_id
+
+    search_id = asyncio.run(scenario())
+    assert search_id not in serve._adaptive_search_controls
 
 
 def test_pairs_are_interleaved_before_single_queues_drain(

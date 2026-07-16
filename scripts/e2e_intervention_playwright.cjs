@@ -26,6 +26,7 @@ const trials = process.env.JLENS_E2E_TRIALS
       { prompt: 'Say London and nothing else.', source: 'London', target: 'Tokyo' },
     ];
 const searchProfile = process.env.JLENS_E2E_PROFILE || 'standard';
+const exercisePauseResume = process.env.JLENS_E2E_PAUSE_RESUME === '1';
 
 function phraseCount(text, phrase) {
   const haystack = String(text || '').normalize('NFKC').toLocaleLowerCase();
@@ -83,7 +84,11 @@ async function browserState(page) {
 
 async function clearConversation(page) {
   const visible = await page.locator('#wish-pop:not([hidden])').count();
-  if (visible) await page.locator('#wish-search-close').click();
+  if (visible) {
+    const close = page.locator('#wish-search-close:visible');
+    if (await close.count()) await close.click();
+    else await page.keyboard.press('Escape');
+  }
   if (await page.locator('#clear-btn:not([disabled])').count()) {
     await page.locator('#clear-btn').click();
     await page.waitForFunction(() => state.messages.length === 0);
@@ -135,21 +140,45 @@ async function runTrial(page, trial, index) {
   await page.locator('#wish-input').fill(trial.target);
   await page.locator('#wish-go').click();
   await page.locator('#wish-search-view:not([hidden])').waitFor({ timeout: 10_000 });
-  await page.waitForFunction(() => _wish?.search?.done === true, null, { timeout: 100_000 });
+  if (exercisePauseResume) {
+    await page.waitForFunction(() => _wish?.search?.searchId &&
+      _wish.search.tested >= 1 && _wish.search.running, null, { timeout: 30_000 });
+    await page.locator('#wish-search-stop').click();
+    await page.waitForFunction(() => _wish?.search?.paused === true &&
+      !_wish.search.awaitingExtension, null, { timeout: 30_000 });
+    const pausedElapsed = await page.evaluate(() => _wish.search.elapsedSeconds);
+    await page.waitForTimeout(1_000);
+    const stillPausedElapsed = await page.evaluate(() => _wish.search.elapsedSeconds);
+    if (Math.abs(stillPausedElapsed - pausedElapsed) > 0.01) {
+      throw new Error('paused active-search clock advanced');
+    }
+    await page.locator('#wish-search-stop').click();
+    await page.waitForFunction(() => _wish?.search?.running === true &&
+      _wish.search.paused === false, null, { timeout: 30_000 });
+  }
+  await page.waitForFunction(() => _wish?.search?.done === true ||
+    _wish?.search?.paused === true, null, { timeout: 100_000 });
   let search = await page.evaluate(() => ({
     profile: _wish.search.profile,
+    extended: _wish.search.extended,
+    paused: _wish.search.paused,
+    awaitingExtension: _wish.search.awaitingExtension,
     tested: _wish.search.tested,
     partials: _wish.search.partials,
     verified: _wish.search.verified,
     error: _wish.search.error || null,
   }));
   if (!search.verified && searchProfile === 'thorough' &&
-      await page.locator('#wish-search-deeper:not([hidden])').count()) {
+      search.awaitingExtension &&
+      await page.locator('#wish-search-deeper:not([hidden]):not([disabled])').count()) {
     await page.locator('#wish-search-deeper').click();
-    await page.waitForFunction(() => _wish?.search?.profile === 'thorough' &&
-      _wish.search.done === true, null, { timeout: 220_000 });
+    await page.waitForFunction(() => _wish?.search?.extended === true &&
+      (_wish.search.done === true || _wish.search.verified), null, { timeout: 220_000 });
     search = await page.evaluate(() => ({
       profile: _wish.search.profile,
+      extended: _wish.search.extended,
+      paused: _wish.search.paused,
+      awaitingExtension: _wish.search.awaitingExtension,
       tested: _wish.search.tested,
       partials: _wish.search.partials,
       verified: _wish.search.verified,
@@ -232,7 +261,10 @@ async function runTrial(page, trial, index) {
       : correct ? 'correctly-intervened'
         : 'intervention-incorrect',
     chosen,
-    search: { profile: search.profile, tested: search.tested, partials: search.partials },
+    search: {
+      profile: search.profile, extended: search.extended,
+      tested: search.tested, partials: search.partials,
+    },
     afterFiveSeconds,
     final,
     done: latestDone ? latestDone.events.find((event) => event.event === 'done') : null,
@@ -274,6 +306,7 @@ async function runTrial(page, trial, index) {
             return { event, data };
           }).filter((item) => [
             'search_start', 'position_ranking', 'baseline', 'stage',
+            'search_paused', 'search_resumed',
             'candidate_start', 'candidate', 'search_end', 'done', 'error',
           ].includes(item.event));
           window.__jlensE2EStreams.push({ url, events });

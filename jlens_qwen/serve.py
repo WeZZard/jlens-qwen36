@@ -70,6 +70,12 @@ _sessions_dir = _repo_root / "data" / "sessions"
 # The generation loop checks this event before each token.
 _pause_events: dict[str, asyncio.Event] = {}
 
+# Cooperative control for adaptive intervention searches.  These entries live
+# only for the lifetime of their SSE response: pausing deliberately keeps that
+# response open, so the controller can resume the exact in-memory scheduler
+# without serialising queues or replaying candidates.
+_adaptive_search_controls: dict[str, "_AdaptiveSearchControlState"] = {}
+
 # GPU work runs on worker threads (MLX releases the GIL during compute,
 # measured: event-loop max tick 1.1 ms under to_thread vs 1063 ms inline)
 # so the event loop stays responsive during generation. The lock
@@ -1686,6 +1692,124 @@ class AdaptiveInterventionSearchRequest(BaseModel):
     max_tokens: int = 64
     time_budget_seconds: float = 60.0
     enable_thinking: bool = False
+    # Opt in to one logical, cooperatively pausable search.  A standard search
+    # pauses when its initial budget/queue ends; the control endpoint may then
+    # add exactly 120 active seconds and resume the same scheduler in thorough
+    # mode.  The SSE connection must remain open while paused.
+    allow_continuation: bool = False
+
+
+class AdaptiveInterventionSearchControlRequest(BaseModel):
+    search_id: str
+    action: str  # pause | resume | extend
+    additional_time_seconds: float | None = None
+
+
+class _AdaptiveSearchControlState:
+    """Live cooperative clock and control plane for one SSE search.
+
+    Paused wall time never consumes the active search budget.  The generator,
+    rather than the control request, acknowledges a pause at a safe boundary;
+    this guarantees an already-started MLX replay remains atomic.
+    """
+
+    def __init__(
+        self,
+        search_id: str,
+        *,
+        started: float,
+        initial_budget_seconds: float,
+        can_extend: bool,
+    ):
+        self.search_id = search_id
+        self.started = started
+        self.initial_budget_seconds = initial_budget_seconds
+        self.time_budget_seconds = initial_budget_seconds
+        self.can_extend = can_extend
+        self.extended = False
+        self.awaiting_extension = False
+        self.closed = False
+        self.pause_reason: str | None = None
+        self.resume_reason: str | None = None
+        self.pause_requested = asyncio.Event()
+        self.run_event = asyncio.Event()
+        self.run_event.set()
+        self.paused_at: float | None = None
+        self.paused_total_seconds = 0.0
+        self.charged_active_seconds = 0.0
+
+    def elapsed_active(self, now: float | None = None) -> float:
+        now = time.perf_counter() if now is None else now
+        effective_now = self.paused_at if self.paused_at is not None else now
+        return max(
+            0.0,
+            effective_now
+            - self.started
+            - self.paused_total_seconds
+            + self.charged_active_seconds,
+        )
+
+    def remaining_active(self) -> float:
+        return max(0.0, self.time_budget_seconds - self.elapsed_active())
+
+    def request_pause(self) -> None:
+        if self.paused_at is None:
+            self.pause_requested.set()
+
+    def cancel_or_resume(self) -> None:
+        # A resume arriving before the worker acknowledges the request simply
+        # cancels that pending pause.  Otherwise it wakes the paused stream.
+        self.pause_requested.clear()
+        self.resume_reason = "user"
+        self.run_event.set()
+
+    def acknowledge_pause(
+        self,
+        reason: str,
+        *,
+        awaiting_extension: bool = False,
+        charge_to_budget: bool = False,
+    ) -> None:
+        now = time.perf_counter()
+        if self.paused_at is None:
+            if charge_to_budget:
+                self.charged_active_seconds += max(
+                    0.0, self.time_budget_seconds - self.elapsed_active(now)
+                )
+            self.paused_at = now
+        self.pause_reason = reason
+        self.awaiting_extension = awaiting_extension
+        self.pause_requested.clear()
+        self.run_event.clear()
+
+    def extend(self, seconds: float) -> None:
+        self.time_budget_seconds += seconds
+        self.extended = True
+        self.awaiting_extension = False
+        self.resume_reason = "extended"
+        self.run_event.set()
+
+    def finish_resume(self) -> None:
+        if self.paused_at is not None:
+            self.paused_total_seconds += time.perf_counter() - self.paused_at
+            self.paused_at = None
+        self.pause_reason = None
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "search_id": self.search_id,
+            "paused": self.paused_at is not None,
+            "pause_requested": self.pause_requested.is_set(),
+            "pause_reason": self.pause_reason,
+            "awaiting_extension": self.awaiting_extension,
+            "can_extend": self.can_extend and not self.extended,
+            "extended": self.extended,
+            "elapsed_active_seconds": self.elapsed_active(),
+            "paused_total_seconds": self.paused_total_seconds,
+            "time_budget_seconds": self.time_budget_seconds,
+            "budget_remaining_seconds": self.remaining_active(),
+            "closed": self.closed,
+        }
 
 
 class _AdaptiveSearchDeadlineExpired(Exception):
@@ -1693,6 +1817,14 @@ class _AdaptiveSearchDeadlineExpired(Exception):
 
     def __init__(self, queue_wait_ms: float):
         super().__init__("adaptive search deadline expired while waiting for GPU")
+        self.queue_wait_ms = queue_wait_ms
+
+
+class _AdaptiveSearchPauseRequested(Exception):
+    """A queued GPU call was cooperatively paused before it began."""
+
+    def __init__(self, queue_wait_ms: float):
+        super().__init__("adaptive search paused while waiting for GPU")
         self.queue_wait_ms = queue_wait_ms
 
 
@@ -1907,6 +2039,31 @@ def _adaptive_initial_candidates(
             seen.add(key)
             unique.append(candidate)
     return unique
+
+
+def _adaptive_deep_single_candidates(
+    ranked_positions: list[dict[str, Any]],
+    workspace_layers: list[int],
+) -> list[dict[str, Any]]:
+    """Broaden an extended search beyond the coarse one-minute sweep.
+
+    The standard phase samples seven layers and refines only cells that move
+    the answer.  If every coarse probe is unchanged, there would otherwise be
+    nothing for the added two minutes to do.  The extension therefore retains
+    the same scheduler and adds a deterministic full workspace sweep at both
+    normal and half strength; submitted recipes are still removed by `_enqueue`.
+    """
+    candidates: list[dict[str, Any]] = []
+    positions = [row["position"] for row in ranked_positions]
+    for alpha in (1.0, 0.5):
+        for layer in reversed(workspace_layers):
+            for position in positions:
+                candidates.append(_adaptive_candidate("deep_single", [{
+                    "position": position,
+                    "layer": layer,
+                    "alpha": alpha,
+                }]))
+    return candidates
 
 
 def _adaptive_refinement_candidates(
@@ -2608,6 +2765,56 @@ async def intervention_search(req: InterventionSearchRequest):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
+@app.post("/api/intervention_search_adaptive_control")
+async def intervention_search_adaptive_control(
+    req: AdaptiveInterventionSearchControlRequest,
+):
+    """Cooperatively pause/resume/extend a live adaptive-search stream.
+
+    This is a control plane for the still-open SSE response.  It never
+    cancels in-flight GPU work: ``pause`` is acknowledged by the search at
+    the next safe boundary.  ``extend`` is accepted only after the initial
+    standard phase has emitted ``search_paused`` and adds exactly two active
+    minutes to that same scheduler.
+    """
+    _require_active_mode()
+    control = _adaptive_search_controls.get(req.search_id)
+    if control is None or control.closed:
+        raise HTTPException(404, f"adaptive search {req.search_id!r} not found")
+    if req.action == "pause":
+        if control.awaiting_extension:
+            raise HTTPException(
+                409, "search is already paused awaiting a two-minute extension"
+            )
+        control.request_pause()
+    elif req.action == "resume":
+        if control.awaiting_extension:
+            raise HTTPException(
+                409, "initial search ended; use extend instead of resume"
+            )
+        control.cancel_or_resume()
+    elif req.action == "extend":
+        seconds = (
+            120.0
+            if req.additional_time_seconds is None
+            else float(req.additional_time_seconds)
+        )
+        if not math.isfinite(seconds) or abs(seconds - 120.0) > 1e-9:
+            raise HTTPException(
+                400, "additional_time_seconds must be exactly 120"
+            )
+        if not control.can_extend or control.extended:
+            raise HTTPException(409, "this search cannot be extended again")
+        if not control.awaiting_extension or control.paused_at is None:
+            raise HTTPException(
+                409, "deeper search is available only after the initial phase ends"
+            )
+        control.extend(seconds)
+    else:
+        raise HTTPException(400, f"unknown action {req.action!r}")
+    return {"action": req.action, **control.snapshot()}
+
+
 @app.post("/api/intervention_search_adaptive")
 async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
     """Discover and verify an exact workspace recipe under one deadline.
@@ -2822,19 +3029,49 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
         + req.replacement_text
         + req.baseline_response[req.selected_end:]
     )
-    ranked_positions = _adaptive_rank_positions(
+    all_ranked_positions = _adaptive_rank_positions(
         req.position_evidence,
         frontier=frontier,
         workspace_layers=workspace_layers,
         selected_source=selected_source,
     )
     position_limit = 8 if req.profile == "standard" else 16
-    ranked_positions = ranked_positions[:position_limit]
+    ranked_positions = all_ranked_positions[:position_limit]
     initial = deque(_adaptive_initial_candidates(
         ranked_positions, workspace_layers
     ))
     max_candidates = 384 if req.profile == "standard" else 768
     eos_ids = _planner_eos_ids(tok)
+
+    control: _AdaptiveSearchControlState | None = None
+    if req.allow_continuation:
+        if req.profile != "standard":
+            raise HTTPException(
+                400, "allow_continuation requires the standard profile"
+            )
+        import uuid
+
+        search_id = str(uuid.uuid4())
+        control = _AdaptiveSearchControlState(
+            search_id,
+            started=request_started,
+            initial_budget_seconds=req.time_budget_seconds,
+            can_extend=True,
+        )
+        _adaptive_search_controls[search_id] = control
+
+    def _elapsed_seconds() -> float:
+        if control is not None:
+            return control.elapsed_active()
+        return time.perf_counter() - request_started
+
+    def _time_budget_seconds() -> float:
+        if control is not None:
+            return control.time_budget_seconds
+        return req.time_budget_seconds
+
+    def _budget_remaining_seconds() -> float:
+        return max(0.0, _time_budget_seconds() - _elapsed_seconds())
 
     def _compile_and_replay(candidate: dict[str, Any]):
         from .interventions import compile_edits
@@ -2876,25 +3113,81 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
         belongs to the same global search budget as compilation and replay.
         """
         queue_started = time.perf_counter()
-        remaining = deadline - queue_started
+        remaining = (
+            control.remaining_active()
+            if control is not None
+            else deadline - queue_started
+        )
         if remaining <= 0:
             raise _AdaptiveSearchDeadlineExpired(0.0)
         acquired = False
+        acquire_task: asyncio.Task | None = None
+        pause_task: asyncio.Task | None = None
         try:
-            try:
-                await asyncio.wait_for(_gpu_lock.acquire(), timeout=remaining)
-                acquired = True
-            except asyncio.TimeoutError as error:
+            if control is None:
+                try:
+                    await asyncio.wait_for(
+                        _gpu_lock.acquire(), timeout=remaining
+                    )
+                    acquired = True
+                except asyncio.TimeoutError as error:
+                    queue_wait_ms = 1000.0 * (
+                        time.perf_counter() - queue_started
+                    )
+                    raise _AdaptiveSearchDeadlineExpired(
+                        queue_wait_ms
+                    ) from error
+            else:
+                # A pause request can interrupt lock queueing, but never a
+                # replay that has already acquired the GPU lock.
+                if control.pause_requested.is_set():
+                    raise _AdaptiveSearchPauseRequested(0.0)
+                acquire_task = asyncio.create_task(_gpu_lock.acquire())
+                pause_task = asyncio.create_task(
+                    control.pause_requested.wait()
+                )
+                done, _pending = await asyncio.wait(
+                    {acquire_task, pause_task},
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
                 queue_wait_ms = 1000.0 * (
                     time.perf_counter() - queue_started
                 )
-                raise _AdaptiveSearchDeadlineExpired(queue_wait_ms) from error
+                if not done:
+                    raise _AdaptiveSearchDeadlineExpired(queue_wait_ms)
+                if (pause_task in done
+                        and control.pause_requested.is_set()):
+                    # If both won the race, release the newly acquired lock;
+                    # the requested pause takes precedence over new GPU work.
+                    if acquire_task.done() and not acquire_task.cancelled():
+                        acquired = bool(acquire_task.result())
+                    raise _AdaptiveSearchPauseRequested(queue_wait_ms)
+                acquired = bool(acquire_task.result())
             queue_wait_ms = 1000.0 * (time.perf_counter() - queue_started)
-            if time.perf_counter() >= deadline:
+            if _budget_remaining_seconds() <= 0:
                 raise _AdaptiveSearchDeadlineExpired(queue_wait_ms)
             result = await _planner_gpu_call(fn, *args)
             return result, queue_wait_ms
         finally:
+            for task in (acquire_task, pause_task):
+                if task is not None and not task.done():
+                    task.cancel()
+            for task in (acquire_task, pause_task):
+                if task is not None and task.cancelled():
+                    continue
+                if task is not None and not task.done():
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+            # Close the tiny race where acquire completed after pause won the
+            # FIRST_COMPLETED set but before its task could be cancelled.
+            if (not acquired
+                    and acquire_task is not None
+                    and acquire_task.done()
+                    and not acquire_task.cancelled()):
+                acquired = bool(acquire_task.result())
             if acquired:
                 _gpu_lock.release()
 
@@ -2915,10 +3208,12 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
             candidate["id"]: candidate["score"]
             for candidate in promising_singles
         }
+        promising_pairs: list[dict[str, Any]] = []
         submitted_keys: set[tuple] = set()
         excluded_keys = set(req.exclude_recipe_keys)
         candidate_durations: list[float] = []
         pair_count = triple_count = 0
+        extension_seeded = False
 
         def _enqueue(
             queue: deque[dict[str, Any]], candidate: dict[str, Any]
@@ -2930,6 +3225,78 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
             submitted_keys.add(key)
             queue.append(candidate)
             return True
+
+        async def _pause_frames(
+            reason: str,
+            *,
+            awaiting_extension: bool = False,
+            charge_to_budget: bool = False,
+        ):
+            """Yield the acknowledged pause, then block until control resumes."""
+            assert control is not None
+            control.acknowledge_pause(
+                reason,
+                awaiting_extension=awaiting_extension,
+                charge_to_budget=charge_to_budget,
+            )
+            yield _sse("search_paused", {
+                **control.snapshot(),
+                "reason": reason,
+                "tested": tested,
+                "max_candidates": max_candidates,
+            })
+            await control.run_event.wait()
+            resume_reason = control.resume_reason or "user"
+            added_seconds = (
+                120.0 if resume_reason == "extended" else 0.0
+            )
+            control.finish_resume()
+            yield _sse("search_resumed", {
+                **control.snapshot(),
+                "reason": resume_reason,
+                "added_time_seconds": added_seconds,
+                "tested": tested,
+                "max_candidates": max_candidates,
+            })
+
+        def _seed_extension() -> None:
+            """Broaden the retained standard scheduler to thorough mode."""
+            nonlocal extension_seeded, max_candidates, position_limit
+            nonlocal pair_count, triple_count
+            if control is None or not control.extended or extension_seeded:
+                return
+            extension_seeded = True
+            max_candidates = 768
+            position_limit = 16
+            expanded = _adaptive_initial_candidates(
+                all_ranked_positions[:position_limit], workspace_layers
+            )
+            for candidate in expanded:
+                _enqueue(initial, candidate)
+            for candidate in _adaptive_deep_single_candidates(
+                all_ranked_positions[:position_limit], workspace_layers
+            ):
+                _enqueue(initial, candidate)
+            for newest in promising_singles:
+                for pair in _adaptive_pair_candidates(
+                    newest, promising_singles
+                ):
+                    if pair_count >= 128:
+                        break
+                    if _enqueue(pair_queue, pair):
+                        pair_count += 1
+                if pair_count >= 128:
+                    break
+            for pair in promising_pairs:
+                for triple in _adaptive_triple_candidates(
+                    pair, promising_singles
+                ):
+                    if triple_count >= 64:
+                        break
+                    if _enqueue(triple_queue, triple):
+                        triple_count += 1
+                if triple_count >= 64:
+                    break
 
         # Seed the dedupe set without changing the initial deterministic order.
         deduped_initial: deque[dict[str, Any]] = deque()
@@ -2966,7 +3333,10 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
         try:
             yield _sse("search_start", {
                 "profile": req.profile,
-                "time_budget_seconds": req.time_budget_seconds,
+                "search_id": control.search_id if control else None,
+                "allow_continuation": control is not None,
+                "time_budget_seconds": _time_budget_seconds(),
+                "extension_seconds": 120.0 if control else 0.0,
                 "max_candidates": max_candidates,
                 "max_tokens": req.max_tokens,
                 "input_tokens": len(prompt_ids),
@@ -2991,34 +3361,59 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 "positions": ranked_positions,
             })
 
-            try:
-                baseline, baseline_queue_ms = await _locked_worker(
-                    _greedy_intervention_replay,
-                    prompt_ids,
-                    None,
-                    req.max_tokens,
-                    eos_ids,
-                )
-            except _AdaptiveSearchDeadlineExpired as expired:
-                deadline_queue_wait_ms = expired.queue_wait_ms
-                elapsed = time.perf_counter() - request_started
-                yield _sse("search_end", {
-                    "status": "budget_exhausted",
-                    "stop_reason": "time_budget",
-                    "tested": 0,
-                    "max_candidates": max_candidates,
-                    "verified_candidate_id": None,
-                    "verified_cells": None,
-                    "desired_response": desired_response,
-                    "elapsed_seconds": elapsed,
-                    "time_budget_seconds": req.time_budget_seconds,
-                    "budget_exhausted": True,
-                    "budget_overshoot_seconds": max(
-                        0.0, elapsed - req.time_budget_seconds
-                    ),
-                    "deadline_queue_wait_ms": deadline_queue_wait_ms,
-                })
-                return
+            while True:
+                if control is not None and control.pause_requested.is_set():
+                    async for frame in _pause_frames("user"):
+                        yield frame
+                try:
+                    baseline, baseline_queue_ms = await _locked_worker(
+                        _greedy_intervention_replay,
+                        prompt_ids,
+                        None,
+                        req.max_tokens,
+                        eos_ids,
+                    )
+                    break
+                except _AdaptiveSearchPauseRequested:
+                    assert control is not None
+                    async for frame in _pause_frames("user"):
+                        yield frame
+                    continue
+                except _AdaptiveSearchDeadlineExpired as expired:
+                    if control is not None and not control.extended:
+                        async for frame in _pause_frames(
+                            "initial_budget",
+                            awaiting_extension=True,
+                            charge_to_budget=True,
+                        ):
+                            yield frame
+                        _seed_extension()
+                        yield _sse("position_ranking", {
+                            "frontier_position": frontier,
+                            "limit": position_limit,
+                            "positions": all_ranked_positions[:position_limit],
+                            "extended": True,
+                        })
+                        continue
+                    deadline_queue_wait_ms = expired.queue_wait_ms
+                    elapsed = _elapsed_seconds()
+                    yield _sse("search_end", {
+                        "status": "budget_exhausted",
+                        "stop_reason": "time_budget",
+                        "tested": 0,
+                        "max_candidates": max_candidates,
+                        "verified_candidate_id": None,
+                        "verified_cells": None,
+                        "desired_response": desired_response,
+                        "elapsed_seconds": elapsed,
+                        "time_budget_seconds": _time_budget_seconds(),
+                        "budget_exhausted": True,
+                        "budget_overshoot_seconds": max(
+                            0.0, elapsed - _time_budget_seconds()
+                        ),
+                        "deadline_queue_wait_ms": deadline_queue_wait_ms,
+                    })
+                    return
             # The chat UI cumulatively decodes generated ids with the
             # tokenizer's default behavior. Use the same representation here
             # so equality means byte-for-byte equality with what was shown.
@@ -3046,7 +3441,7 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 "timings_ms": baseline_timings,
             })
             if not baseline_matches:
-                elapsed = time.perf_counter() - request_started
+                elapsed = _elapsed_seconds()
                 yield _sse("search_end", {
                     "status": "baseline_mismatch",
                     "stop_reason": "baseline_mismatch",
@@ -3054,10 +3449,10 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     "verified_candidate_id": None,
                     "verified_cells": None,
                     "elapsed_seconds": elapsed,
-                    "time_budget_seconds": req.time_budget_seconds,
+                    "time_budget_seconds": _time_budget_seconds(),
                     "budget_exhausted": False,
                     "budget_overshoot_seconds": max(
-                        0.0, elapsed - req.time_budget_seconds
+                        0.0, elapsed - _time_budget_seconds()
                     ),
                 })
                 return
@@ -3068,196 +3463,275 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 None, baseline_norm, desired_norm
             ).ratio()
 
-            while tested < max_candidates:
-                singles_available = bool(refinement_queue or initial)
-                if req.profile == "thorough" and triple_queue:
-                    candidate = triple_queue.popleft()
-                elif (pair_queue
-                      and (singles_since_combination >= 2
-                           or not singles_available)):
-                    candidate = pair_queue.popleft()
-                elif refinement_queue:
-                    candidate = refinement_queue.popleft()
-                elif initial:
-                    candidate = initial.popleft()
-                elif pair_queue:
-                    candidate = pair_queue.popleft()
-                elif req.profile == "thorough" and triple_queue:
-                    candidate = triple_queue.popleft()
-                else:
-                    break
+            # The inner loop retains every queue and score across pauses.  The
+            # outer loop exists solely to broaden this same scheduler after
+            # the standard phase receives its one allowed extension.
+            while True:
+                phase_exhausted = False
+                while tested < max_candidates:
+                    if (control is not None
+                            and control.pause_requested.is_set()):
+                        async for frame in _pause_frames("user"):
+                            yield frame
 
-                if len(candidate["cells"]) == 1:
-                    singles_since_combination += 1
-                else:
-                    singles_since_combination = 0
+                    thorough_mode = bool(
+                        req.profile == "thorough"
+                        or (control is not None and control.extended)
+                    )
+                    singles_available = bool(refinement_queue or initial)
+                    source_queue: deque[dict[str, Any]] | None = None
+                    if thorough_mode and triple_queue:
+                        source_queue = triple_queue
+                    elif (pair_queue
+                          and (singles_since_combination >= 2
+                               or not singles_available)):
+                        source_queue = pair_queue
+                    elif refinement_queue:
+                        source_queue = refinement_queue
+                    elif initial:
+                        source_queue = initial
+                    elif pair_queue:
+                        source_queue = pair_queue
+                    elif thorough_mode and triple_queue:
+                        source_queue = triple_queue
+                    else:
+                        phase_exhausted = True
+                        break
+                    candidate = source_queue.popleft()
 
-                elapsed = time.perf_counter() - request_started
-                ordered_durations = sorted(candidate_durations)
-                p95_index = round(0.95 * (len(ordered_durations) - 1))
-                estimated_atomic = ordered_durations[p95_index]
-                reserve = max(0.05, min(5.0, 2.0 * estimated_atomic))
-                if elapsed + reserve >= req.time_budget_seconds:
-                    budget_exhausted = True
-                    break
+                    elapsed = _elapsed_seconds()
+                    ordered_durations = sorted(candidate_durations)
+                    p95_index = round(0.95 * (len(ordered_durations) - 1))
+                    estimated_atomic = ordered_durations[p95_index]
+                    reserve = max(0.05, min(5.0, 2.0 * estimated_atomic))
+                    if elapsed + reserve >= _time_budget_seconds():
+                        source_queue.appendleft(candidate)
+                        budget_exhausted = True
+                        break
 
-                if candidate["stage"] != current_stage:
-                    current_stage = candidate["stage"]
-                    yield _sse("stage", {
-                        "stage": current_stage,
-                        "tested": tested,
-                        "elapsed_seconds": elapsed,
-                        "budget_remaining_seconds": max(
-                            0.0, req.time_budget_seconds - elapsed
+                    if len(candidate["cells"]) == 1:
+                        singles_since_combination += 1
+                    else:
+                        singles_since_combination = 0
+
+                    if candidate["stage"] != current_stage:
+                        current_stage = candidate["stage"]
+                        yield _sse("stage", {
+                            "stage": current_stage,
+                            "tested": tested,
+                            "elapsed_seconds": elapsed,
+                            "budget_remaining_seconds": (
+                                _budget_remaining_seconds()
+                            ),
+                        })
+
+                    candidate_elapsed = _elapsed_seconds()
+                    yield _sse("candidate_start", {
+                        "id": candidate["id"],
+                        "recipe_key": _adaptive_recipe_string(
+                            candidate["cells"]
+                        ),
+                        "stage": candidate["stage"],
+                        "parents": candidate["parents"],
+                        "index": tested + 1,
+                        "max_candidates": max_candidates,
+                        "cells": candidate["cells"],
+                        "elapsed_seconds": candidate_elapsed,
+                        "budget_remaining_seconds": (
+                            _budget_remaining_seconds()
                         ),
                     })
 
-                candidate_elapsed = time.perf_counter() - request_started
-                yield _sse("candidate_start", {
-                    "id": candidate["id"],
-                    "recipe_key": _adaptive_recipe_string(candidate["cells"]),
-                    "stage": candidate["stage"],
-                    "parents": candidate["parents"],
-                    "index": tested + 1,
-                    "max_candidates": max_candidates,
-                    "cells": candidate["cells"],
-                    "elapsed_seconds": candidate_elapsed,
-                    "budget_remaining_seconds": max(
-                        0.0, req.time_budget_seconds - candidate_elapsed
-                    ),
-                })
+                    replay = None
+                    while True:
+                        try:
+                            replay, queue_wait_ms = await _locked_worker(
+                                _compile_and_replay, candidate
+                            )
+                            break
+                        except _AdaptiveSearchPauseRequested:
+                            assert control is not None
+                            async for frame in _pause_frames("user"):
+                                yield frame
+                            continue
+                        except _AdaptiveSearchDeadlineExpired as expired:
+                            deadline_queue_wait_ms = expired.queue_wait_ms
+                            source_queue.appendleft(candidate)
+                            budget_exhausted = True
+                            replay = None
+                            break
+                    if replay is None:
+                        break
 
-                try:
-                    replay, queue_wait_ms = await _locked_worker(
-                        _compile_and_replay, candidate
+                    tested += 1
+                    candidate_durations.append(
+                        (replay["timings_ms"]["total"] + queue_wait_ms)
+                        / 1000.0
                     )
-                except _AdaptiveSearchDeadlineExpired as expired:
-                    deadline_queue_wait_ms = expired.queue_wait_ms
-                    budget_exhausted = True
-                    break
-                tested += 1
-                candidate_durations.append(
-                    (replay["timings_ms"]["total"] + queue_wait_ms) / 1000.0
-                )
-                text = tok.decode(replay["ids"])
-                text_norm = _normalized_probe_text(text)
-                exact = text == desired_response
-                changed = text != baseline_text
-                verified = bool(
-                    replay["eos"]
-                    and not replay["repetition"]
-                    and exact
-                    and changed
-                )
-                safe_changed = bool(
-                    replay["eos"] and not replay["repetition"] and changed
-                )
-                similarity = SequenceMatcher(
-                    None, text_norm, desired_norm
-                ).ratio()
-                improvement = similarity - baseline_similarity
-                target_count = _bounded_phrase_count(text, req.replacement_text)
-                source_count = _bounded_phrase_count(text, selected_source)
-                improving = bool(
-                    safe_changed
-                    and (improvement > 1e-9
-                         or (target_count >= 1 and source_count == 0))
-                )
-                if verified:
-                    classification = "verified"
-                elif replay["repetition"]:
-                    classification = "repetition"
-                elif not changed:
-                    classification = "unchanged"
-                elif target_count >= 1 and source_count == 0:
-                    classification = "partial"
-                else:
-                    classification = "off_target"
+                    text = tok.decode(replay["ids"])
+                    text_norm = _normalized_probe_text(text)
+                    exact = text == desired_response
+                    changed = text != baseline_text
+                    verified = bool(
+                        replay["eos"]
+                        and not replay["repetition"]
+                        and exact
+                        and changed
+                    )
+                    safe_changed = bool(
+                        replay["eos"]
+                        and not replay["repetition"]
+                        and changed
+                    )
+                    similarity = SequenceMatcher(
+                        None, text_norm, desired_norm
+                    ).ratio()
+                    improvement = similarity - baseline_similarity
+                    target_count = _bounded_phrase_count(
+                        text, req.replacement_text
+                    )
+                    source_count = _bounded_phrase_count(text, selected_source)
+                    improving = bool(
+                        safe_changed
+                        and (improvement > 1e-9
+                             or (target_count >= 1 and source_count == 0))
+                    )
+                    if verified:
+                        classification = "verified"
+                    elif replay["repetition"]:
+                        classification = "repetition"
+                    elif not changed:
+                        classification = "unchanged"
+                    elif target_count >= 1 and source_count == 0:
+                        classification = "partial"
+                    else:
+                        classification = "off_target"
 
-                scores_by_id[candidate["id"]] = similarity
-                elapsed = time.perf_counter() - request_started
-                timings = dict(replay["timings_ms"])
-                timings["queue_wait"] = queue_wait_ms
-                timings["total_with_queue"] = timings["total"] + queue_wait_ms
-                yield _sse("candidate", {
-                    "id": candidate["id"],
-                    "recipe_key": _adaptive_recipe_string(candidate["cells"]),
-                    "stage": candidate["stage"],
-                    "parents": candidate["parents"],
-                    "index": tested,
-                    "max_candidates": max_candidates,
-                    "cells": candidate["cells"],
-                    "text": text,
-                    "eos": replay["eos"],
-                    "repetition": replay["repetition"],
-                    "stop_reason": replay["stop_reason"],
-                    "class": classification,
-                    "verified": verified,
-                    "exact_response_match": exact,
-                    "safe_changed": safe_changed,
-                    "improving": improving,
-                    "similarity_to_desired": similarity,
-                    "improvement_over_baseline": improvement,
-                    "timings_ms": timings,
-                    "elapsed_seconds": elapsed,
-                    "budget_remaining_seconds": max(
-                        0.0, req.time_budget_seconds - elapsed
-                    ),
-                    "progress": {
-                        "tested": tested,
-                        "limit": max_candidates,
-                        "initial_queued": len(initial),
-                        "refinements_queued": len(refinement_queue),
-                        "pairs_queued": len(pair_queue),
-                        "triples_queued": len(triple_queue),
-                    },
-                })
-                if verified:
-                    verified_candidate = candidate
-                    break
+                    scores_by_id[candidate["id"]] = similarity
+                    elapsed = _elapsed_seconds()
+                    timings = dict(replay["timings_ms"])
+                    timings["queue_wait"] = queue_wait_ms
+                    timings["total_with_queue"] = (
+                        timings["total"] + queue_wait_ms
+                    )
+                    yield _sse("candidate", {
+                        "id": candidate["id"],
+                        "recipe_key": _adaptive_recipe_string(
+                            candidate["cells"]
+                        ),
+                        "stage": candidate["stage"],
+                        "parents": candidate["parents"],
+                        "index": tested,
+                        "max_candidates": max_candidates,
+                        "cells": candidate["cells"],
+                        "text": text,
+                        "eos": replay["eos"],
+                        "repetition": replay["repetition"],
+                        "stop_reason": replay["stop_reason"],
+                        "class": classification,
+                        "verified": verified,
+                        "exact_response_match": exact,
+                        "safe_changed": safe_changed,
+                        "improving": improving,
+                        "similarity_to_desired": similarity,
+                        "improvement_over_baseline": improvement,
+                        "timings_ms": timings,
+                        "elapsed_seconds": elapsed,
+                        "budget_remaining_seconds": (
+                            _budget_remaining_seconds()
+                        ),
+                        "progress": {
+                            "tested": tested,
+                            "limit": max_candidates,
+                            "initial_queued": len(initial),
+                            "refinements_queued": len(refinement_queue),
+                            "pairs_queued": len(pair_queue),
+                            "triples_queued": len(triple_queue),
+                        },
+                    })
+                    if verified:
+                        verified_candidate = candidate
+                        break
 
-                if len(candidate["cells"]) == 1:
-                    if (safe_changed
-                            and candidate["stage"] != "refinement_single"):
-                        for refined in _adaptive_refinement_candidates(
-                            candidate, workspace_layers
-                        ):
-                            _enqueue(refinement_queue, refined)
-                    if improving:
-                        promising = dict(candidate)
-                        promising["score"] = similarity
-                        promising_singles.append(promising)
-                        promising_singles.sort(
-                            key=lambda value: (-value["score"], value["id"])
-                        )
-                        promising_singles[:] = promising_singles[:16]
-                        pair_limit = 48 if req.profile == "standard" else 128
-                        if pair_count < pair_limit:
-                            for pair in _adaptive_pair_candidates(
-                                promising, promising_singles
+                    if len(candidate["cells"]) == 1:
+                        if (safe_changed
+                                and candidate["stage"]
+                                != "refinement_single"):
+                            for refined in _adaptive_refinement_candidates(
+                                candidate, workspace_layers
                             ):
-                                if pair_count >= pair_limit:
-                                    break
-                                if _enqueue(pair_queue, pair):
-                                    pair_count += 1
-                elif len(candidate["cells"]) == 2 and req.profile == "thorough":
-                    parent_score = max(
-                        (scores_by_id.get(parent, baseline_similarity)
-                         for parent in candidate["parents"]),
-                        default=baseline_similarity,
-                    )
-                    if safe_changed and similarity > parent_score + 1e-9:
-                        for triple in _adaptive_triple_candidates(
-                            candidate, promising_singles
-                        ):
-                            if triple_count >= 64:
-                                break
-                            if _enqueue(triple_queue, triple):
-                                triple_count += 1
-                await asyncio.sleep(0)
+                                _enqueue(refinement_queue, refined)
+                        if improving:
+                            promising = dict(candidate)
+                            promising["score"] = similarity
+                            promising_singles.append(promising)
+                            promising_singles.sort(
+                                key=lambda value: (
+                                    -value["score"], value["id"]
+                                )
+                            )
+                            promising_singles[:] = promising_singles[:16]
+                            pair_limit = 128 if thorough_mode else 48
+                            if pair_count < pair_limit:
+                                for pair in _adaptive_pair_candidates(
+                                    promising, promising_singles
+                                ):
+                                    if pair_count >= pair_limit:
+                                        break
+                                    if _enqueue(pair_queue, pair):
+                                        pair_count += 1
+                    elif len(candidate["cells"]) == 2:
+                        parent_score = max(
+                            (scores_by_id.get(parent, baseline_similarity)
+                             for parent in candidate["parents"]),
+                            default=baseline_similarity,
+                        )
+                        if safe_changed and similarity > parent_score + 1e-9:
+                            improving_pair = dict(candidate)
+                            improving_pair["score"] = similarity
+                            promising_pairs.append(improving_pair)
+                            promising_pairs.sort(
+                                key=lambda value: (
+                                    -value["score"], value["id"]
+                                )
+                            )
+                            promising_pairs[:] = promising_pairs[:16]
+                            if thorough_mode:
+                                for triple in _adaptive_triple_candidates(
+                                    candidate, promising_singles
+                                ):
+                                    if triple_count >= 64:
+                                        break
+                                    if _enqueue(triple_queue, triple):
+                                        triple_count += 1
+                    await asyncio.sleep(0)
 
-            elapsed = time.perf_counter() - request_started
-            if (not verified_candidate and elapsed >= req.time_budget_seconds):
+                if verified_candidate:
+                    break
+                if (control is not None
+                        and not control.extended
+                        and (budget_exhausted or phase_exhausted)):
+                    async for frame in _pause_frames(
+                        "initial_budget" if budget_exhausted
+                        else "initial_candidates_exhausted",
+                        awaiting_extension=True,
+                        charge_to_budget=True,
+                    ):
+                        yield frame
+                    budget_exhausted = False
+                    _seed_extension()
+                    yield _sse("position_ranking", {
+                        "frontier_position": frontier,
+                        "limit": position_limit,
+                        "positions": all_ranked_positions[:position_limit],
+                        "extended": True,
+                    })
+                    continue
+                break
+
+            elapsed = _elapsed_seconds()
+            if (not verified_candidate
+                    and elapsed >= _time_budget_seconds()):
                 budget_exhausted = True
             if verified_candidate:
                 status, stop_reason = "success", "verified"
@@ -3278,10 +3752,10 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 ),
                 "desired_response": desired_response,
                 "elapsed_seconds": elapsed,
-                "time_budget_seconds": req.time_budget_seconds,
+                "time_budget_seconds": _time_budget_seconds(),
                 "budget_exhausted": budget_exhausted,
                 "budget_overshoot_seconds": max(
-                    0.0, elapsed - req.time_budget_seconds
+                    0.0, elapsed - _time_budget_seconds()
                 ),
                 "deadline_queue_wait_ms": deadline_queue_wait_ms,
                 "stage_counts": {
@@ -3297,7 +3771,7 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 f"{traceback.format_exc()}",
                 flush=True,
             )
-            elapsed = time.perf_counter() - request_started
+            elapsed = _elapsed_seconds()
             yield _sse("error", {"error": str(error)})
             yield _sse("search_end", {
                 "status": "error",
@@ -3306,12 +3780,17 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 "verified_candidate_id": None,
                 "verified_cells": None,
                 "elapsed_seconds": elapsed,
-                "time_budget_seconds": req.time_budget_seconds,
+                "time_budget_seconds": _time_budget_seconds(),
                 "budget_exhausted": False,
                 "budget_overshoot_seconds": max(
-                    0.0, elapsed - req.time_budget_seconds
+                    0.0, elapsed - _time_budget_seconds()
                 ),
             })
+        finally:
+            if control is not None:
+                control.closed = True
+                if _adaptive_search_controls.get(control.search_id) is control:
+                    _adaptive_search_controls.pop(control.search_id, None)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
