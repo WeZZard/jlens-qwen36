@@ -96,6 +96,22 @@ def test_saved_sessions_round_trip_recipe_state():
     assert "interventionRecipes: state.interventionRecipes.map(persistRecipe)" in HTML
 
 
+def test_search_grid_only_exposes_recipe_backed_cells():
+    assert "Raw/untested/rejected blocks are inert" in HTML
+    assert "const recipe = wishSearchRecipeForCell(+el.dataset.pos, +el.dataset.layer)" in HTML
+    assert "if (recipe) openRecipePreview(recipe.id)" in HTML
+    assert "recipeIds: new Map()" in HTML
+    assert "registerWishRecipeCells(recipe)" in HTML
+    assert "html.wish-search-active #grid td.cell.selectable { cursor: default; }" in HTML
+    assert "#grid td.cell.wish-search-promising" in HTML
+
+
+def test_empty_recipe_section_stays_visible_during_search():
+    assert "No selectable recipe yet" in HTML
+    assert "if (!recipes.length && !search) return" in HTML
+    assert "`${search.tested || 0} tested · search ${search.paused ? 'paused' : 'running'}`" in HTML
+
+
 def test_legacy_scan_is_not_exposed_from_the_detail_editor():
     assert 'id="iv-scan" type="button" hidden aria-hidden="true"' in HTML
     assert "openWishModal('conclusion')" not in HTML

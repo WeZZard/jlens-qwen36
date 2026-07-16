@@ -1586,6 +1586,19 @@
   .recipe-item.selected .recipe-tag {
     border-color: var(--highlight-orange); color: var(--highlight-orange);
   }
+  .recipe-empty {
+    max-width: 300px; padding: 7px 12px; pointer-events: none;
+    border: 1px solid var(--border-2); border-radius: 14px;
+    background: rgba(255, 253, 240, 0.58); color: var(--text-3);
+    box-shadow: var(--glass-control-shadow);
+    backdrop-filter: var(--glass-control-filter);
+    -webkit-backdrop-filter: var(--glass-control-filter);
+  }
+  .recipe-empty strong { display: block; color: var(--text-2); font-size: 11px; font-weight: 650; }
+  .recipe-empty span {
+    display: block; margin-top: 2px;
+    font: 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
+  }
   /* Re-run: a compact play button living inside the section header. */
   #rerun-btn, #recipe-rerun-btn {
     width: 18px; height: 18px; flex-shrink: 0;
@@ -1600,6 +1613,7 @@
   #rerun-btn:hover:not(:disabled), #recipe-rerun-btn:hover:not(:disabled) { background: #e87900; }
   #rerun-btn:active:not(:disabled), #recipe-rerun-btn:active:not(:disabled) { transform: scale(0.92); }
   #rerun-btn:disabled, #recipe-rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+  #recipe-rerun-btn[hidden] { display: none; }
 
   /* ----- A/B variant toggle (baseline vs intervened): lives IN the
      message stream as the first item — the first user message leaves
@@ -1814,48 +1828,30 @@
     opacity: 0.42; cursor: default;
   }
 
-  /* Backward search keeps the J-Space table live, but makes the exact
-     prefill cells under evaluation visually explicit. Search state is
-     stored outside the virtualized DOM, so rows painted later retain it. */
+  /* Backward search is goal-modal: raw probes are implementation detail,
+     not choices.  Keep the grid visible but inert/dim until a selectable
+     recipe exists; only cells owned by a promising or verified recipe are
+     restored and highlighted. Search state lives outside the virtualized
+     DOM, so rows painted later retain the same recipe-only affordance. */
   html.wish-search-active #grid td.cell .cell-block { opacity: 0.24; filter: saturate(0.45); }
-  html.wish-search-active #grid tr.wish-search-position td.cell .cell-block { opacity: 0.42; }
-  #grid td.cell.wish-search-tested .cell-block,
-  #grid td.cell.wish-search-off-target .cell-block,
-  #grid td.cell.wish-search-partial .cell-block,
-  #grid td.cell.wish-search-repetition .cell-block,
-  #grid td.cell.wish-search-current .cell-block,
+  html.wish-search-active #grid td.cell.selectable { cursor: default; }
+  html.wish-search-active #grid td.cell.selectable:hover .cell-block {
+    filter: saturate(0.45); opacity: 0.24;
+  }
+  #grid td.cell.wish-search-promising,
+  #grid td.cell.wish-search-verified { cursor: pointer !important; }
+  #grid td.cell.wish-search-promising .cell-block,
   #grid td.cell.wish-search-verified .cell-block {
     opacity: 1 !important; filter: none !important;
   }
-  #grid td.cell.wish-search-tested .cell-block {
-    box-shadow: inset 0 0 0 1px rgba(60, 50, 30, 0.20);
-  }
-  #grid td.cell.wish-search-off-target .cell-block {
-    box-shadow: inset 0 0 0 2px #8b98a5;
-  }
-  #grid td.cell.wish-search-partial .cell-block {
+  #grid td.cell.wish-search-promising .cell-block {
     box-shadow: inset 0 0 0 2px var(--highlight-orange);
-  }
-  #grid td.cell.wish-search-repetition .cell-block {
-    box-shadow: inset 0 0 0 2px #e0483e;
-  }
-  #grid td.cell.wish-search-current .cell-block {
-    box-shadow: 0 0 0 2px #ff8a00, 0 0 10px 2px rgba(255,138,0,0.52);
-    animation: wish-search-pulse 1.1s ease-in-out infinite;
   }
   #grid td.cell.wish-search-verified .cell-block {
     box-shadow: 0 0 0 2px #3f9d63, 0 0 12px 3px rgba(63,157,99,0.48);
   }
   html.wish-search-active #grid td.pos-label { opacity: 0.34; }
-  html.wish-search-active #grid tr.wish-search-position td.pos-label,
   html.wish-search-active #grid td.pos-label.selected-token { opacity: 1; }
-  @keyframes wish-search-pulse {
-    0%, 100% { box-shadow: 0 0 0 2px rgba(255,138,0,0.50), 0 0 6px 1px rgba(255,138,0,0.25); }
-    50% { box-shadow: 0 0 0 2px rgba(255,138,0,1), 0 0 12px 3px rgba(255,138,0,0.62); }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    #grid td.cell.wish-search-current .cell-block { animation: none; }
-  }
   #scan-strategies {
     display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
     margin-bottom: 12px;
@@ -3993,16 +3989,17 @@ function gridRowHtml(pos, selectedTokenKey, activePos, rowCtx = null) {
     const top1 = cell.top_tokens[0] || '·';
     let cls = 'cell selectable';
     let bg;
-    if (selRow && state.selectedCell.layer === layer) {
+    const recipeSearch = !!rowCtx?.search;
+    if (!recipeSearch && selRow && state.selectedCell.layer === layer) {
       cls += ' selected';
       bg = bandWashed(cellSelectedRgb(cell), layer);
-    } else if (selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
+    } else if (!recipeSearch && selectedTokenKey && normalizeTokenText(top1) === selectedTokenKey) {
       cls += ' matching-token';
       bg = bandWashed(cellOrangeRgb(cell), layer);
     } else {
       bg = layerCellBackground(cell, layer);
     }
-    if (selRow) cls += ' selected-row';
+    if (!recipeSearch && selRow) cls += ' selected-row';
     if (isGen) cls += ' gen-row';
     if (rowCtx) {
       if (rowCtx.marks.length && cellIsIntervened(rowCtx, pos, layer)) cls += ' intervened';
@@ -4959,10 +4956,13 @@ function renderInterventionRecipes() {
   const wrap = $('intervention-recipes');
   if (!wrap) return;
   wrap.replaceChildren();
+  const search = _wish?.search && !$('wish-pop').hidden ? _wish.search : null;
   const recipes = [...state.interventionRecipes].sort((a, b) =>
     (a.status === 'verified' ? 0 : 1) - (b.status === 'verified' ? 0 : 1) ||
     (a.name || '').localeCompare(b.name || ''));
-  if (!recipes.length) return;
+  // Keep the section visible during a search even before the first recipe.
+  // Otherwise an empty result looks like the feature itself is missing.
+  if (!recipes.length && !search) return;
 
   const head = document.createElement('div');
   head.className = 'rail-head';
@@ -4973,6 +4973,7 @@ function renderInterventionRecipes() {
   const rerun = document.createElement('button');
   rerun.id = 'recipe-rerun-btn';
   rerun.type = 'button';
+  rerun.hidden = !recipes.length;
   const selected = interventionRecipeById(state.selectedInterventionRecipeId);
   rerun.disabled = !selected || !canRunRecipe(selected);
   rerun.title = selected
@@ -4983,6 +4984,19 @@ function renderInterventionRecipes() {
   rerun.onclick = () => runSelectedInterventionRecipe();
   head.appendChild(rerun);
   wrap.appendChild(head);
+
+  if (!recipes.length) {
+    const empty = document.createElement('div');
+    empty.className = 'recipe-empty';
+    const title = document.createElement('strong');
+    title.textContent = 'No selectable recipe yet';
+    const status = document.createElement('span');
+    status.id = 'recipe-search-status';
+    status.textContent = `${search.tested || 0} tested · search ${search.paused ? 'paused' : 'running'}`;
+    empty.append(title, status);
+    wrap.appendChild(empty);
+    return;
+  }
 
   for (const recipe of recipes) {
     const item = document.createElement('div');
@@ -6906,6 +6920,16 @@ $('grid-body').addEventListener('click', (e) => {
     }
     return;
   }
+  const search = wishSearchVisualState();
+  if (search) {
+    // Search mode is recipe-modal. Raw/untested/rejected blocks are inert;
+    // a highlighted block opens the best recipe that owns that exact cell.
+    if (el.tagName === 'TD' && el.classList.contains('cell')) {
+      const recipe = wishSearchRecipeForCell(+el.dataset.pos, +el.dataset.layer);
+      if (recipe) openRecipePreview(recipe.id);
+    }
+    return;
+  }
   if (el.tagName !== 'TD') return;
   if (el.classList.contains('selectable')) {
     selectCell(+el.dataset.pos, +el.dataset.layer);
@@ -7345,7 +7369,9 @@ function dismissWishPopover({ updateClearance = true } = {}) {
   $('chat-input').classList.remove('wishing');
   document.documentElement.classList.remove('wish-search-active');
   clearWishSearchPaint();
+  if (state.gridRows.length) renderGrid({ keepScroll: true });
   _wishSeed = null;
+  renderInterventionRecipes();
   if (wasVisible && updateClearance) updateScrollClearance();
 }
 
@@ -7497,6 +7523,46 @@ function wishSearchRecipeText(cells) {
     `L${cell.layer} · p${cell.position} · α${formatAlpha(cell.alpha)}`).join(' + ');
 }
 
+function wishSearchRecipeForCell(pos, layer) {
+  const search = _wish?.search;
+  const ids = search?.visual?.recipeIds?.get(wishSearchCellKey(pos, layer));
+  if (!ids || !ids.size) return null;
+  return [...ids]
+    .map((id) => interventionRecipeById(id))
+    .filter(Boolean)
+    .sort((a, b) =>
+      (a.status === 'verified' ? 0 : 1) - (b.status === 'verified' ? 0 : 1) ||
+      (b.improvement || 0) - (a.improvement || 0) ||
+      (a.cells?.length || 0) - (b.cells?.length || 0) ||
+      (a.name || '').localeCompare(b.name || ''))[0] || null;
+}
+
+function registerWishRecipeCells(recipe) {
+  const visual = _wish?.search?.visual;
+  if (!visual || !recipe) return;
+  for (const cell of recipe.cells || []) {
+    const key = wishSearchCellKey(cell.position, cell.layer);
+    let ids = visual.recipeIds.get(key);
+    if (!ids) {
+      ids = new Set();
+      visual.recipeIds.set(key, ids);
+    }
+    ids.add(recipe.id);
+    const prior = visual.cells.get(key);
+    const classification = recipe.status === 'verified' || prior === 'verified'
+      ? 'verified' : 'promising';
+    visual.cells.set(key, classification);
+    visual.positions.add(cell.position);
+    visual.details.set(key, {
+      classification,
+      recipe: recipeCellSummary(recipe),
+      text: recipe.output || '',
+      recipeId: recipe.id,
+    });
+  }
+  paintWishSearchCells();
+}
+
 function upsertWishInterventionRecipe(obj, status) {
   const wish = _wish;
   const search = wish?.search;
@@ -7533,6 +7599,7 @@ function upsertWishInterventionRecipe(obj, status) {
   recipe.improvement = Math.max(recipe.improvement || 0, Number(obj.improvement_over_baseline) || 0);
   search.recipeByKey.set(recipeKey, recipe.id);
   if (recipe.status === 'verified') search.verifiedRecipeId = recipe.id;
+  registerWishRecipeCells(recipe);
   scheduleSaveState();
   renderInterventionRecipes();
   return recipe;
@@ -7541,11 +7608,9 @@ function upsertWishInterventionRecipe(obj, status) {
 function wishSearchSetCurrent(cells) {
   const search = _wish?.search;
   if (!search) return;
+  // Candidate probes are private search progress, not user-selectable
+  // interventions. They must never light up a block before a recipe exists.
   search.visual.current.clear();
-  for (const cell of cells || []) {
-    search.visual.current.add(wishSearchCellKey(cell.position, cell.layer));
-    search.visual.positions.add(cell.position);
-  }
   paintWishSearchCells();
 }
 
@@ -7561,7 +7626,6 @@ function paintWishSearchCells() {
     const key = wishSearchCellKey(+cell.dataset.pos, +cell.dataset.layer);
     const result = visual.cells.get(key);
     if (result) cell.classList.add(`wish-search-${result}`);
-    if (visual.current.has(key)) cell.classList.add('wish-search-current');
     const detail = visual.details?.get(key);
     if (!cell.dataset.wishSearchTitleSaved) {
       cell.dataset.wishSearchTitleSaved = '1';
@@ -7638,7 +7702,12 @@ function updateWishSearchStatus() {
   const fraction = Math.min(1, elapsed / search.budgetSeconds);
   $('wish-search-fill').style.width = `${fraction * 100}%`;
   $('wish-search-stats').textContent =
-    `${search.tested} tested · ${search.partials} leads · ${formatWishElapsed(elapsed)} / ${formatWishElapsed(search.budgetSeconds)}`;
+    `${search.tested} tested · ${search.recipeByKey.size} recipes · ${formatWishElapsed(elapsed)} / ${formatWishElapsed(search.budgetSeconds)}`;
+  const recipeStatus = $('recipe-search-status');
+  if (recipeStatus) {
+    const phase = search.done ? 'search complete' : search.paused ? 'search paused' : 'search running';
+    recipeStatus.textContent = `${search.tested} tested · ${phase}`;
+  }
   if (search.verified) {
     const contextCurrent = wishSearchContextIsCurrent();
     $('wish-search-apply').disabled = !search.verifiedRecipeId || state.streaming;
@@ -7826,12 +7895,8 @@ function handleWishSearchEvent(event, obj) {
     $('wish-search-stop').disabled = !search.searchId;
     $('wish-search-stage').textContent = 'Ranking J-Space evidence across prefilled positions…';
   } else if (event === 'position_ranking' || event === 'ranking') {
-    const positions = obj.positions || obj.ranked_positions || [];
-    for (const entry of positions) {
-      const position = Number.isFinite(+entry) ? +entry : +entry.position;
-      if (Number.isFinite(position)) search.visual.positions.add(position);
-    }
-    if (positions.length) renderGrid({ keepScroll: true });
+    // Ranking chooses the server's private probe order. It does not make
+    // any workspace block a user-facing intervention option.
   } else if (event === 'stage') {
     syncWishSearchClock(search, obj);
     search.stage = obj.stage || obj.name || 'search';
@@ -7884,14 +7949,6 @@ function handleWishSearchEvent(event, obj) {
         a.recipe_key.localeCompare(b.recipe_key));
       search.priorPromising.length = Math.min(search.priorPromising.length, 16);
     }
-    const recipe = wishSearchRecipeText(obj.cells || []);
-    for (const cell of obj.cells || []) {
-      search.visual.positions.add(cell.position);
-      search.visual.cells.set(wishSearchCellKey(cell.position, cell.layer), classification);
-      search.visual.details.set(wishSearchCellKey(cell.position, cell.layer), {
-        classification, recipe, text: obj.text || '',
-      });
-    }
     search.visual.current.clear();
     // The adaptive endpoint's verifier is exact-response strict. Keep this
     // defensive gate so an older server can never expose a phrase-only hit.
@@ -7900,9 +7957,6 @@ function handleWishSearchEvent(event, obj) {
     if (exactVerified) {
       search.verified = obj;
       upsertWishInterventionRecipe(obj, 'verified');
-      for (const cell of obj.cells || []) {
-        search.visual.cells.set(wishSearchCellKey(cell.position, cell.layer), 'verified');
-      }
     } else if (obj.improving === true &&
         (classification === 'partial' || classification === 'off-target')) {
       upsertWishInterventionRecipe(obj, 'promising');
@@ -8022,6 +8076,7 @@ async function runAdaptiveWishSearch() {
   const messages = _scanMessages();
   const visual = {
     cells: new Map(), current: new Set(), positions: new Set(), details: new Map(),
+    recipeIds: new Map(),
   };
   const controller = new AbortController();
   wish.search = {
@@ -8036,7 +8091,9 @@ async function runAdaptiveWishSearch() {
     clockStartedAt: performance.now(), elapsedSeconds: 0,
     searchId: null,
   };
+  renderInterventionRecipes();
   document.documentElement.classList.add('wish-search-active');
+  renderGrid({ keepScroll: true });
   $('wish-pop').classList.add('search-mode');
   $('wish-compose').hidden = true;
   $('wish-search-view').hidden = false;
