@@ -1699,6 +1699,12 @@ class AdaptiveInterventionSearchRequest(BaseModel):
     # add exactly 120 active seconds and resume the same scheduler in thorough
     # mode.  The SSE connection must remain open while paused.
     allow_continuation: bool = False
+    # Opt in to the latent-premise stage: when the literal-direction singles
+    # run dry (or the search is extended/thorough), the resident model
+    # proposes a premise swap (e.g. France→China) and band-clamped premise
+    # recipes are replay-tested. Redirects are reported as premise results
+    # with their larger causal footprint, never as exact verified recipes.
+    enable_premise_search: bool = False
 
 
 class AdaptiveInterventionSearchControlRequest(BaseModel):
@@ -2163,6 +2169,182 @@ def _adaptive_triple_candidates(
             "triple", cells, parents=[pair["id"], single["id"]]
         ))
     return out
+
+
+# ----- Latent-premise stage -------------------------------------------------
+#
+# When every literal-direction single leaves the reply unchanged, the reply
+# token is usually the CONCLUSION of a computation whose workspace variable
+# is an earlier PREMISE (paper example: edit France→China, and capital,
+# language, and continent circuits recompute for China). The premise stage
+# asks the resident model for that latent direction, then replay-tests it as
+# a band-clamped swap. Its successes are reported as premise redirects with
+# their larger causal footprint — never as exact verified recipes, because a
+# coherent model that now believes the new premise also verbalizes it.
+
+_PREMISE_PROPOSAL_BRIEF = """\
+You analyze one finished chat exchange for J-Space intervention planning.
+The user selected a span of the assistant reply and requested a replacement.
+Do not restate that reply edit. Name the earlier semantic premise whose
+counterfactual change would make the requested reply the natural answer:
+when the requested span belongs to a different parent entity than the
+current span (a capital to its country, an author to their book), the
+premise is that parent entity.
+
+Return JSON only, no Markdown. The top-level object has a "premises" array
+with at most two objects, each with short string fields "source_concept"
+(the premise as currently stated, at most three words), "target_concept"
+(the counterfactual premise, at most three words), "reason" (at most eight
+words), and "confidence" of "low", "medium", or "high". Concepts are words
+from or implied by the conversation, never layer or position numbers. If no
+responsible premise exists, return {"premises": []}. Keep the entire output
+under 90 tokens."""
+
+
+def _premise_proposal_messages(
+    messages: list["ChatMessage"],
+    selected_source: str,
+    replacement_text: str,
+) -> list["ChatMessage"]:
+    transcript = "\n".join(
+        f"{message.role}: {message.content}" for message in messages
+    )
+    task = (
+        f"{_PREMISE_PROPOSAL_BRIEF}\n\n"
+        f"Conversation:\n{transcript}\n\n"
+        f"Selected assistant span: {selected_source!r}\n"
+        f"Requested replacement: {replacement_text!r}\n"
+        "Propose the premises now."
+    )
+    return [ChatMessage(role="user", content=task)]
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Return the first balanced top-level JSON object in free-form text."""
+    start = text.find("{")
+    while start != -1:
+        depth = 0
+        in_string = False
+        escaped = False
+        for index in range(start, len(text)):
+            ch = text[index]
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == '"':
+                    in_string = False
+            elif ch == '"':
+                in_string = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start:index + 1]
+        start = text.find("{", start + 1)
+    return None
+
+
+def _parse_premise_proposals(text: str) -> list[dict[str, str]]:
+    """Extract at most two premise directions from planner output.
+
+    Tolerates fenced or chatty output around the JSON, the recipe brief's
+    "candidates" key, and non-enum confidence values; drops rows with
+    missing, identical, or over-long concepts.
+    """
+    blob = _extract_json_object(text or "")
+    if blob is None:
+        return []
+    try:
+        parsed = json.loads(blob)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, dict):
+        return []
+    rows = parsed.get("premises")
+    if not isinstance(rows, list):
+        rows = parsed.get("candidates")
+    if not isinstance(rows, list):
+        return []
+    out: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        source = str(row.get("source_concept") or "").strip()
+        target = str(row.get("target_concept") or "").strip()
+        if not source or not target:
+            continue
+        if len(source.split()) > 3 or len(target.split()) > 3:
+            continue
+        key = (source.casefold(), target.casefold())
+        if key[0] == key[1] or key in seen:
+            continue
+        seen.add(key)
+        confidence = str(row.get("confidence") or "").strip().lower()
+        if confidence not in ("low", "medium", "high"):
+            confidence = "unstated"
+        out.append({
+            "source_concept": source,
+            "target_concept": target,
+            "reason": str(row.get("reason") or "").strip()[:80],
+            "confidence": confidence,
+        })
+        if len(out) == 2:
+            break
+    return out
+
+
+def _premise_band_halves(layers: list[int]) -> list[list[int]]:
+    """Bisect a passing clamp band to shrink its footprint; floor is four."""
+    if len(layers) < 8:
+        return []
+    mid = len(layers) // 2
+    return [layers[:mid], layers[mid:]]
+
+
+def _premise_recipe_string(
+    source_token_id: int, target_token_id: int, layers: list[int]
+) -> str:
+    return (
+        f"premise:{source_token_id}->{target_token_id}:"
+        f"L{layers[0]}-L{layers[-1]}:n{len(layers)}"
+    )
+
+
+def _premise_search_candidate(
+    direction: dict[str, Any],
+    layers: list[int],
+    *,
+    parents: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "id": (
+            f"premise-{direction['source_token_id']}-"
+            f"{direction['target_token_id']}-L{layers[0]}-{layers[-1]}"
+        ),
+        "stage": "premise_band",
+        "kind": "premise",
+        "cells": [],
+        "premise": {
+            "source_concept": direction["source_concept"],
+            "target_concept": direction["target_concept"],
+            "source_str": direction["source_str"],
+            "target_str": direction["target_str"],
+            "source_token_id": direction["source_token_id"],
+            "target_token_id": direction["target_token_id"],
+            "layers": [int(layer) for layer in layers],
+            "from_position": 0,
+        },
+        "recipe_key": _premise_recipe_string(
+            direction["source_token_id"],
+            direction["target_token_id"],
+            layers,
+        ),
+        "parents": list(parents or []),
+    }
 
 
 def _normalized_probe_text(text: str) -> str:
@@ -3081,22 +3263,40 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
         candidate_started = time.perf_counter()
         compile_started = time.perf_counter()
         edits = []
-        for cell in candidate["cells"]:
+        if candidate.get("kind") == "premise":
+            premise = candidate["premise"]
             edits.extend(compile_edits(
                 _lens,
                 _model,
                 mode="swap",
-                layers=[cell["layer"]],
-                token_id=resolved["token_id"],
-                target_id=resolved["target_id"],
-                alpha=cell["alpha"],
-                positions=[cell["position"]],
-                from_pos=None,
+                layers=list(premise["layers"]),
+                token_id=premise["source_token_id"],
+                target_id=premise["target_token_id"],
+                alpha=1.0,
+                positions=None,
+                from_pos=premise["from_position"],
                 label=(
-                    f"adaptive {candidate['id']} L{cell['layer']} "
-                    f"p{cell['position']} a={cell['alpha']:g}"
+                    f"adaptive {candidate['id']} "
+                    f"L{premise['layers'][0]}-{premise['layers'][-1]} clamp"
                 ),
             ))
+        else:
+            for cell in candidate["cells"]:
+                edits.extend(compile_edits(
+                    _lens,
+                    _model,
+                    mode="swap",
+                    layers=[cell["layer"]],
+                    token_id=resolved["token_id"],
+                    target_id=resolved["target_id"],
+                    alpha=cell["alpha"],
+                    positions=[cell["position"]],
+                    from_pos=None,
+                    label=(
+                        f"adaptive {candidate['id']} L{cell['layer']} "
+                        f"p{cell['position']} a={cell['alpha']:g}"
+                    ),
+                ))
         compile_ms = 1000.0 * (time.perf_counter() - compile_started)
         replay = _greedy_intervention_replay(
             prompt_ids, edits, req.max_tokens, eos_ids
@@ -3216,6 +3416,27 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
         candidate_durations: list[float] = []
         pair_count = triple_count = 0
         extension_seeded = False
+        premise_queue: deque[dict[str, Any]] = deque()
+        submitted_premise_keys: set[str] = set()
+        # The proposal generation needs prefill plus ~90 output tokens
+        # (~10-15 s measured in docs/perf/planner-01.md), so it only starts
+        # with enough budget to also replay at least one band clamp after it.
+        premise_min_budget_seconds = 25.0
+        premise_max_replays = 12
+        # Fire the proposal after the first evidence batch (~8 replays,
+        # ~10 s) instead of only when the literal queue dries out: on hard
+        # cases the premise hypothesis is then verified inside the first
+        # minute, while an easy literal win still lands first.
+        premise_early_after_tested = 8
+        premise_state: dict[str, Any] = {
+            "enabled": bool(req.enable_premise_search),
+            "attempted": False,
+            "proposal_status": None,
+            "directions": [],
+            "replays": 0,
+            "redirects": 0,
+            "best": None,
+        }
 
         def _enqueue(
             queue: deque[dict[str, Any]], candidate: dict[str, Any]
@@ -3227,6 +3448,32 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
             submitted_keys.add(key)
             queue.append(candidate)
             return True
+
+        def _enqueue_premise(candidate: dict[str, Any]) -> bool:
+            wire_key = candidate["recipe_key"]
+            if (wire_key in submitted_premise_keys
+                    or wire_key in excluded_keys):
+                return False
+            submitted_premise_keys.add(wire_key)
+            premise_queue.append(candidate)
+            return True
+
+        def _queue_premise_proposal(origin: str) -> None:
+            """One proposal per search, and only with budget to use it."""
+            if (not premise_state["enabled"]
+                    or premise_state["attempted"]
+                    or _budget_remaining_seconds()
+                    < premise_min_budget_seconds):
+                return
+            premise_state["attempted"] = True
+            premise_queue.append({
+                "id": f"premise-proposal-{origin}",
+                "stage": "premise_proposal",
+                "kind": "premise_proposal",
+                "origin": origin,
+                "cells": [],
+                "parents": [],
+            })
 
         async def _pause_frames(
             reason: str,
@@ -3270,6 +3517,10 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
             extension_seeded = True
             max_candidates = 768
             position_limit = 16
+            # After a full minute of unchanged literal singles, one premise
+            # proposal carries more expected information than the deep-single
+            # flood below; premise_queue outranks `initial` in the scheduler.
+            _queue_premise_proposal("extension")
             expanded = _adaptive_initial_candidates(
                 all_ranked_positions[:position_limit], workspace_layers
             )
@@ -3465,6 +3716,12 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 None, baseline_norm, desired_norm
             ).ratio()
 
+            # A direct three-minute search has room for the premise stage up
+            # front; the standard minute earns it only when its literal
+            # singles run dry (see the scheduler's exhaustion branch).
+            if req.profile == "thorough":
+                _queue_premise_proposal("thorough")
+
             # The inner loop retains every queue and score across pauses.  The
             # outer loop exists solely to broaden this same scheduler after
             # the standard phase receives its one allowed extension.
@@ -3490,6 +3747,11 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                         source_queue = pair_queue
                     elif refinement_queue:
                         source_queue = refinement_queue
+                    elif premise_queue:
+                        # Above `initial` so the premise stage preempts the
+                        # extension's deep-single flood; below refinements
+                        # and pairs because those grow from live leads.
+                        source_queue = premise_queue
                     elif initial:
                         source_queue = initial
                     elif pair_queue:
@@ -3497,9 +3759,170 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     elif thorough_mode and triple_queue:
                         source_queue = triple_queue
                     else:
-                        phase_exhausted = True
-                        break
+                        _queue_premise_proposal("exhausted")
+                        if premise_queue:
+                            source_queue = premise_queue
+                        else:
+                            phase_exhausted = True
+                            break
                     candidate = source_queue.popleft()
+
+                    if candidate.get("kind") == "premise_proposal":
+                        proposal_origin = candidate.get("origin", "unknown")
+                        if (_budget_remaining_seconds()
+                                < premise_min_budget_seconds):
+                            premise_state["proposal_status"] = "skipped_budget"
+                            yield _sse("premise_proposal", {
+                                "status": "skipped_budget",
+                                "origin": proposal_origin,
+                                "directions": [],
+                                "elapsed_seconds": _elapsed_seconds(),
+                            })
+                            continue
+                        current_stage = "premise_proposal"
+                        yield _sse("stage", {
+                            "stage": current_stage,
+                            "tested": tested,
+                            "elapsed_seconds": _elapsed_seconds(),
+                            "budget_remaining_seconds": (
+                                _budget_remaining_seconds()
+                            ),
+                        })
+                        planner_messages = _premise_proposal_messages(
+                            req.messages, selected_source,
+                            req.replacement_text,
+                        )
+                        try:
+                            planner_ids = await asyncio.to_thread(
+                                _chat_template_token_ids,
+                                tok,
+                                planner_messages,
+                                enable_thinking=False,
+                            )
+                        except ValueError:
+                            planner_ids = []
+                        if not planner_ids or len(planner_ids) > 4096:
+                            premise_state["proposal_status"] = (
+                                "context_too_large" if planner_ids
+                                else "template_failed"
+                            )
+                            yield _sse("premise_proposal", {
+                                "status": premise_state["proposal_status"],
+                                "origin": proposal_origin,
+                                "directions": [],
+                                "elapsed_seconds": _elapsed_seconds(),
+                            })
+                            continue
+                        proposal = None
+                        while True:
+                            try:
+                                proposal, queue_wait_ms = (
+                                    await _locked_worker(
+                                        _greedy_intervention_replay,
+                                        planner_ids,
+                                        None,
+                                        128,
+                                        eos_ids,
+                                    )
+                                )
+                                break
+                            except _AdaptiveSearchPauseRequested:
+                                assert control is not None
+                                async for frame in _pause_frames("user"):
+                                    yield frame
+                                continue
+                            except _AdaptiveSearchDeadlineExpired as expired:
+                                deadline_queue_wait_ms = (
+                                    expired.queue_wait_ms
+                                )
+                                source_queue.appendleft(candidate)
+                                budget_exhausted = True
+                                break
+                        if proposal is None:
+                            break
+                        candidate_durations.append(
+                            (proposal["timings_ms"]["total"] + queue_wait_ms)
+                            / 1000.0
+                        )
+                        proposal_text = tok.decode(proposal["ids"])
+                        directions: list[dict[str, Any]] = []
+                        for row in _parse_premise_proposals(proposal_text):
+                            premise_spec = InterventionSpec(
+                                mode="swap",
+                                layers=[workspace_layers[0]],
+                                token=" " + row["source_concept"],
+                                target=" " + row["target_concept"],
+                                alpha=1.0,
+                                positions=[0],
+                            )
+                            try:
+                                resolved_premise = (
+                                    _validate_and_resolve_specs(
+                                        [premise_spec], _lens, tok,
+                                        _model.n_layers,
+                                    )[0]
+                                )
+                            except HTTPException:
+                                continue
+                            source_token_id = resolved_premise["token_id"]
+                            target_token_id = resolved_premise["target_id"]
+                            if source_token_id == target_token_id:
+                                continue
+                            if (source_token_id == resolved["token_id"]
+                                    and target_token_id
+                                    == resolved["target_id"]):
+                                # The literal reply direction is already the
+                                # subject of every cell stage.
+                                continue
+                            if any(
+                                direction["source_token_id"]
+                                == source_token_id
+                                and direction["target_token_id"]
+                                == target_token_id
+                                for direction in directions
+                            ):
+                                continue
+                            directions.append({
+                                **row,
+                                "source_str": resolved_premise["token_str"],
+                                "target_str": resolved_premise["target_str"],
+                                "source_token_id": source_token_id,
+                                "target_token_id": target_token_id,
+                            })
+                        premise_state["directions"] = directions
+                        premise_state["proposal_status"] = (
+                            "ok" if directions else "no_usable_direction"
+                        )
+                        proposal_timings = dict(proposal["timings_ms"])
+                        proposal_timings["queue_wait"] = queue_wait_ms
+                        yield _sse("premise_proposal", {
+                            "status": premise_state["proposal_status"],
+                            "origin": proposal_origin,
+                            "directions": [
+                                {
+                                    "source_concept": d["source_concept"],
+                                    "target_concept": d["target_concept"],
+                                    "source_str": d["source_str"],
+                                    "target_str": d["target_str"],
+                                    "source_token_id": d["source_token_id"],
+                                    "target_token_id": d["target_token_id"],
+                                    "reason": d["reason"],
+                                    "confidence": d["confidence"],
+                                }
+                                for d in directions
+                            ],
+                            "proposal_text": proposal_text[:400],
+                            "timings_ms": proposal_timings,
+                            "elapsed_seconds": _elapsed_seconds(),
+                            "budget_remaining_seconds": (
+                                _budget_remaining_seconds()
+                            ),
+                        })
+                        for direction in directions:
+                            _enqueue_premise(_premise_search_candidate(
+                                direction, list(workspace_layers)
+                            ))
+                        continue
 
                     elapsed = _elapsed_seconds()
                     ordered_durations = sorted(candidate_durations)
@@ -3511,7 +3934,11 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                         budget_exhausted = True
                         break
 
-                    if len(candidate["cells"]) == 1:
+                    if candidate.get("kind") == "premise":
+                        # Premise clamps are neither singles nor combinations
+                        # for the pair-pacing counter.
+                        pass
+                    elif len(candidate["cells"]) == 1:
                         singles_since_combination += 1
                     else:
                         singles_since_combination = 0
@@ -3530,14 +3957,16 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     candidate_elapsed = _elapsed_seconds()
                     yield _sse("candidate_start", {
                         "id": candidate["id"],
-                        "recipe_key": _adaptive_recipe_string(
-                            candidate["cells"]
+                        "recipe_key": (
+                            candidate.get("recipe_key")
+                            or _adaptive_recipe_string(candidate["cells"])
                         ),
                         "stage": candidate["stage"],
                         "parents": candidate["parents"],
                         "index": tested + 1,
                         "max_candidates": max_candidates,
                         "cells": candidate["cells"],
+                        "premise": candidate.get("premise"),
                         "elapsed_seconds": candidate_elapsed,
                         "budget_remaining_seconds": (
                             _budget_remaining_seconds()
@@ -3598,12 +4027,28 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                         and (improvement > 1e-9
                              or (target_count >= 1 and source_count == 0))
                     )
+                    is_premise = candidate.get("kind") == "premise"
+                    if is_premise:
+                        premise_state["replays"] += 1
+                    # A coherent model that now believes the swapped premise
+                    # also verbalizes it, so a premise clamp is judged by
+                    # redirect (goal present, source absent, clean stop) —
+                    # byte-exact equality stays reserved for cell recipes.
+                    premise_redirect = bool(
+                        is_premise
+                        and not verified
+                        and safe_changed
+                        and target_count >= 1
+                        and source_count == 0
+                    )
                     if verified:
                         classification = "verified"
                     elif replay["repetition"]:
                         classification = "repetition"
                     elif not changed:
                         classification = "unchanged"
+                    elif premise_redirect:
+                        classification = "premise_redirect"
                     elif target_count >= 1 and source_count == 0:
                         classification = "partial"
                     else:
@@ -3618,14 +4063,19 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     )
                     yield _sse("candidate", {
                         "id": candidate["id"],
-                        "recipe_key": _adaptive_recipe_string(
-                            candidate["cells"]
+                        "recipe_key": (
+                            candidate.get("recipe_key")
+                            or _adaptive_recipe_string(candidate["cells"])
                         ),
                         "stage": candidate["stage"],
                         "parents": candidate["parents"],
                         "index": tested,
                         "max_candidates": max_candidates,
                         "cells": candidate["cells"],
+                        "premise": candidate.get("premise"),
+                        "premise_verified": (
+                            classification == "premise_redirect"
+                        ),
                         "text": text,
                         "eos": replay["eos"],
                         "repetition": replay["repetition"],
@@ -3654,6 +4104,49 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     if verified:
                         verified_candidate = candidate
                         break
+
+                    if is_premise and classification == "premise_redirect":
+                        premise_state["redirects"] += 1
+                        premise = candidate["premise"]
+                        record = {
+                            "source_concept": premise["source_concept"],
+                            "target_concept": premise["target_concept"],
+                            "source_str": premise["source_str"],
+                            "target_str": premise["target_str"],
+                            "source_token_id": premise["source_token_id"],
+                            "target_token_id": premise["target_token_id"],
+                            "layers": list(premise["layers"]),
+                            "recipe_key": candidate["recipe_key"],
+                            "text": text,
+                            "similarity_to_desired": similarity,
+                        }
+                        best = premise_state["best"]
+                        if (best is None
+                                or len(record["layers"])
+                                < len(best["layers"])
+                                or (len(record["layers"])
+                                    == len(best["layers"])
+                                    and similarity
+                                    > best["similarity_to_desired"])):
+                            premise_state["best"] = record
+                        # Bisect the passing band to shrink the reported
+                        # footprint while the replay budget lasts.
+                        if premise_state["replays"] < premise_max_replays:
+                            direction = {
+                                key: premise[key]
+                                for key in (
+                                    "source_concept", "target_concept",
+                                    "source_str", "target_str",
+                                    "source_token_id", "target_token_id",
+                                )
+                            }
+                            for half in _premise_band_halves(
+                                premise["layers"]
+                            ):
+                                _enqueue_premise(_premise_search_candidate(
+                                    direction, half,
+                                    parents=[candidate["id"]],
+                                ))
 
                     if len(candidate["cells"]) == 1:
                         if (safe_changed
@@ -3706,6 +4199,9 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                                         break
                                     if _enqueue(triple_queue, triple):
                                         triple_count += 1
+
+                    if tested >= premise_early_after_tested:
+                        _queue_premise_proposal("early")
                     await asyncio.sleep(0)
 
                 if verified_candidate:
@@ -3765,6 +4261,22 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                     "promising_singles": len(promising_singles),
                     "pairs_enqueued": pair_count,
                     "triples_enqueued": triple_count,
+                },
+                "premise": {
+                    "enabled": premise_state["enabled"],
+                    "attempted": premise_state["attempted"],
+                    "proposal_status": premise_state["proposal_status"],
+                    "directions": [
+                        {
+                            "source_str": d["source_str"],
+                            "target_str": d["target_str"],
+                            "confidence": d["confidence"],
+                        }
+                        for d in premise_state["directions"]
+                    ],
+                    "replays": premise_state["replays"],
+                    "redirects": premise_state["redirects"],
+                    "best": premise_state["best"],
                 },
             })
         except Exception as error:

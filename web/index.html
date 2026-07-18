@@ -1578,6 +1578,7 @@
   }
   .recipe-status { color: var(--text-3); font-size: 9px; letter-spacing: 0.06em; }
   .recipe-item.verified .recipe-status { color: #3f8f55; }
+  .recipe-item.premise .recipe-status { color: #7059c4; }
   .recipe-item.promising .recipe-status { color: var(--highlight-orange); }
   .recipe-meta {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2460,7 +2461,13 @@ function persistRecipe(recipe) {
   return {
     id: recipe.id,
     name: recipe.name,
-    status: recipe.status === 'verified' ? 'verified' : 'promising',
+    status: recipe.status === 'verified' ? 'verified'
+      : recipe.status === 'premise' ? 'premise' : 'promising',
+    kind: recipe.kind === 'premise' ? 'premise' : 'cells',
+    premise: recipe.kind === 'premise' && recipe.premise ? {
+      layers: (recipe.premise.layers || []).map(Number),
+      fromPosition: 0,
+    } : null,
     token: recipe.token ?? null,
     tokenId: recipe.tokenId ?? null,
     target: recipe.target ?? null,
@@ -2598,8 +2605,14 @@ function validSpecShape(s) {
 }
 
 function validRecipeShape(recipe) {
-  return !!(recipe && typeof recipe.id === 'string' &&
-    Array.isArray(recipe.cells) && recipe.cells.length &&
+  if (!recipe || typeof recipe.id !== 'string') return false;
+  if (recipe.kind === 'premise') {
+    return !!(recipe.premise && Array.isArray(recipe.premise.layers) &&
+      recipe.premise.layers.length &&
+      recipe.premise.layers.every((layer) => Number.isFinite(+layer)) &&
+      typeof recipe.token === 'string' && typeof recipe.target === 'string');
+  }
+  return !!(Array.isArray(recipe.cells) && recipe.cells.length &&
     recipe.cells.every((cell) => Number.isFinite(+cell.position) &&
       Number.isFinite(+cell.layer) && Number.isFinite(+cell.alpha)));
 }
@@ -4779,7 +4792,16 @@ function nextRecipeName() {
   return `Recipe ${suffix}`;
 }
 
+function premiseBandText(recipe) {
+  const layers = ((recipe.premise && recipe.premise.layers) || []).map(Number);
+  if (!layers.length) return '';
+  return `L${layers[0]}–L${layers[layers.length - 1]}`;
+}
+
 function recipeCellSummary(recipe) {
+  if (recipe.kind === 'premise') {
+    return `${premiseBandText(recipe)} · every position · clamped`;
+  }
   return (recipe.cells || []).map((cell) =>
     `p${cell.position} · L${cell.layer} · α${formatAlpha(cell.alpha)}`).join(' + ');
 }
@@ -4789,6 +4811,18 @@ function recipeDirectionText(recipe) {
 }
 
 function recipeToSpecs(recipe) {
+  if (recipe.kind === 'premise' && recipe.premise) {
+    const layers = (recipe.premise.layers || []).map(Number);
+    return [{
+      id: nextInterventionId(), enabled: true, mode: 'swap',
+      token: recipe.token, tokenId: recipe.tokenId,
+      target: recipe.target, targetId: recipe.targetId,
+      alpha: 1, layers,
+      scope: { type: 'from', pos: 0 },
+      origin: { pos: 0, layer: layers[0] || 0 },
+      ablateTokenIds: null,
+    }];
+  }
   return (recipe.cells || []).map((cell) => ({
     id: nextInterventionId(), enabled: true, mode: 'swap',
     token: recipe.token, tokenId: recipe.tokenId,
@@ -4958,8 +4992,10 @@ function renderInterventionRecipes() {
   if (!wrap) return;
   wrap.replaceChildren();
   const search = _wish?.search && !$('wish-pop').hidden ? _wish.search : null;
+  const statusRank = (recipe) => recipe.status === 'verified' ? 0
+    : recipe.status === 'premise' ? 1 : 2;
   const recipes = [...state.interventionRecipes].sort((a, b) =>
-    (a.status === 'verified' ? 0 : 1) - (b.status === 'verified' ? 0 : 1) ||
+    statusRank(a) - statusRank(b) ||
     (a.name || '').localeCompare(b.name || ''));
   // Keep the section visible during a search even before the first recipe.
   // Otherwise an empty result looks like the feature itself is missing.
@@ -5016,7 +5052,8 @@ function renderInterventionRecipes() {
     main.className = 'recipe-main';
     const status = document.createElement('span');
     status.className = 'recipe-status';
-    status.textContent = recipe.status === 'verified' ? 'VERIFIED' : 'PROMISING';
+    status.textContent = recipe.status === 'verified' ? 'VERIFIED'
+      : recipe.status === 'premise' ? 'PREMISE' : 'PROMISING';
     main.append(document.createTextNode(`${recipe.name.replace('Recipe ', '')} · `), status,
       document.createTextNode(` · ${recipeDirectionText(recipe)}`));
     const meta = document.createElement('span');
@@ -5321,11 +5358,34 @@ function renderRecipePreview(recipe) {
   $('iv-recipe-title').textContent = recipe.name || 'Recipe';
   $('iv-recipe-direction').textContent = recipeDirectionText(recipe);
   const status = $('iv-recipe-status');
-  status.textContent = recipe.status === 'verified' ? 'Verified' : 'Promising';
+  status.textContent = recipe.status === 'verified' ? 'Verified'
+    : recipe.status === 'premise' ? 'Premise redirect' : 'Promising';
   status.className = `iv-recipe-status ${recipe.status || 'promising'}`;
   const cells = $('iv-recipe-cells');
   cells.replaceChildren();
-  (recipe.cells || []).forEach((cell, index, all) => {
+  if (recipe.kind === 'premise' && recipe.premise) {
+    const row = document.createElement('div');
+    row.className = 'iv-recipe-cell';
+    const number = document.createElement('span');
+    number.className = 'iv-recipe-cell-index';
+    number.textContent = '1';
+    const copy = document.createElement('div');
+    const location = document.createElement('div');
+    location.className = 'iv-recipe-cell-location';
+    location.textContent = `${premiseBandText(recipe)} · every position`;
+    const role = document.createElement('div');
+    role.className = 'iv-recipe-cell-role';
+    role.textContent =
+      'Band-clamped premise swap — the reply follows the new premise';
+    copy.append(location, role);
+    const alpha = document.createElement('span');
+    alpha.className = 'iv-recipe-cell-alpha';
+    alpha.textContent = 'α 1';
+    alpha.title = 'Signal multiplier';
+    row.append(number, copy, alpha);
+    cells.appendChild(row);
+  }
+  (recipe.kind === 'premise' ? [] : recipe.cells || []).forEach((cell, index, all) => {
     const row = document.createElement('div');
     row.className = 'iv-recipe-cell';
     const number = document.createElement('span');
@@ -5362,11 +5422,17 @@ function openRecipePreview(recipeId) {
   _ivRecipePreviewId = recipe.id;
   state.selectedInterventionRecipeId = recipe.id;
   _ivPreview = {
-    marks: recipe.cells.map((cell) => ({
-      layerSet: new Set([Number(cell.layer)]),
-      scope: { type: 'at', pos: Number(cell.position) },
-      layers: [Number(cell.layer)],
-    })),
+    marks: recipe.kind === 'premise' && recipe.premise
+      ? [{
+          layerSet: new Set((recipe.premise.layers || []).map(Number)),
+          scope: { type: 'from', pos: 0 },
+          layers: (recipe.premise.layers || []).map(Number),
+        }]
+      : recipe.cells.map((cell) => ({
+          layerSet: new Set([Number(cell.layer)]),
+          scope: { type: 'at', pos: Number(cell.position) },
+          layers: [Number(cell.layer)],
+        })),
   };
   $('iv-editor-view').hidden = true;
   $('iv-recipe-view').hidden = false;
@@ -7567,24 +7633,32 @@ function registerWishRecipeCells(recipe) {
 function upsertWishInterventionRecipe(obj, status) {
   const wish = _wish;
   const search = wish?.search;
-  if (!wish || !search || !Array.isArray(obj.cells) || !obj.cells.length) return null;
-  const recipeKey = obj.recipe_key || wishSearchRecipeText(obj.cells);
+  const premise = obj.premise && Array.isArray(obj.premise.layers) &&
+    obj.premise.layers.length ? obj.premise : null;
+  const cells = Array.isArray(obj.cells) ? obj.cells : [];
+  if (!wish || !search || (!premise && !cells.length)) return null;
+  // A premise recipe's direction is the proposed latent swap (e.g.
+  // France→China), not the search's literal reply direction.
+  const token = premise ? premise.source_str : search.token;
+  const tokenId = premise ? premise.source_token_id : search.tokenId;
+  const target = premise ? premise.target_str : search.target;
+  const targetId = premise ? premise.target_token_id : search.targetId;
+  const recipeKey = obj.recipe_key || wishSearchRecipeText(cells);
   let recipe = interventionRecipeById(search.recipeByKey.get(recipeKey));
   if (!recipe) {
     recipe = state.interventionRecipes.find((item) =>
       item.recipeKey === recipeKey && item.baselineResponse === wish.baselineResponse &&
       item.contextKey === search.contextKey &&
-      item.token === search.token && item.target === search.target) || null;
+      item.token === token && item.target === target) || null;
   }
   if (!recipe) {
     recipe = {
       id: nextInterventionRecipeId(),
       name: nextRecipeName(),
       status,
-      token: search.token,
-      tokenId: search.tokenId,
-      target: search.target,
-      targetId: search.targetId,
+      kind: premise ? 'premise' : 'cells',
+      premise: null,
+      token, tokenId, target, targetId,
       cells: [], output: '', recipeKey,
       baselineResponse: wish.baselineResponse,
       contextKey: search.contextKey,
@@ -7592,10 +7666,15 @@ function upsertWishInterventionRecipe(obj, status) {
     };
     state.interventionRecipes.push(recipe);
   }
-  recipe.status = recipe.status === 'verified' || status === 'verified' ? 'verified' : 'promising';
-  recipe.cells = obj.cells.map((cell) => ({
-    position: Number(cell.position), layer: Number(cell.layer), alpha: Number(cell.alpha),
-  }));
+  recipe.status = recipe.status === 'verified' || status === 'verified' ? 'verified'
+    : recipe.status === 'premise' || status === 'premise' ? 'premise' : 'promising';
+  if (premise) {
+    recipe.premise = { layers: premise.layers.map(Number), fromPosition: 0 };
+  } else {
+    recipe.cells = cells.map((cell) => ({
+      position: Number(cell.position), layer: Number(cell.layer), alpha: Number(cell.alpha),
+    }));
+  }
   recipe.output = String(obj.text || recipe.output || '').slice(0, 4000);
   recipe.improvement = Math.max(recipe.improvement || 0, Number(obj.improvement_over_baseline) || 0);
   search.recipeByKey.set(recipeKey, recipe.id);
@@ -7798,6 +7877,21 @@ function finishWishSearch(data = {}) {
     $('wish-search-title').textContent = 'Search failed';
     $('wish-search-stage').textContent = search.error || 'The search could not be completed.';
     showWishSearchResult('', 'No intervention was applied.');
+  } else if (search.premiseRecipeId && interventionRecipeById(search.premiseRecipeId)) {
+    const recipe = interventionRecipeById(search.premiseRecipeId);
+    $('wish-search-title').textContent = 'Premise recipe found';
+    $('wish-search-stage').textContent =
+      `No exact replacement verified — but swapping the premise ${recipeDirectionText(recipe)}, ` +
+      `clamped across ${premiseBandText(recipe)} at every position, redirected the computation.`;
+    showWishSearchResult(
+      '',
+      `Deterministic replay said “${(recipe.output || '').trim()}”. The recipe changes what ` +
+      'the model believes, so the wording follows the new premise instead of matching the ' +
+      'requested sentence exactly.',
+    );
+    renderWishSearchDiagnostics(search);
+    $('wish-search-apply').hidden = false;
+    $('wish-search-apply').disabled = state.streaming;
   } else {
     $('wish-search-title').textContent = 'No verified recipe yet';
     $('wish-search-stage').textContent = data.stop_reason === 'exhausted_candidates'
@@ -7829,11 +7923,18 @@ function pauseWishSearchUI(obj) {
     // The server reserves enough time not to begin a replay it cannot finish,
     // then charges the logical clock exactly to 1:00 at this phase boundary.
     search.elapsedSeconds = search.budgetSeconds;
-    $('wish-search-title').textContent = 'No verified recipe yet';
-    $('wish-search-stage').textContent = 'The one-minute search is paused. Add two minutes to continue the same search.';
-    const diagnostic = search.partials
-      ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} remain leads, not verified solutions.`
-      : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
+    const premiseRecipe = interventionRecipeById(search.premiseRecipeId);
+    $('wish-search-title').textContent = premiseRecipe
+      ? 'Premise recipe found — no exact match yet'
+      : 'No verified recipe yet';
+    $('wish-search-stage').textContent = premiseRecipe
+      ? `Swapping the premise ${recipeDirectionText(premiseRecipe)} redirected the reply. Add two minutes to keep searching for an exact replacement.`
+      : 'The one-minute search is paused. Add two minutes to continue the same search.';
+    const diagnostic = premiseRecipe
+      ? `Deterministic replay said “${(premiseRecipe.output || '').trim()}”. Close this panel to keep the premise recipe as the result.`
+      : search.partials
+        ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} remain leads, not verified solutions.`
+        : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
     showWishSearchResult('', diagnostic);
     renderWishSearchDiagnostics(search);
     $('wish-search-stop').hidden = true;
@@ -7903,10 +8004,20 @@ function handleWishSearchEvent(event, obj) {
       deep_single: 'Sweeping every fitted workspace layer…',
       pair: 'Combining promising workspace cells…',
       triple: 'Testing a final three-cell combination…',
+      premise_proposal: 'Asking the model for a latent premise…',
+      premise_band: 'Replaying band-clamped premise swaps…',
     };
     $('wish-search-stage').textContent =
       obj.label || obj.message || labels[search.stage] || 'Testing workspace recipes…';
     wishSearchSetCurrent(obj.cells || []);
+  } else if (event === 'premise_proposal') {
+    syncWishSearchClock(search, obj);
+    const directions = (obj.directions || []).map((direction) =>
+      `⟨${String(direction.source_str || direction.source_concept || '').trim()}⟩ → ` +
+      `⟨${String(direction.target_str || direction.target_concept || '').trim()}⟩`);
+    $('wish-search-stage').textContent = directions.length
+      ? `Premise hypothesis ${directions.join(', ')} — replaying band clamps…`
+      : 'The model proposed no usable latent premise; continuing with exact cells.';
   } else if (event === 'candidate_start') {
     syncWishSearchClock(search, obj);
     wishSearchSetCurrent(obj.cells || []);
@@ -7915,9 +8026,10 @@ function handleWishSearchEvent(event, obj) {
     syncWishSearchClock(search, obj);
     if (obj.recipe_key) search.recipeKeys.add(obj.recipe_key);
     const classification = obj.class === 'verified' ? 'verified'
-      : obj.class === 'partial' ? 'partial'
-        : obj.class === 'off_target' ? 'off-target'
-          : obj.class === 'repetition' ? 'repetition' : 'tested';
+      : obj.class === 'premise_redirect' ? 'premise'
+        : obj.class === 'partial' ? 'partial'
+          : obj.class === 'off_target' ? 'off-target'
+            : obj.class === 'repetition' ? 'repetition' : 'tested';
     if (classification === 'partial' || classification === 'off-target') {
       search.partials++;
       search.diagnostics.push({
@@ -7953,6 +8065,18 @@ function handleWishSearchEvent(event, obj) {
     if (exactVerified) {
       search.verified = obj;
       upsertWishInterventionRecipe(obj, 'verified');
+    } else if (classification === 'premise' && obj.premise_verified === true) {
+      const recipe = upsertWishInterventionRecipe(obj, 'premise');
+      if (recipe) {
+        // Bisection reports smaller passing bands later; keep the recipe
+        // with the smallest causal footprint as the search's premise result.
+        const current = interventionRecipeById(search.premiseRecipeId);
+        const layerCount = (item) =>
+          (item?.premise?.layers || []).length || Number.MAX_SAFE_INTEGER;
+        if (!current || layerCount(recipe) < layerCount(current)) {
+          search.premiseRecipeId = recipe.id;
+        }
+      }
     } else if (obj.improving === true &&
         (classification === 'partial' || classification === 'off-target')) {
       upsertWishInterventionRecipe(obj, 'promising');
@@ -8132,7 +8256,7 @@ async function runAdaptiveWishSearch() {
     done: false, cancelled: false, verified: null,
     tested: 0, partials: 0, diagnostics: [],
     recipeKeys: new Set(), priorPromising: [],
-    recipeByKey: new Map(), verifiedRecipeId: null,
+    recipeByKey: new Map(), verifiedRecipeId: null, premiseRecipeId: null,
     contextKey: wishSearchContextKey(messages),
     clockStartedAt: performance.now(), elapsedSeconds: 0,
     searchId: null,
@@ -8199,6 +8323,7 @@ async function runAdaptiveWishSearch() {
       time_budget_seconds: budgetSeconds,
       enable_thinking: false,
       allow_continuation: true,
+      enable_premise_search: true,
     };
     await streamWishSearch(payload, controller);
     if (_wish === wish && wish.search && !wish.search.done && !wish.search.cancelled) {
@@ -8218,7 +8343,7 @@ async function runAdaptiveWishSearch() {
 }
 
 function previewVerifiedWishRecipe() {
-  const recipeId = _wish?.search?.verifiedRecipeId;
+  const recipeId = _wish?.search?.verifiedRecipeId || _wish?.search?.premiseRecipeId;
   if (!recipeId || state.streaming) return;
   openRecipePreview(recipeId);
 }

@@ -115,3 +115,18 @@ def test_empty_recipe_section_stays_visible_during_search():
 def test_legacy_scan_is_not_exposed_from_the_detail_editor():
     assert 'id="iv-scan" type="button" hidden aria-hidden="true"' in HTML
     assert "openWishModal('conclusion')" not in HTML
+
+
+def test_premise_stage_reaches_the_ui_as_a_labeled_recipe_kind():
+    assert "enable_premise_search: true" in HTML
+    assert "event === 'premise_proposal'" in HTML
+    assert "obj.class === 'premise_redirect' ? 'premise'" in HTML
+    assert "obj.premise_verified === true" in HTML
+    assert "search.premiseRecipeId" in HTML
+    assert "recipe.kind === 'premise' && recipe.premise" in HTML
+    assert "scope: { type: 'from', pos: 0 }" in HTML
+    assert ": recipe.status === 'premise' ? 'PREMISE' : 'PROMISING'" in HTML
+    assert "enable_premise_search: bool = False" in SERVE
+    assert '"premise_redirect"' in SERVE
+    assert "_premise_search_candidate" in SERVE
+    assert "Premise recipe found — no exact match yet" in HTML

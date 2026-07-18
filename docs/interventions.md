@@ -122,6 +122,36 @@ never verified. Multi-cell recipes list each `(layer, position)` separately;
 combining arrays in one normal intervention spec would instead create their
 Cartesian product.
 
+### Latent-premise stage (adaptive search)
+
+`POST /api/intervention_search_adaptive` accepts
+`enable_premise_search: true` (the UI always sends it). After the first
+eight tested singles — or when the literal queue runs dry, and up front in
+a thorough or extended search — the resident model reads the conversation
+and the requested reply edit and proposes up to two latent premise
+directions (`France → China` for a `Paris → Beijing` request; contract and
+~10–15 s cost measured in [Planner latency 01](perf/planner-01.md)). The
+`premise_proposal` event names its trigger in an `origin` field
+(`early`, `exhausted`, `extension`, or `thorough`), and an easy literal
+win that verifies before the eighth single still ends the search first. Each resolved direction is
+replay-tested as a band-clamped swap across the fitted workspace band at
+every position (`from_position: 0`); a passing band is bisected while the
+budget lasts, so the reported footprint is the smallest band that still
+redirects.
+
+A premise replay is reported as `class: "premise_redirect"` when it
+reaches EOS without repetition, contains the requested replacement exactly
+once as a bounded phrase, and no longer contains the selected source span.
+It is deliberately never an exact `verified` recipe: a coherent model that
+now believes the swapped premise also verbalizes it (the replay says
+"The capital of China is Beijing.", not the requested sentence). The
+`premise_proposal` SSE event carries the proposed directions, premise
+candidates carry a `premise` descriptor instead of `cells`, and
+`search_end` includes a `premise` summary with the proposal status and the
+best redirect. The UI lists redirects as PREMISE recipes with their
+direction, band, and achieved reply, and applies them as one
+`swap … from_position: 0` spec.
+
 ## Engine
 
 - `jlens_qwen/interventions.py` — `compile_edits()` turns a resolved spec
