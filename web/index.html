@@ -249,14 +249,14 @@
     position: fixed; right: 16px; bottom: var(--bottom-control-inset); z-index: 10;
     display: flex; gap: 0;
   }
-  #clear-btn, #settings-btn, #sessions-btn {
+  #clear-btn, #settings-btn, #sessions-btn, #share-btn {
     height: 44px;
     font-size: 14px; font-weight: 500; cursor: pointer;
     display: flex; align-items: center; gap: 6px;
     color: var(--text);
     transition: background 0.12s, transform 0.1s;
   }
-  #clear-btn, #sessions-btn { padding: 0 18px; justify-content: center; font-size: 13px; }
+  #clear-btn, #sessions-btn, #share-btn { padding: 0 18px; justify-content: center; font-size: 13px; }
   /* Bottom-left bar: icon-only settings (active mode) + GitHub. */
   #corner-actions-left {
     position: fixed; left: 16px; bottom: var(--bottom-control-inset); z-index: 10;
@@ -1118,6 +1118,7 @@
   </a>
   </div>
   <div id="corner-actions" class="corner-button-bar">
+    <button id="share-btn" class="corner-action glass-hoverable" title="Copy a link to this conversation" hidden><span>Copy Link</span></button>
     <button id="sessions-btn" class="corner-action glass-hoverable" title="Saved sessions"><span>Saved Sessions</span></button>
     <button id="clear-btn" class="corner-action glass-hoverable" title="Clear conversation"><span>Clear</span></button>
   </div>
@@ -1628,6 +1629,35 @@ async function apiGetMeta() {
   return { model, lens };
 }
 
+// ----- Shareable conversation URLs (presentation deployments) -----
+// The session id travels in the URL fragment (#session=<id>). A static
+// host never receives the fragment, so deep links need no server routing:
+// the same index.html loads and the client opens the linked session.
+function sessionIdFromUrl() {
+  const match = /[#&]session=([^&]+)/.exec(location.hash);
+  if (!match) return null;
+  try { return decodeURIComponent(match[1]); } catch (_) { return null; }
+}
+
+function sessionShareUrl(sessionId) {
+  return location.origin + location.pathname +
+    '#session=' + encodeURIComponent(sessionId);
+}
+
+function reflectSessionInUrl(sessionId) {
+  if (!isPresentation()) return;
+  try {
+    history.replaceState(null, '', sessionId
+      ? '#session=' + encodeURIComponent(sessionId)
+      : location.pathname + location.search);
+  } catch (_) {}
+}
+
+function updateShareButton() {
+  const btn = $('share-btn');
+  if (btn) btn.hidden = !(isPresentation() && state.sourceSessionId);
+}
+
 async function apiGetSessionList() {
   let sessions;
   if (isPresentation()) {
@@ -1676,6 +1706,8 @@ async function loadSessionProgressive(sessionId, { onProgress } = {}) {
   if (gen !== _sessionLoadGen) return false;
   if (!restoreConversation(first)) return false;
   state.sourceSessionId = sessionId;
+  reflectSessionInUrl(sessionId);
+  updateShareButton();
   saveState();
   renderAll();
   const totalChunks = (first.chunking && first.chunking.chunks) || 1;
@@ -3696,6 +3728,25 @@ $('sessions-btn').onclick = (e) => {
   e.stopPropagation();
   toggleSessionsMenu();
 };
+$('share-btn').onclick = async () => {
+  const sessionId = state.sourceSessionId;
+  if (!sessionId) return;
+  const url = sessionShareUrl(sessionId);
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(url);
+    copied = true;
+  } catch (_) {}
+  if (!copied) {
+    // Clipboard access can be denied (permissions, insecure context);
+    // a prompt still lets the visitor copy the link by hand.
+    window.prompt('Copy this conversation link:', url);
+    return;
+  }
+  const label = $('share-btn').querySelector('span');
+  label.textContent = 'Copied!';
+  setTimeout(() => { label.textContent = 'Copy Link'; }, 1600);
+};
 $('save-current-session').onclick = (e) => {
   e.stopPropagation();
   saveCurrentSession();
@@ -3763,12 +3814,43 @@ function escapeAttr(s) {
 loadInfo();
 loadGithubStars();
 loadSettings();
+// A shared link opens its conversation directly; any failure (deleted or
+// renamed session) clears the fragment and falls back to the picker
+// instead of stranding the visitor on a blank app.
+async function openDeepLinkedSession(sessionId) {
+  let restored = false;
+  try {
+    restored = await loadSessionProgressive(sessionId);
+  } catch (e) {
+    console.warn('deep-linked session failed to load:', e);
+  }
+  if (!restored) {
+    reflectSessionInUrl(null);
+    openSessionPicker();
+    return;
+  }
+  if (document.documentElement.classList.contains('picker-open')) {
+    _animatePickerAway($('session-picker-card'));
+  }
+}
+
+// Same-tab fragment edits are same-document navigations — no reload
+// happens, so switch sessions on hashchange. replaceState does not fire
+// this event, so reflectSessionInUrl cannot loop back into it.
+window.addEventListener('hashchange', () => {
+  if (!isPresentation()) return;
+  const linked = sessionIdFromUrl();
+  if (linked && linked !== state.sourceSessionId) openDeepLinkedSession(linked);
+});
+
 if (isPresentation()) {
-  // Presentation always enters on the session picker: clear any cached
-  // conversation so the chooser is the first screen every time.
+  // Presentation enters on the session picker — unless the URL fragment
+  // names a session, in which case the link opens that conversation.
   clearState();
   renderAll();
-  openSessionPicker();
+  const linkedSessionId = sessionIdFromUrl();
+  if (linkedSessionId) openDeepLinkedSession(linkedSessionId);
+  else openSessionPicker();
 } else {
   loadSavedState();
   renderAll();
