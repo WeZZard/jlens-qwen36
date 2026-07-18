@@ -43,7 +43,8 @@ def test_deeper_search_is_one_disabled_two_minute_extension():
 
 
 def test_modal_search_still_guards_stale_recipe_runs():
-    assert "const modalWishSearch = !!(_wish && _wish.search)" in HTML
+    assert "const wishPinned = uiWishPinned()" in HTML
+    assert "return phase === 'searching' || phase === 'done'" in HTML
     assert "function runIsRecipeBaseline(run, recipe)" in HTML
     assert "runAssistantText(run) === recipe.baselineResponse" in HTML
     assert "runContextKey(run) === recipe.contextKey" in HTML

@@ -2940,20 +2940,14 @@ let settingsBackdropPointerId = null;
 function openSettingsModal() {
   _cachedSettings = { ...state.settings };
   syncSettingsInputs();
-  const backdrop = $('settings-backdrop');
-  backdrop.inert = false;
-  backdrop.setAttribute('aria-hidden', 'false');
-  backdrop.classList.add('visible');
+  uiSetPopover('settings');
   requestAnimationFrame(() => {
-    if (backdrop.classList.contains('visible')) $('set-max-tokens').focus();
+    if (ui.popover === 'settings') $('set-max-tokens').focus();
   });
 }
 function closeSettingsModal() {
-  const backdrop = $('settings-backdrop');
   settingsBackdropPointerId = null;
-  backdrop.inert = true;
-  backdrop.classList.remove('visible');
-  backdrop.setAttribute('aria-hidden', 'true');
+  if (ui.popover === 'settings') uiSetPopover(null);
   $('settings-btn').focus({ preventScroll: true });
 }
 function commitSettings() { readSettingsFromInputs(); closeSettingsModal(); }
@@ -3105,6 +3099,7 @@ async function loadSessionProgressive(sessionId, { onProgress } = {}) {
   const gen = ++_sessionLoadGen;
   const first = await fetchSessionChunk(sessionId, 0, onProgress || null);
   if (gen !== _sessionLoadGen) return false;
+  uiResetForConversationReplace();
   if (!restoreConversation(first)) return false;
   state.sourceSessionId = sessionId;
   reflectSessionInUrl(sessionId);
@@ -3395,7 +3390,7 @@ function dismissDetailCard() {
 }
 
 function closeDetailCard() {
-  if (!(_wish && _wish.search)) {
+  if (!uiWishPinned()) {
     dismissWishPopover({ updateClearance: false });
   }
   state.selectedCell = null;
@@ -3970,8 +3965,7 @@ function markMatchesCell(mark, firstGenPos, pos, layer) {
 }
 
 function wishSearchVisualState() {
-  return document.documentElement.classList.contains('wish-search-active') &&
-    _wish && _wish.search && _wish.search.visual
+  return uiWishPinned() && _wish && _wish.search && _wish.search.visual
     ? _wish.search.visual : null;
 }
 
@@ -4512,7 +4506,8 @@ function renderMinimap() {
   // The minimap exists to preview interventions: it lives in the right
   // rail below the intervene panel and ONLY while that panel is open —
   // when the panel closes, the minimap goes with it.
-  const intervening = document.documentElement.classList.contains('intervening');
+  const intervening =
+    ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview';
   if (!nRows || !nCols || !intervening) {
     wrap.hidden = true;
     _minimapView = null;
@@ -5023,7 +5018,7 @@ function renderInterventionRecipes() {
   const wrap = $('intervention-recipes');
   if (!wrap) return;
   wrap.replaceChildren();
-  const search = _wish?.search && !$('wish-pop').hidden ? _wish.search : null;
+  const search = _wish?.search && ui.mode.kind === 'wish' ? _wish.search : null;
   const statusRank = (recipe) => recipe.status === 'verified' ? 0
     : recipe.status === 'premise' ? 1 : 2;
   const recipes = [...state.interventionRecipes].sort((a, b) =>
@@ -5320,7 +5315,9 @@ function syncInterventionEditorFields() {
     ` · <b>L${_ivDraft.origin.layer}</b> <span class="dim">— click the grid to re-aim</span>`;
   const layerScope = _segGet('iv-layer-scope', 'scope') || 'this';
   // Pick… mode: grid clicks toggle layer columns instead of re-aiming.
-  document.documentElement.classList.toggle('iv-picking', layerScope === 'custom');
+  if (ui.mode.kind === 'editor') {
+    uiSetMode({ kind: 'editor', picking: layerScope === 'custom' });
+  }
   const { layers } = _resolveDraftLayers();
   const layersHint = $('iv-layers-hint');
   if (layerScope === 'custom') {
@@ -5470,14 +5467,9 @@ function openRecipePreview(recipeId) {
   $('iv-recipe-view').hidden = false;
   $('intervene-popup').setAttribute('aria-labelledby', 'iv-recipe-title');
   renderRecipePreview(recipe);
-  const root = document.documentElement;
-  root.classList.add('intervening', 'recipe-previewing');
-  root.classList.remove('iv-picking');
+  if (ui.mode.kind === 'wish') dismissWishPopover({ updateClearance: false });
+  uiSetMode({ kind: 'recipePreview' });
   animateClearanceFor(700);
-  const backdrop = $('intervene-backdrop');
-  backdrop.inert = false;
-  backdrop.setAttribute('aria-hidden', 'false');
-  backdrop.classList.add('visible');
   saveState();
   renderInterventionRecipes();
   renderGrid({ keepScroll: true });
@@ -5545,20 +5537,17 @@ function openInterventionEditor({ seed = null, editId = null } = {}) {
   _segSet('iv-layer-scope', 'scope', layerScope);
   _segSet('iv-pos-scope', 'scope', editing && editing.scope ? editing.scope.type : 'from');
   $('iv-delete').hidden = !editing;
+  if (ui.mode.kind === 'wish') dismissWishPopover({ updateClearance: false });
   // Animate the scroll paddings alongside the chrome-sink transition so
   // grid/chat content glides instead of snapping when the input leaves.
-  document.documentElement.classList.add('intervening');
+  uiSetMode({ kind: 'editor', picking: false });
   animateClearanceFor(700);
   syncInterventionEditorFields();
-  const backdrop = $('intervene-backdrop');
-  backdrop.inert = false;
-  backdrop.setAttribute('aria-hidden', 'false');
-  backdrop.classList.add('visible');
   renderInterventions();       // Re-run pauses while an edit is open
   updateScrollClearance();
   setTimeout(updateScrollClearance, 380);  // after the chrome-sink transition
   requestAnimationFrame(() => {
-    if (!backdrop.classList.contains('visible')) return;
+    if (ui.mode.kind !== 'editor') return;
     const mode2 = _segGet('iv-mode', 'mode');
     if (mode2 === 'swap' && !$('iv-target').value) $('iv-target').focus();
     else if (mode2 !== 'ablate') $('iv-token').focus();
@@ -5566,10 +5555,6 @@ function openInterventionEditor({ seed = null, editId = null } = {}) {
 }
 
 function closeInterventionEditor() {
-  const backdrop = $('intervene-backdrop');
-  backdrop.inert = true;
-  backdrop.classList.remove('visible');
-  backdrop.setAttribute('aria-hidden', 'true');
   _ivDraft = null;
   _ivRecipePreviewId = null;
   _ivPreview = null;
@@ -5577,7 +5562,7 @@ function closeInterventionEditor() {
   _tipKey = '';
   $('iv-cursor-tip').hidden = true;
   const root = document.documentElement;
-  root.classList.remove('intervening', 'iv-picking', 'recipe-previewing');
+  uiSetMode({ kind: 'normal' });
   // The chrome slides back over 340ms. Park the detail card until the
   // input box has landed, keep the scroll paddings animating, then reveal
   // the card at its FINAL anchor with its usual entrance — revealing it
@@ -5643,7 +5628,7 @@ let _tipKey = '';
 function _cursorTipContent(el) {
   if (!_ivDraft) return null;
   const layer = el.dataset.layer !== undefined ? +el.dataset.layer : null;
-  if (document.documentElement.classList.contains('iv-picking')) {
+  if (ui.mode.kind === 'editor' && ui.mode.picking) {
     if (layer === null || !Number.isFinite(layer)) return null;
     if (!layerIntervenable(layer)) {
       return { mode: 'Pick layers', body: `L${layer} — not editable` };
@@ -6020,7 +6005,7 @@ function isFrontier(msgIdx, tokenIdx) {
 function selectBlock(msgIdx, tokenIdx) {
   const token = state.messages[msgIdx]?.tokens[tokenIdx];
   if (!token) return;
-  if (!(_wish && _wish.search)) {
+  if (!uiWishPinned()) {
     dismissWishPopover({ updateClearance: false });
   }
   state.selectedToken = { msgIdx, tokenIdx, pos: token.globalPos };
@@ -6060,7 +6045,7 @@ function selectTokenHeader(pos) {
   openWishForReplyToken(ref.msgIdx, ref.tokenIdx);
 }
 function selectCell(pos, layer) {
-  if (!(_wish && _wish.search)) {
+  if (!uiWishPinned()) {
     dismissWishPopover({ updateClearance: false });
   }
   state.selectedCell = { pos, layer };
@@ -6071,17 +6056,104 @@ function selectCell(pos, layer) {
   renderAll();
 }
 function updateAutoFollowUI() {
-  const input = $('chat-input');
-  if (input) input.classList.toggle('streaming', state.streaming);
+  applyUiState();
+}
+
+// ===== UI state store ======================================================
+// Two tiers govern every modal surface in the session view:
+// - ui.mode: exactly one screen-owning surface at a time — the wish panel
+//   (phases compose | refusal | searching | done), the intervention editor
+//   (with its layer-picking flag), the recipe preview, the legacy scan,
+//   the presentation session picker, or 'normal'.
+// - ui.popover: at most one floating popover over any mode — 'settings' or
+//   'sessionsMenu'.
+// applyUiState() derives every <html> class and panel visibility flag from
+// this store plus state.streaming and state.sourceSessionId; handlers
+// request transitions and never touch those flags directly. Animation-
+// transient classes (morphing, collapsing, pop-in, iv-restoring) stay with
+// their animators.
+const ui = {
+  mode: { kind: 'normal' },
+  popover: null,
+};
+
+function uiWishPhase() {
+  return ui.mode.kind === 'wish' ? ui.mode.phase : null;
+}
+
+// A running or finished search pins the wish panel: incidental clicks and
+// rerenders must not cancel GPU work or discard a results view.
+function uiWishPinned() {
+  const phase = uiWishPhase();
+  return phase === 'searching' || phase === 'done';
+}
+
+function uiSetMode(mode) {
+  ui.mode = mode;
+  applyUiState();
+}
+
+function uiSetPopover(popover) {
+  ui.popover = popover;
+  applyUiState();
+}
+
+function applyUiState() {
+  const root = document.documentElement;
+  const kind = ui.mode.kind;
+  const wishPhase = uiWishPhase();
+  root.classList.toggle('picker-open', kind === 'picker');
+  root.classList.toggle('intervening',
+    kind === 'editor' || kind === 'recipePreview');
+  root.classList.toggle('iv-picking', kind === 'editor' && !!ui.mode.picking);
+  root.classList.toggle('recipe-previewing', kind === 'recipePreview');
+  root.classList.toggle('wish-search-active', uiWishPinned());
+  const pop = $('wish-pop');
+  pop.hidden = kind !== 'wish';
+  pop.classList.toggle('search-mode',
+    kind === 'wish' && wishPhase !== 'compose');
+  $('wish-compose').hidden = !(kind === 'wish' && wishPhase === 'compose');
+  $('wish-search-view').hidden = !(kind === 'wish' && wishPhase !== 'compose');
+  const chatInput = $('chat-input');
+  chatInput.classList.toggle('wishing', kind === 'wish');
+  chatInput.classList.toggle('streaming', state.streaming);
+  const editorBackdrop = $('intervene-backdrop');
+  const editorOpen = kind === 'editor' || kind === 'recipePreview';
+  editorBackdrop.inert = !editorOpen;
+  editorBackdrop.setAttribute('aria-hidden', String(!editorOpen));
+  editorBackdrop.classList.toggle('visible', editorOpen);
+  const settingsModal = $('settings-backdrop');
+  const settingsOpen = ui.popover === 'settings';
+  settingsModal.inert = !settingsOpen;
+  settingsModal.setAttribute('aria-hidden', String(!settingsOpen));
+  settingsModal.classList.toggle('visible', settingsOpen);
+  $('sessions-menu').classList.toggle('visible',
+    ui.popover === 'sessionsMenu');
+  $('scan-backdrop').hidden = kind !== 'scan';
+  updateShareButton();
+}
+
+// Clear, session loads, and conversation restores replace the conversation
+// under every transient surface; each machine answers the transition:
+// a running search aborts, an editor draft cancels, popovers close, and
+// the wish panel drops (recipes it found stay in state).
+function uiResetForConversationReplace() {
+  if (ui.mode.kind === 'scan') closeInterventionScan();
+  if (ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview') {
+    closeInterventionEditor();
+  }
+  if (ui.mode.kind === 'wish') dismissWishPopover({ updateClearance: false });
+  if (ui.popover) uiSetPopover(null);
 }
 function renderAll() {
   const selectedReply = state.selectedToken &&
     state.messages[state.selectedToken.msgIdx]?.role === 'assistant';
-  const modalWishSearch = !!(_wish && _wish.search);
-  // A running/paused backward search owns a frozen copy of its original
-  // context and survives incidental rerenders. The model composer is hidden
-  // for this entire modal state. A not-yet-started draft follows selection.
-  if (isPresentation() || (!modalWishSearch && (state.streaming || !selectedReply))) {
+  // A running/paused search or its results view pins the panel; a compose
+  // or refusal panel follows the selection. Reading the ui phase (not the
+  // leftover _wish.search history) is what lets Clear and stale-selection
+  // renders drop an unpinned panel.
+  const wishPinned = uiWishPinned();
+  if (isPresentation() || (!wishPinned && (state.streaming || !selectedReply))) {
     dismissWishPopover({ updateClearance: false });
   }
   const shouldResolveChatDetailCollision = !!state.selectedCell && !chatDetailClearanceApplied;
@@ -6113,7 +6185,7 @@ function renderAll() {
   chatDetailClearanceApplied = !!state.selectedCell;
   renderGrid({ focusSelection: shouldFocusSelection });
   renderTimeline();
-  if (modalWishSearch) updateWishSearchStatus();
+  if (wishPinned) updateWishSearchStatus();
 }
 
 // ----- Ingest a snapshot -----
@@ -6533,8 +6605,10 @@ async function runSelectedInterventionRecipe() {
   const recipe = interventionRecipeById(state.selectedInterventionRecipeId);
   const baseline = recipe && recipeBaselineRun(recipe);
   if (!recipe || !baseline || state.streaming) return;
-  if (_wish?.search) dismissWishPopover({ updateClearance: false });
-  if ($('intervene-backdrop').classList.contains('visible')) closeInterventionEditor();
+  if (ui.mode.kind === 'wish') dismissWishPopover({ updateClearance: false });
+  if (ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview') {
+    closeInterventionEditor();
+  }
   saveState();
   await rerunWithSpecs(recipeToSpecs(recipe), {
     tempOverride: 0,
@@ -6762,7 +6836,7 @@ function renderSessionsList(sessions) {
 // session fetches it while the card morphs to the corner popover's
 // geometry and collapses into the Saved Sessions button, which pops in.
 async function openSessionPicker() {
-  document.documentElement.classList.add('picker-open');
+  uiSetMode({ kind: 'picker' });
   const list = $('session-picker-list');
   list.innerHTML = '<div class="picker-empty">Loading sessions…</div>';
   try {
@@ -6855,7 +6929,7 @@ function pickSessionFromPicker(sessionId, itemEl) {
 function _animatePickerAway(card) {
   const cornerBars = [$('corner-actions'), $('corner-actions-left')];
   const finish = () => {
-    document.documentElement.classList.remove('picker-open');
+    if (ui.mode.kind === 'picker') uiSetMode({ kind: 'normal' });
     $('session-picker').classList.remove('closing');
     $('session-picker-list').classList.remove('picker-loading');
     card.classList.remove('morphing', 'collapsing');
@@ -6912,13 +6986,13 @@ async function refreshSessions() {
 }
 
 async function toggleSessionsMenu() {
-  const menu = $('sessions-menu');
-  const visible = menu.classList.toggle('visible');
-  if (visible) await refreshSessions();
+  const opening = ui.popover !== 'sessionsMenu';
+  uiSetPopover(opening ? 'sessionsMenu' : null);
+  if (opening) await refreshSessions();
 }
 
 function closeSessionsMenu() {
-  $('sessions-menu').classList.remove('visible');
+  if (ui.popover === 'sessionsMenu') uiSetPopover(null);
 }
 
 async function saveCurrentSession() {
@@ -6961,6 +7035,7 @@ async function loadSession(sessionId) {
       return;
     }
     const data = await apiGetSession(sessionId);
+    uiResetForConversationReplace();
     if (restoreConversation(data)) {
       // This session file IS the durable full copy of the conversation —
       // remember it so trimmed localStorage restores can recover from it.
@@ -7010,7 +7085,7 @@ $('grid-body').addEventListener('click', (e) => {
   if (!el) return;
   if (_ivDraft) {
     const layer = el.dataset.layer !== undefined ? +el.dataset.layer : null;
-    if (document.documentElement.classList.contains('iv-picking')) {
+    if (ui.mode.kind === 'editor' && ui.mode.picking) {
       if (layer !== null && Number.isFinite(layer)) toggleDraftLayer(layer);
     } else if (el.classList.contains('selectable')) {
       reanchorIntervention(+el.dataset.pos, layer);
@@ -7069,8 +7144,8 @@ $('save-current-session').onclick = (e) => {
   saveCurrentSession();
 };
 document.addEventListener('click', (e) => {
+  if (ui.popover !== 'sessionsMenu') return;
   const menu = $('sessions-menu');
-  if (!menu.classList.contains('visible')) return;
   if (menu.contains(e.target) || $('sessions-btn').contains(e.target)) return;
   closeSessionsMenu();
 });
@@ -7079,6 +7154,7 @@ $('clear-btn').onclick = () => {
   if (state.streaming) return;  // don't clear mid-stream
   if (state.messages.length === 0) return;
   if (!confirm('Clear the conversation? This cannot be undone.')) return;
+  uiResetForConversationReplace();
   clearState();
   renderAll();
 };
@@ -7180,7 +7256,7 @@ function openInterventionScan(opts = {}) {
 async function _runInterventionScan(body, uiMode) {
   if (_scanAbort) _scanAbort.abort();
   _scanArmed = null;
-  $('scan-backdrop').hidden = false;
+  uiSetMode({ kind: 'scan' });
   $('scan-backdrop').dataset.scanContext = _scanContext;
   $('scan-map').innerHTML = '';
   const what = uiMode === 'swap'
@@ -7398,7 +7474,7 @@ function _applyScanChoice(layer, alpha, uiMode) {
 function closeInterventionScan() {
   if (_scanAbort) { _scanAbort.abort(); _scanAbort = null; }
   _wishScanGen++;
-  $('scan-backdrop').hidden = true;
+  if (ui.mode.kind === 'scan') uiSetMode({ kind: 'normal' });
 }
 
 $('iv-scan').onclick = () => openInterventionScan();
@@ -7478,14 +7554,9 @@ function _wishDisplayWord(tokens, tokenIdx) {
 }
 
 function dismissWishPopover({ updateClearance = true } = {}) {
-  const pop = $('wish-pop');
-  if (!pop) return;
-  const wasVisible = !pop.hidden;
+  const wasVisible = ui.mode.kind === 'wish';
   stopWishSearch({ silent: true });
-  pop.hidden = true;
-  pop.classList.remove('search-mode');
-  $('chat-input').classList.remove('wishing');
-  document.documentElement.classList.remove('wish-search-active');
+  if (wasVisible) uiSetMode({ kind: 'normal' });
   clearWishSearchPaint();
   if (state.gridRows.length) renderGrid({ keepScroll: true });
   _wishSeed = null;
@@ -7548,12 +7619,7 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
   $('wish-current').textContent = lexical.word.trim();
   $('wish-input').value = '';
   $('wish-go').disabled = true;
-  $('wish-compose').hidden = false;
-  $('wish-search-view').hidden = true;
-  $('wish-pop').classList.remove('search-mode');
-  const pop = $('wish-pop');
-  pop.hidden = false;
-  $('chat-input').classList.add('wishing');
+  uiSetMode({ kind: 'wish', phase: 'compose' });
   updateScrollClearance();
   $('wish-input').focus();
   return true;
@@ -7561,10 +7627,10 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
 
 document.addEventListener('click', (e) => {
   const pop = $('wish-pop');
-  if (pop.hidden || pop.contains(e.target)) return;
+  if (ui.mode.kind !== 'wish' || pop.contains(e.target)) return;
   // Once a bounded search begins, the input replacement is a persistent
   // status surface; incidental grid/chat clicks must not cancel GPU work.
-  if (_wish && _wish.search) return;
+  if (uiWishPinned()) return;
   // Selection rerenders the chat/grid before this same click reaches the
   // document, detaching e.target from its old ancestors. composedPath()
   // preserves the dispatch-time route, so neither token representation is
@@ -7897,6 +7963,9 @@ function finishWishSearch(data = {}) {
   search.paused = false;
   search.pauseRequested = false;
   endWishSearchTimer();
+  // The panel may already be gone (a dismissal cancelled the stream and
+  // this finish arrived from its abort path) — never reopen it.
+  if (ui.mode.kind === 'wish') uiSetMode({ kind: 'wish', phase: 'done' });
   search.visual.current.clear();
   paintWishSearchCells();
   $('wish-search-stop').hidden = true;
@@ -8262,10 +8331,8 @@ function wishSearchDirtyBaselineRemedy() {
 // remedy — no progress track, no tested counter, no extension button —
 // and the recipes rail never reports a search that did not run.
 function showWishSearchRefusal(wish) {
-  $('wish-pop').classList.add('search-mode');
-  $('wish-compose').hidden = true;
+  uiSetMode({ kind: 'wish', phase: 'refusal' });
   const view = $('wish-search-view');
-  view.hidden = false;
   view.classList.remove('success');
   $('wish-search-title').textContent = 'Start from a clean baseline';
   $('wish-search-sub').textContent =
@@ -8313,11 +8380,8 @@ async function runAdaptiveWishSearch() {
     searchId: null,
   };
   renderInterventionRecipes();
-  document.documentElement.classList.add('wish-search-active');
+  uiSetMode({ kind: 'wish', phase: 'searching' });
   renderGrid({ keepScroll: true });
-  $('wish-pop').classList.add('search-mode');
-  $('wish-compose').hidden = true;
-  $('wish-search-view').hidden = false;
   $('wish-search-view').classList.remove('success');
   $('wish-search-track').hidden = false;
   $('wish-search-stats').hidden = false;
@@ -8422,7 +8486,7 @@ $('wish-search-apply').onclick = previewVerifiedWishRecipe;
 function openWishModal(strategy) {
   if (!_wish) return;
   _scanContext = 'wish-' + strategy;
-  $('scan-backdrop').hidden = false;
+  uiSetMode({ kind: 'scan' });
   $('scan-map').innerHTML = '';
   $('scan-progress').textContent = '';
   $('scan-rerun').hidden = true;
@@ -8766,11 +8830,16 @@ $('grid-body').addEventListener('mouseleave', () => {
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('scan-backdrop').hidden) { closeInterventionScan(); return; }
-  if ($('intervene-backdrop').classList.contains('visible')) { cancelInterventionEditor(); return; }
-  if ($('settings-backdrop').classList.contains('visible')) { cancelSettings(); return; }
-  if ($('sessions-menu').classList.contains('visible')) { closeSessionsMenu(); return; }
-  if (!$('wish-pop').hidden) dismissWishPopover();
+  // Escape pops the ui tiers: the floating popover first, then whatever
+  // mode owns the screen.
+  if (ui.popover === 'settings') { cancelSettings(); return; }
+  if (ui.popover === 'sessionsMenu') { closeSessionsMenu(); return; }
+  if (ui.mode.kind === 'scan') { closeInterventionScan(); return; }
+  if (ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview') {
+    cancelInterventionEditor();
+    return;
+  }
+  if (ui.mode.kind === 'wish') dismissWishPopover();
 });
 
 function escapeHtml(s) {
@@ -8784,6 +8853,7 @@ function escapeAttr(s) {
 ensureInfoReady();
 loadGithubStars();
 loadSettings();
+applyUiState();
 // A shared link opens its conversation directly; any failure (deleted or
 // renamed session) clears the fragment and falls back to the picker
 // instead of stranding the visitor on a blank app.
@@ -8799,7 +8869,7 @@ async function openDeepLinkedSession(sessionId) {
     openSessionPicker();
     return;
   }
-  if (document.documentElement.classList.contains('picker-open')) {
+  if (ui.mode.kind === 'picker') {
     _animatePickerAway($('session-picker-card'));
   }
 }
