@@ -7980,7 +7980,10 @@ function finishWishSearch(data = {}) {
       : 'Verified for the earlier reply; the conversation has since advanced, so it cannot be re-run safely here.';
     showWishSearchResult(
       'verified',
-      `${search.verified.cells.length}-cell workspace recipe`,
+      `${search.verified.cells.length}-cell workspace recipe` +
+        (search.recipeByKey.size > 1
+          ? ` · ${search.recipeByKey.size} recipes collected`
+          : ''),
       wishSearchRecipeText(search.verified.cells),
     );
     $('wish-search-apply').hidden = false;
@@ -8044,18 +8047,29 @@ function pauseWishSearchUI(obj) {
     // then charges the logical clock exactly to 1:00 at this phase boundary.
     search.elapsedSeconds = search.budgetSeconds;
     const premiseRecipe = interventionRecipeById(search.premiseRecipeId);
-    $('wish-search-title').textContent = premiseRecipe
-      ? 'Premise recipe found — no exact match yet'
-      : 'No verified recipe yet';
-    $('wish-search-stage').textContent = premiseRecipe
-      ? `Swapping the premise ${recipeDirectionText(premiseRecipe)} redirected the reply. Add two minutes to keep searching for an exact replacement.`
-      : 'The one-minute search is paused. Add two minutes to continue the same search.';
-    const diagnostic = premiseRecipe
-      ? `Deterministic replay said “${(premiseRecipe.output || '').trim()}”. Close this panel to keep the premise recipe as the result.`
-      : search.partials
-        ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} remain leads, not verified solutions.`
-        : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
+    const hasVerified = !!search.verified;
+    $('wish-search-title').textContent = hasVerified
+      ? 'Verified recipe found — minute complete'
+      : premiseRecipe
+        ? 'Premise recipe found — no exact match yet'
+        : 'No verified recipe yet';
+    $('wish-search-stage').textContent = hasVerified
+      ? `Full deterministic replay said “${search.verified.text.trim()}”. Add two minutes to keep searching for more recipes.`
+      : premiseRecipe
+        ? `Swapping the premise ${recipeDirectionText(premiseRecipe)} redirected the reply. Add two minutes to keep searching for an exact replacement.`
+        : 'The one-minute search is paused. Add two minutes to continue the same search.';
+    const diagnostic = hasVerified
+      ? `${search.recipeByKey.size} recipe${search.recipeByKey.size === 1 ? '' : 's'} collected so far. Close this panel to keep them, or search deeper.`
+      : premiseRecipe
+        ? `Deterministic replay said “${(premiseRecipe.output || '').trim()}”. Close this panel to keep the premise recipe as the result.`
+        : search.partials
+          ? `${search.partials} changed result${search.partials === 1 ? '' : 's'} remain leads, not verified solutions.`
+          : 'Unchanged, off-target, and repetitive results were not offered as solutions.';
     showWishSearchResult('', diagnostic);
+    if (hasVerified) {
+      $('wish-search-apply').hidden = false;
+      $('wish-search-apply').disabled = !search.verifiedRecipeId || state.streaming;
+    }
     renderWishSearchDiagnostics(search);
     $('wish-search-stop').hidden = true;
     $('wish-search-deeper').disabled = false;

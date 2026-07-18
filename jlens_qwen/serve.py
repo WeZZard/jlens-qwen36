@@ -1705,6 +1705,11 @@ class AdaptiveInterventionSearchRequest(BaseModel):
     # recipes are replay-tested. Redirects are reported as premise results
     # with their larger causal footprint, never as exact verified recipes.
     enable_premise_search: bool = False
+    # End the search at the first verified recipe (evaluation harnesses).
+    # By default the search exhausts its time budget and reports every
+    # verified recipe it finds; a verified recipe also suppresses the
+    # premise proposal, which exists for when the literal direction fails.
+    stop_on_verified: bool = False
 
 
 class AdaptiveInterventionSearchControlRequest(BaseModel):
@@ -3395,7 +3400,7 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
 
     async def gen():
         tested = 0
-        verified_candidate: dict[str, Any] | None = None
+        verified_candidates: list[dict[str, Any]] = []
         budget_exhausted = False
         deadline_queue_wait_ms = 0.0
         current_stage: str | None = None
@@ -3459,9 +3464,14 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
             return True
 
         def _queue_premise_proposal(origin: str) -> None:
-            """One proposal per search, and only with budget to use it."""
+            """One proposal per search, and only with budget to use it.
+
+            A verified literal recipe also suppresses the proposal: the
+            premise stage exists for when the literal direction fails.
+            """
             if (not premise_state["enabled"]
                     or premise_state["attempted"]
+                    or verified_candidates
                     or _budget_remaining_seconds()
                     < premise_min_budget_seconds):
                 return
@@ -4102,8 +4112,13 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                         },
                     })
                     if verified:
-                        verified_candidate = candidate
-                        break
+                        # The search keeps going: a verified recipe joins the
+                        # results (and may seed refinements and pairs below)
+                        # while the budget hunts for more, unless the caller
+                        # asked for first-hit termination.
+                        verified_candidates.append(candidate)
+                        if req.stop_on_verified:
+                            break
 
                     if is_premise and classification == "premise_redirect":
                         premise_state["redirects"] += 1
@@ -4204,7 +4219,7 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                         _queue_premise_proposal("early")
                     await asyncio.sleep(0)
 
-                if verified_candidate:
+                if verified_candidates and req.stop_on_verified:
                     break
                 if (control is not None
                         and not control.extended
@@ -4228,11 +4243,16 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 break
 
             elapsed = _elapsed_seconds()
-            if (not verified_candidate
+            if (not verified_candidates
                     and elapsed >= _time_budget_seconds()):
                 budget_exhausted = True
-            if verified_candidate:
-                status, stop_reason = "success", "verified"
+            if verified_candidates:
+                status = "success"
+                stop_reason = (
+                    "verified" if req.stop_on_verified
+                    else "time_budget" if budget_exhausted
+                    else "exhausted_candidates"
+                )
             elif budget_exhausted:
                 status, stop_reason = "budget_exhausted", "time_budget"
             else:
@@ -4243,11 +4263,14 @@ async def intervention_search_adaptive(req: AdaptiveInterventionSearchRequest):
                 "tested": tested,
                 "max_candidates": max_candidates,
                 "verified_candidate_id": (
-                    verified_candidate["id"] if verified_candidate else None
+                    verified_candidates[0]["id"]
+                    if verified_candidates else None
                 ),
                 "verified_cells": (
-                    verified_candidate["cells"] if verified_candidate else None
+                    verified_candidates[0]["cells"]
+                    if verified_candidates else None
                 ),
+                "verified_count": len(verified_candidates),
                 "desired_response": desired_response,
                 "elapsed_seconds": elapsed,
                 "time_budget_seconds": _time_budget_seconds(),

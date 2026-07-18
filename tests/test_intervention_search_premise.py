@@ -345,6 +345,45 @@ def test_premise_proposal_falls_back_to_exhaustion_on_a_small_queue(premise_env)
     assert end["premise"]["redirects"] == 1
 
 
+def test_search_continues_after_a_verified_recipe(premise_env):
+    model, _ = premise_env
+    # Every intervened replay says the desired reply, so every literal
+    # candidate verifies.
+    model.candidate_sequence = [2, 0]
+    events = asyncio.run(_run(_request(enable_premise_search=True)))
+    by_name = {}
+    for name, data in events:
+        by_name.setdefault(name, []).append(data)
+
+    candidates = by_name.get("candidate", [])
+    verified = [data for data in candidates if data["verified"]]
+    assert len(candidates) > 1
+    assert len(verified) > 1
+
+    end = by_name["search_end"][-1]
+    assert end["status"] == "success"
+    assert end["stop_reason"] == "exhausted_candidates"
+    assert end["verified_count"] == len(verified)
+    assert end["verified_candidate_id"] == verified[0]["id"]
+    assert end["verified_cells"] == verified[0]["cells"]
+    # A verified literal recipe suppresses the premise proposal.
+    assert "premise_proposal" not in by_name
+    assert end["premise"]["attempted"] is False
+
+
+def test_stop_on_verified_ends_at_the_first_recipe(premise_env):
+    model, _ = premise_env
+    model.candidate_sequence = [2, 0]
+    events = asyncio.run(_run(_request(stop_on_verified=True)))
+    candidates = [data for name, data in events if name == "candidate"]
+    assert len(candidates) == 1
+    assert candidates[0]["verified"] is True
+    end = [data for name, data in events if name == "search_end"][-1]
+    assert end["status"] == "success"
+    assert end["stop_reason"] == "verified"
+    assert end["verified_count"] == 1
+
+
 def test_premise_stage_is_off_by_default(premise_env):
     events = asyncio.run(_run(_request()))
     names = {name for name, _ in events}

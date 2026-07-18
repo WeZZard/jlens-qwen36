@@ -132,8 +132,12 @@ and the requested reply edit and proposes up to two latent premise
 directions (`France → China` for a `Paris → Beijing` request; contract and
 ~10–15 s cost measured in [Planner latency 01](perf/planner-01.md)). The
 `premise_proposal` event names its trigger in an `origin` field
-(`early`, `exhausted`, `extension`, or `thorough`), and an easy literal
-win that verifies before the eighth single still ends the search first. Each resolved direction is
+(`early`, `exhausted`, `extension`, or `thorough`). A verified literal
+recipe suppresses the proposal — the premise stage exists for when the
+literal direction fails — but it does not end the search: the adaptive
+search exhausts its time budget and reports every verified recipe it
+finds (`verified_count` in `search_end`; `stop_on_verified: true`
+restores first-hit termination for evaluation harnesses). Each resolved direction is
 replay-tested as a band-clamped swap across the fitted workspace band at
 every position (`from_position: 0`); a passing band is bisected while the
 budget lasts, so the reported footprint is the smallest band that still

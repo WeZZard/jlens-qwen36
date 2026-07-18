@@ -368,7 +368,7 @@ def test_refinement_pairs_and_triples_preserve_exact_cells():
 def test_endpoint_ranks_then_verifies_exact_response(adaptive_env):
     model, compiled = adaptive_env
 
-    events = asyncio.run(_run(_request()))
+    events = asyncio.run(_run(_request(stop_on_verified=True)))
 
     assert [name for name, _ in events] == [
         "search_start",
@@ -466,6 +466,7 @@ def test_thorough_search_seeds_pairs_from_excluded_promising_singles(
     events = asyncio.run(_run(_request(
         profile="thorough",
         time_budget_seconds=180.0,
+        stop_on_verified=True,
         exclude_recipe_keys=excluded,
         prior_promising=prior,
     )))
@@ -751,6 +752,7 @@ def test_live_search_pause_resume_keeps_one_stream_and_active_clock(
     async def scenario():
         response = await serve.intervention_search_adaptive(_request(
             allow_continuation=True,
+            stop_on_verified=True,
         ))
         iterator = response.body_iterator
         events = [await _next_event(iterator)]
@@ -816,6 +818,7 @@ def test_live_pause_interrupts_gpu_queue_without_starting_or_losing_work(
         monkeypatch.setattr(serve, "_gpu_lock", lock)
         response = await serve.intervention_search_adaptive(_request(
             allow_continuation=True,
+            stop_on_verified=True,
         ))
         iterator = response.body_iterator
         start = await _next_event(iterator)
@@ -872,6 +875,7 @@ def test_initial_phase_extends_same_scheduler_without_recipe_replay(
     async def scenario():
         response = await serve.intervention_search_adaptive(_request(
             allow_continuation=True,
+            stop_on_verified=True,
         ))
         iterator = response.body_iterator
         events = []
@@ -941,6 +945,7 @@ def test_live_search_disconnect_discards_continuation(adaptive_env):
     async def scenario():
         response = await serve.intervention_search_adaptive(_request(
             allow_continuation=True,
+            stop_on_verified=True,
         ))
         iterator = response.body_iterator
         start = await _next_event(iterator)
@@ -964,7 +969,7 @@ def test_pairs_are_interleaved_before_single_queues_drain(
     })
     monkeypatch.setattr(serve, "_model", model)
 
-    events = asyncio.run(_run(_request()))
+    events = asyncio.run(_run(_request(stop_on_verified=True)))
 
     candidates = [data for name, data in events if name == "candidate"]
     assert candidates[0]["stage"] == "evidence_single"
@@ -1007,6 +1012,7 @@ def test_thorough_triple_runs_before_remaining_seeded_pairs(
     events = asyncio.run(_run(_request(
         profile="thorough",
         time_budget_seconds=180.0,
+        stop_on_verified=True,
         exclude_recipe_keys=excluded,
         prior_promising=prior,
     )))
