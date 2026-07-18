@@ -1745,6 +1745,7 @@
   #wish-go:disabled { opacity: 0.42; cursor: default; }
   .wish-hint { font-size: 11px; color: var(--text-3); margin-top: 8px; }
   #wish-search-view[hidden], #wish-compose[hidden] { display: none; }
+  #wish-search-track[hidden], #wish-search-stats[hidden] { display: none; }
   .wish-search-head {
     display: flex; align-items: flex-start; gap: 12px;
   }
@@ -2116,7 +2117,7 @@
           </div>
           <button id="wish-search-close" type="button" aria-label="Close search">×</button>
         </div>
-        <div class="wish-search-track"><span id="wish-search-fill"></span></div>
+        <div id="wish-search-track" class="wish-search-track"><span id="wish-search-fill"></span></div>
         <div class="wish-search-status">
           <span id="wish-search-stage">Ranking prefilled positions…</span>
           <span id="wish-search-stats">0 tested · 0:00</span>
@@ -7785,11 +7786,6 @@ function finishWishSearch(data = {}) {
     );
     $('wish-search-apply').hidden = false;
     $('wish-search-apply').disabled = !search.verifiedRecipeId || state.streaming;
-  } else if (data.stop_reason === 'dirty_baseline') {
-    $('wish-search-title').textContent = 'Start from a clean baseline';
-    $('wish-search-stage').textContent =
-      'Disable existing interventions before searching, so the recipe can be verified in isolation.';
-    showWishSearchResult('', 'No search was run and no intervention was changed.');
   } else if (data.stop_reason === 'baseline_mismatch' || data.status === 'baseline_mismatch') {
     $('wish-search-title').textContent = 'Displayed reply changed';
     $('wish-search-stage').textContent =
@@ -8069,9 +8065,59 @@ function stopWishSearch({ silent = false } = {}) {
   if (!silent) finishWishSearch({ status: 'cancelled', stop_reason: 'cancelled' });
 }
 
+// Name the cheapest cure for the exact way this baseline is dirty:
+// enabled-but-unapplied specs only need disabling, while an intervened
+// displayed reply needs a clean run (or the clean compare variant).
+function wishSearchDirtyBaselineRemedy() {
+  if (!(state.appliedInterventions || []).length) {
+    return 'Disable the enabled interventions first, so the recipe can be verified in isolation.';
+  }
+  const other = state.compare?.other;
+  const cleanOtherRun = state.compare?.activeIsIntervened &&
+    other && !(other.appliedInterventions || []).length;
+  if (cleanOtherRun) {
+    return enabledInterventions().length
+      ? 'This reply was generated with interventions applied. Disable the enabled interventions and switch to the Baseline run, then search from there.'
+      : 'This reply was generated with interventions applied. Switch to the Baseline run, then search from there.';
+  }
+  return 'This reply was generated with interventions applied. Disable every intervention and ask again, or clear the session, to get a clean baseline.';
+}
+
+// A refused search creates no search state: the modal renders only the
+// remedy — no progress track, no tested counter, no extension button —
+// and the recipes rail never reports a search that did not run.
+function showWishSearchRefusal(wish) {
+  $('wish-pop').classList.add('search-mode');
+  $('wish-compose').hidden = true;
+  const view = $('wish-search-view');
+  view.hidden = false;
+  view.classList.remove('success');
+  $('wish-search-title').textContent = 'Start from a clean baseline';
+  $('wish-search-sub').textContent =
+    `⟨${wishSelectedText(wish)}⟩ → ⟨${wish.wishText}⟩`;
+  $('wish-search-stage').textContent = wishSearchDirtyBaselineRemedy();
+  $('wish-search-track').hidden = true;
+  $('wish-search-stats').hidden = true;
+  $('wish-search-fill').style.width = '0';
+  $('wish-search-diagnostics').replaceChildren();
+  $('wish-search-stop').hidden = true;
+  $('wish-search-deeper').hidden = true;
+  $('wish-search-apply').hidden = true;
+  showWishSearchResult('', 'No search was run and no intervention was changed.');
+  updateScrollClearance();
+}
+
 async function runAdaptiveWishSearch() {
   if (!_wish) return;
   const wish = _wish;
+  // Search results are only reproducible when the displayed response is a
+  // clean baseline. Pending enabled edits matter just as much as edits that
+  // were already applied to the active run. Refuse before any search state
+  // exists, so the refusal cannot wear running-search chrome.
+  if ((state.appliedInterventions || []).length || enabledInterventions().length) {
+    showWishSearchRefusal(wish);
+    return;
+  }
   const budgetSeconds = 60;
   const messages = _scanMessages();
   const visual = {
@@ -8098,6 +8144,8 @@ async function runAdaptiveWishSearch() {
   $('wish-compose').hidden = true;
   $('wish-search-view').hidden = false;
   $('wish-search-view').classList.remove('success');
+  $('wish-search-track').hidden = false;
+  $('wish-search-stats').hidden = false;
   $('wish-search-title').textContent = 'Searching backward';
   $('wish-search-sub').textContent =
     `⟨${wishSelectedText(wish)}⟩ → ⟨${wish.wishText}⟩ · up to 1 minute`;
@@ -8114,13 +8162,6 @@ async function runAdaptiveWishSearch() {
   $('wish-search-fill').style.width = '0';
   updateScrollClearance();
 
-  // Search results are only reproducible when the displayed response is a
-  // clean baseline. Pending enabled edits matter just as much as edits that
-  // were already applied to the active run.
-  if ((state.appliedInterventions || []).length || enabledInterventions().length) {
-    finishWishSearch({ status: 'dirty_baseline', stop_reason: 'dirty_baseline' });
-    return;
-  }
   beginWishSearchTimer();
 
   try {
