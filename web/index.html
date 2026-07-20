@@ -1091,7 +1091,15 @@
     white-space: pre-wrap;
   }
   #iv-recipe-actions { margin-top: 16px; }
-  #iv-recipe-run:disabled, #iv-recipe-duplicate:disabled { opacity: 0.42; cursor: default; }
+  #iv-recipe-run:disabled { opacity: 0.42; cursor: default; }
+  /* Same × idiom as the wish panel's close. */
+  #iv-recipe-close {
+    flex-shrink: 0; margin: -4px -6px 0 -4px;
+    border: 0; background: transparent; color: var(--settings-text-tertiary);
+    width: 28px; height: 28px; padding: 0; border-radius: 50%;
+    font: inherit; font-size: 18px; line-height: 28px; cursor: pointer;
+  }
+  #iv-recipe-close:hover { background: rgba(60, 50, 30, 0.08); }
 
   /* ----- Grid (J-lens output): rows=positions, columns=layers, label on right ----- */
   /* No top padding so the sticky layer-header aligns with the very top of the
@@ -2228,6 +2236,7 @@
             <div id="iv-recipe-direction" class="iv-recipe-direction"></div>
           </div>
           <span id="iv-recipe-status" class="iv-recipe-status"></span>
+          <button id="iv-recipe-close" type="button" aria-label="Close recipe preview">×</button>
         </div>
         <div class="iv-recipe-readonly-note">System-composed recipe · read only</div>
         <div id="iv-recipe-cells" class="iv-recipe-cells"></div>
@@ -2236,9 +2245,7 @@
           <blockquote id="iv-recipe-output"></blockquote>
         </div>
         <div class="actions" id="iv-recipe-actions">
-          <button class="cancel" id="iv-recipe-close" type="button">Close</button>
           <span class="spacer"></span>
-          <button class="cancel" id="iv-recipe-duplicate" type="button">Duplicate as manual</button>
           <button class="ok" id="iv-recipe-run" type="button">Run this recipe</button>
         </div>
       </div>
@@ -5356,15 +5363,6 @@ function openRecipePreview(recipeId) {
   setTimeout(updateScrollClearance, 380);
 }
 
-function duplicateRecipeAsManual(recipeId = _ivRecipePreviewId) {
-  const recipe = interventionRecipeById(recipeId);
-  if (!recipe || isPresentation()) return;
-  const copies = recipeToSpecs(recipe).map((spec) => ({ ...spec, enabled: false }));
-  state.interventions.push(...copies);
-  afterInterventionChange();
-  closeInterventionEditor();
-}
-
 function openInterventionEditor({ seed = null, editId = null } = {}) {
   if (isPresentation() || !interventionsAvailable()) return;
   // The intervening status sinks the input box (and its Stop button), so
@@ -7076,7 +7074,6 @@ $('iv-ok').onclick = commitInterventionEditor;
 $('iv-cancel').onclick = cancelInterventionEditor;
 $('iv-delete').onclick = deleteFromInterventionEditor;
 $('iv-recipe-close').onclick = closeInterventionEditor;
-$('iv-recipe-duplicate').onclick = () => duplicateRecipeAsManual();
 $('iv-recipe-run').onclick = () => runSelectedInterventionRecipe();
 
 // ----- Intervention scan: probe grid over layers × strength -----

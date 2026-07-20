@@ -88,7 +88,8 @@ def test_recipe_choice_exposes_every_cell_strength_and_is_immutable():
     assert "meta.textContent = recipeCellSummary(recipe)" in HTML
     assert "alpha.textContent = `α ${formatAlpha(cell.alpha)}`" in HTML
     assert "_ivDraft = null" in HTML
-    assert "Duplicate as manual" in HTML
+    assert "Duplicate as manual" not in HTML
+    assert 'id="iv-recipe-close" type="button" aria-label="Close recipe preview"' in HTML
 
 
 def test_saved_sessions_round_trip_recipe_state():
