@@ -88,6 +88,7 @@
        the 12-14px radii most controls use. This one number tunes the
        curvature of every control in the app. */
     --corner-continuous: superellipse(1.8);
+    --ccr: 14px;
     /* Semantic status colors — one value per meaning, app-wide. */
     --status-verified: #3f8f55;
     --status-danger: #e0483e;
@@ -1111,6 +1112,69 @@
     font-size: 14px; font-weight: 600;
   }
   #iv-recipe-run:disabled { opacity: 0.42; cursor: default; }
+  /* The clip path replaces border-radius entirely on these surfaces —
+     rounding the paint first would cut into the clip's fuller curve.
+     Guarded so engines without shape() keep the round fallback. */
+  @supports (clip-path: shape(from 0px 0px, curve to 0px 1px with 0px 0px / 0px 1px, close)) {
+    /* Safari has no corner-shape (CSS.supports fails for every value in
+       WebKit 26.5), so these surfaces draw continuous corners as a clip
+       path: one cubic per corner, entering at 1.28 x r along each edge
+       with control points 0.32 x r from the corner (~superellipse
+       exponent 3). Declared per consuming element because var(--ccr)
+       substitutes where the custom property is DECLARED, not used. */
+    #intervene-popup #iv-recipe-run, #iv-recipe-output,
+    .iv-recipe-readonly-note, .iv-recipe-cell, .iv-recipe-cell::before {
+      --continuous-clip: shape(
+        from calc(1.28 * var(--ccr)) 0px,
+        line to calc(100% - 1.28 * var(--ccr)) 0px,
+        curve to 100% calc(1.28 * var(--ccr))
+          with calc(100% - 0.32 * var(--ccr)) 0px / 100% calc(0.32 * var(--ccr)),
+        line to 100% calc(100% - 1.28 * var(--ccr)),
+        curve to calc(100% - 1.28 * var(--ccr)) 100%
+          with 100% calc(100% - 0.32 * var(--ccr)) / calc(100% - 0.32 * var(--ccr)) 100%,
+        line to calc(1.28 * var(--ccr)) 100%,
+        curve to 0px calc(100% - 1.28 * var(--ccr))
+          with calc(0.32 * var(--ccr)) 100% / 0px calc(100% - 0.32 * var(--ccr)),
+        line to 0px calc(1.28 * var(--ccr)),
+        curve to calc(1.28 * var(--ccr)) 0px
+          with 0px calc(0.32 * var(--ccr)) / calc(0.32 * var(--ccr)) 0px,
+        close
+      );
+    }
+    #intervene-popup #iv-recipe-run {
+      border-radius: 0;
+      clip-path: var(--continuous-clip);
+    }
+    #intervene-popup #iv-recipe-run:focus-visible {
+      /* The clip would swallow an outline; ring inside instead. */
+      outline: none;
+      box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55);
+    }
+    #iv-recipe-output, .iv-recipe-readonly-note {
+      border-radius: 0;
+      clip-path: var(--continuous-clip);
+    }
+    #iv-recipe-output { --ccr: 12px; }
+    .iv-recipe-readonly-note { --ccr: 10px; }
+    /* The cell card keeps its hairline: the card clips to the outer
+       curve filled with the border color, and ::before paints the fill
+       1px inside on the same curve — the ring between the clips IS the
+       border. isolation keeps the negative z-index inside the card. */
+    .iv-recipe-cell {
+      --ccr: 12px;
+      position: relative; isolation: isolate;
+      border: 0; border-radius: 0;
+      background: var(--glass-recessed-border);
+      clip-path: var(--continuous-clip);
+    }
+    .iv-recipe-cell::before {
+      content: '';
+      position: absolute; inset: 1px; z-index: -1;
+      --ccr: 11px;
+      clip-path: var(--continuous-clip);
+      background: #fffcf1;
+    }
+  }
   /* Same × idiom as the wish panel's close. */
   #iv-recipe-close {
     flex-shrink: 0; margin: -4px -6px 0 -4px;
