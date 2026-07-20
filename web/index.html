@@ -1669,15 +1669,17 @@
      every exact cell's signal strength visible without opening the panel. */
   .recipe-item {
     display: flex; align-items: center; gap: 6px;
-    max-width: min(360px, calc(100vw - 32px)); pointer-events: auto;
+    max-width: min(460px, calc(100vw - 32px)); pointer-events: auto;
   }
   .recipe-item .recipe-tag {
-    display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto;
+    display: grid; grid-template-columns: 12px auto max-content 1fr auto;
     column-gap: 8px; row-gap: 2px; align-items: center;
-    max-width: 340px; white-space: normal;
+    white-space: normal;
   }
-  /* Letter, radio, and dot each center on the whole capsule; the
-     direction line and its meta share a column so they left-align. */
+  /* Letter, radio, and dot each center on the whole capsule. The
+     direction line and its meta share one content-sized column and both
+     center within it, so their horizontal centers align and neither
+     truncates; a 1fr spacer holds the dot at the right edge. */
   .recipe-name {
     grid-column: 2; grid-row: 1 / 3; align-self: center; font-weight: 650;
   }
@@ -1693,14 +1695,12 @@
     box-shadow: inset 0 0 0 2px rgba(255,253,240,0.95);
   }
   .recipe-main {
-    min-width: 0; display: flex; align-items: center; gap: 8px;
-    font-weight: 650;
+    text-align: center; font-weight: 650;
   }
-  .recipe-main .recipe-line {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
+  .recipe-main .recipe-line { white-space: nowrap; }
+  .recipe-item .recipe-meta { text-align: center; }
   .recipe-status-dot {
-    grid-column: 4; grid-row: 1 / 3; align-self: center;
+    grid-column: 5; grid-row: 1 / 3; align-self: center;
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--text-3);
   }
@@ -1708,7 +1708,7 @@
   .recipe-item.premise .recipe-status-dot { background: var(--status-premise); }
   .recipe-item.promising .recipe-status-dot { background: var(--highlight-orange); }
   .recipe-meta {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    white-space: nowrap;
     color: var(--text-3); font-size: 10px;
   }
   .recipe-item.selected .recipe-tag {
@@ -1728,7 +1728,7 @@
     font: 10px/1.35 ui-monospace, "SF Mono", Menlo, monospace;
   }
   /* Re-run: a compact play button living inside the section header. */
-  #rerun-btn, #recipe-rerun-btn {
+  #rerun-btn {
     width: 18px; height: 18px; flex-shrink: 0;
     border: none; border-radius: 50%;
     background: var(--highlight-orange); color: #ffffff;
@@ -1737,11 +1737,10 @@
     box-shadow: 0 2px 8px rgba(255,138,0,0.35);
     transition: background 0.12s, transform 0.1s, opacity 0.12s;
   }
-  #rerun-btn svg, #recipe-rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
-  #rerun-btn:hover:not(:disabled), #recipe-rerun-btn:hover:not(:disabled) { background: var(--highlight-orange-hover); }
-  #rerun-btn:active:not(:disabled), #recipe-rerun-btn:active:not(:disabled) { transform: scale(0.92); }
-  #rerun-btn:disabled, #recipe-rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
-  #recipe-rerun-btn[hidden] { display: none; }
+  #rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
+  #rerun-btn:hover:not(:disabled) { background: var(--highlight-orange-hover); }
+  #rerun-btn:active:not(:disabled) { transform: scale(0.92); }
+  #rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
 
   /* ----- A/B variant toggle (baseline vs intervened): lives IN the
      message stream as the first item — the first user message leaves
@@ -1994,7 +1993,7 @@
     corner-shape: var(--corner-continuous);
   }
   #stop-btn, .markup-delete, .session-delete, .row-action,
-  #rerun-btn, #recipe-rerun-btn, #iv-recipe-close, #wish-search-close {
+  #rerun-btn, #iv-recipe-close, #wish-search-close {
     corner-shape: round;
   }
   .corner-button-bar > .corner-action:focus-visible {
@@ -5040,19 +5039,6 @@ function renderInterventionRecipes() {
   chip.className = 'rail-head-chip';
   chip.textContent = `Intervention recipes · ${recipes.length}`;
   head.appendChild(chip);
-  const rerun = document.createElement('button');
-  rerun.id = 'recipe-rerun-btn';
-  rerun.type = 'button';
-  rerun.hidden = !recipes.length;
-  const selected = interventionRecipeById(state.selectedInterventionRecipeId);
-  rerun.disabled = !selected || !canRunRecipe(selected);
-  rerun.title = selected
-    ? (rerun.disabled ? 'Return to this recipe’s clean baseline before running it' : `Run ${selected.name}`)
-    : 'Select one intervention recipe first';
-  rerun.setAttribute('aria-label', selected ? `Run ${selected.name}` : 'Run selected recipe');
-  rerun.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
-  rerun.onclick = () => runSelectedInterventionRecipe();
-  head.appendChild(rerun);
   wrap.appendChild(head);
 
   if (!recipes.length) {
