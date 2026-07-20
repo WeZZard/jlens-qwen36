@@ -1087,6 +1087,7 @@
     color: var(--settings-accent); font: 700 12px ui-monospace, "SF Mono", Menlo, monospace;
   }
   .iv-recipe-observation { margin-top: 14px; }
+  .iv-recipe-observation[hidden] { display: none; }
   .iv-recipe-label {
     display: block; margin-bottom: 5px; color: var(--settings-text-tertiary);
     font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
@@ -5429,6 +5430,12 @@ function renderRecipePreview(recipe) {
     row.append(number, copy, alpha);
     cells.appendChild(row);
   });
+  // An exact-verified recipe's replay text is byte-identical to what the
+  // direction line already promises, so the evidence line is redundant
+  // there. Premise redirects and promising leads keep it: their replay
+  // output differs from the requested text and is the informative part.
+  const observation = document.querySelector('.iv-recipe-observation');
+  observation.hidden = recipe.status === 'verified';
   $('iv-recipe-output').textContent = (recipe.output || '').trim() || 'Not run to completion yet.';
   $('iv-recipe-run').disabled = !canRunRecipe(recipe);
   $('iv-recipe-run').title = $('iv-recipe-run').disabled
