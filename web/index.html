@@ -1887,6 +1887,15 @@
   .glass-hoverable:hover:not(:disabled):not([aria-disabled="true"]) {
     background: var(--glass-hover);
   }
+  /* Every rounded control uses the app's continuous-corner geometry.
+     corner-shape is a no-op at radius 0, and pills gain continuous caps.
+     True circles (50% radius: ×/stop/play/delete icon buttons) stay
+     circular below — a circle has no corner to make continuous. */
+  button, [role="button"], .corner-action { corner-shape: squircle; }
+  #stop-btn, .markup-delete, .session-delete, .row-action,
+  #rerun-btn, #recipe-rerun-btn, #iv-recipe-close, #wish-search-close {
+    corner-shape: round;
+  }
   .corner-button-bar > .corner-action:focus-visible {
     z-index: 1;
     outline: 2px solid var(--highlight-orange);
