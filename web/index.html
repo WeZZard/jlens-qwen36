@@ -84,9 +84,10 @@
     --radius-panel: 28px;
     /* Continuous corners for controls: the `squircle` keyword is the
        full superellipse (2^2 = exponent 4) and over-bulges at button
-       scale; 1.5 (exponent ~2.83) keeps the smooth curvature
-       transition at circular-arc proportions. */
-    --corner-continuous: superellipse(1.5);
+       scale; 1.8 stays below it while keeping the curve visible at
+       the 12-14px radii most controls use. This one number tunes the
+       curvature of every control in the app. */
+    --corner-continuous: superellipse(1.8);
     /* Semantic status colors — one value per meaning, app-wide. */
     --status-verified: #3f8f55;
     --status-danger: #e0483e;
@@ -561,7 +562,7 @@
   }
   :is(#settings-popup, #intervene-popup) .actions button {
     min-width: 76px; padding: 7px 18px; border-radius: 12px;
-    corner-shape: squircle;
+    corner-shape: var(--corner-continuous);
     font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid var(--glass-recessed-border);
     background: var(--settings-control-fill); color: var(--settings-text);
     box-shadow: none;
