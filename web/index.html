@@ -1798,6 +1798,19 @@
     padding: 0 10px; font: inherit; font-size: 13px;
     background: #ffffff;
   }
+  /* The compose row's primary action, in the same pill family as the
+     search-view actions (Pause / Search deeper). Without a base rule it
+     fell through to the user-agent default push button. */
+  #wish-go {
+    flex-shrink: 0; height: 30px; padding: 0 14px;
+    border: 1px solid var(--highlight-orange); border-radius: 999px;
+    background: var(--highlight-orange); color: #ffffff;
+    font: inherit; font-size: 12px; font-weight: 650; cursor: pointer;
+  }
+  #wish-go:hover:not(:disabled) {
+    background: var(--highlight-orange-hover);
+    border-color: var(--highlight-orange-hover);
+  }
   #wish-go:disabled { opacity: 0.42; cursor: default; }
   .wish-hint { font-size: 11px; color: var(--text-3); margin-top: 8px; }
   #wish-search-view[hidden], #wish-compose[hidden] { display: none; }
