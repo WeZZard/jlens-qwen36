@@ -1068,12 +1068,7 @@
   }
   .iv-recipe-status.verified { color: var(--status-verified); border-color: color-mix(in srgb, var(--status-verified) 34%, transparent); }
   .iv-recipe-status.promising { color: var(--settings-accent); border-color: color-mix(in srgb, var(--settings-accent) 42%, transparent); }
-  .iv-recipe-readonly-note {
-    margin: 12px 0; padding: 8px 10px; border-radius: 10px;
-    background: var(--settings-control-fill); color: var(--settings-text-tertiary);
-    font-size: 11px;
-  }
-  .iv-recipe-cells { display: grid; gap: 7px; }
+  .iv-recipe-cells { display: grid; gap: 7px; margin-top: 14px; }
   .iv-recipe-cell {
     display: grid; grid-template-columns: 24px 1fr auto; align-items: center;
     gap: 9px; padding: 9px 10px; border: 1px solid var(--glass-recessed-border);
@@ -1123,7 +1118,7 @@
        exponent 3). Declared per consuming element because var(--ccr)
        substitutes where the custom property is DECLARED, not used. */
     #intervene-popup #iv-recipe-run, #iv-recipe-output,
-    .iv-recipe-readonly-note, .iv-recipe-cell, .iv-recipe-cell::before {
+    .iv-recipe-cell, .iv-recipe-cell::before {
       --continuous-clip: shape(
         from calc(1.28 * var(--ccr)) 0px,
         line to calc(100% - 1.28 * var(--ccr)) 0px,
@@ -1150,12 +1145,11 @@
       outline: none;
       box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.55);
     }
-    #iv-recipe-output, .iv-recipe-readonly-note {
+    #iv-recipe-output {
       border-radius: 0;
       clip-path: var(--continuous-clip);
+      --ccr: 12px;
     }
-    #iv-recipe-output { --ccr: 12px; }
-    .iv-recipe-readonly-note { --ccr: 10px; }
     /* The cell card keeps its hairline: the card clips to the outer
        curve filled with the border color, and ::before paints the fill
        1px inside on the same curve — the ring between the clips IS the
@@ -1691,13 +1685,20 @@
     box-shadow: inset 0 0 0 2px rgba(255,253,240,0.95);
   }
   .recipe-main {
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    min-width: 0; display: flex; align-items: center; gap: 8px;
     font-weight: 650;
   }
-  .recipe-status { color: var(--text-3); font-size: 9px; letter-spacing: 0.06em; }
-  .recipe-item.verified .recipe-status { color: var(--status-verified); }
-  .recipe-item.premise .recipe-status { color: var(--status-premise); }
-  .recipe-item.promising .recipe-status { color: var(--highlight-orange); }
+  .recipe-main .recipe-line {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .recipe-status-dot {
+    flex-shrink: 0; margin-left: auto;
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-3);
+  }
+  .recipe-item.verified .recipe-status-dot { background: var(--status-verified); }
+  .recipe-item.premise .recipe-status-dot { background: var(--status-premise); }
+  .recipe-item.promising .recipe-status-dot { background: var(--highlight-orange); }
   .recipe-meta {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--text-3); font-size: 10px;
@@ -1969,7 +1970,7 @@
      ×/stop/play/delete icon buttons) stay circular — a circle has no
      corner to make continuous. */
   button, [role="button"], .corner-action,
-  .iv-recipe-cell, .iv-recipe-readonly-note, #iv-recipe-output {
+  .iv-recipe-cell, #iv-recipe-output {
     corner-shape: var(--corner-continuous);
   }
   #stop-btn, .markup-delete, .session-delete, .row-action,
@@ -2340,10 +2341,9 @@
           <div id="iv-recipe-direction" class="iv-recipe-direction"></div>
           <span id="iv-recipe-status" class="iv-recipe-status"></span>
         </div>
-        <div class="iv-recipe-readonly-note">System-composed recipe · read only</div>
         <div id="iv-recipe-cells" class="iv-recipe-cells"></div>
         <div class="iv-recipe-observation">
-          <span class="iv-recipe-label">Observed output</span>
+          <span class="iv-recipe-label">Deterministic replay said</span>
           <blockquote id="iv-recipe-output"></blockquote>
         </div>
         <div class="actions" id="iv-recipe-actions">
@@ -5064,12 +5064,17 @@ function renderInterventionRecipes() {
     radio.setAttribute('aria-hidden', 'true');
     const main = document.createElement('span');
     main.className = 'recipe-main';
+    const line = document.createElement('span');
+    line.className = 'recipe-line';
+    line.textContent =
+      `${recipe.name.replace('Recipe ', '')} · ${recipeDirectionText(recipe)}`;
+    // Status travels as a colored dot at the right of the direction line
+    // (green verified, violet premise, orange promising); the word stays
+    // in the button title for hover and assistive tech.
     const status = document.createElement('span');
-    status.className = 'recipe-status';
-    status.textContent = recipe.status === 'verified' ? 'VERIFIED'
-      : recipe.status === 'premise' ? 'PREMISE' : 'PROMISING';
-    main.append(document.createTextNode(`${recipe.name.replace('Recipe ', '')} · `), status,
-      document.createTextNode(` · ${recipeDirectionText(recipe)}`));
+    status.className = 'recipe-status-dot';
+    status.setAttribute('aria-hidden', 'true');
+    main.append(line, status);
     const meta = document.createElement('span');
     meta.className = 'recipe-meta';
     meta.textContent = recipeCellSummary(recipe);

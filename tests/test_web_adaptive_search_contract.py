@@ -139,7 +139,8 @@ def test_premise_stage_reaches_the_ui_as_a_labeled_recipe_kind():
     assert "search.premiseRecipeId" in HTML
     assert "recipe.kind === 'premise' && recipe.premise" in HTML
     assert "scope: { type: 'from', pos: 0 }" in HTML
-    assert ": recipe.status === 'premise' ? 'PREMISE' : 'PROMISING'" in HTML
+    assert "recipe-status-dot" in HTML
+    assert ".recipe-item.premise .recipe-status-dot" in HTML
     assert "enable_premise_search: bool = False" in SERVE
     assert '"premise_redirect"' in SERVE
     assert "_premise_search_candidate" in SERVE
