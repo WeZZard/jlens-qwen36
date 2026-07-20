@@ -1175,12 +1175,14 @@
       background: #fffcf1;
     }
   }
-  /* Same × idiom as the wish panel's close. */
+  /* Same × idiom as the wish panel's close, ink-centered the same way. */
   #iv-recipe-close {
     flex-shrink: 0; margin: -4px -6px 0 -4px;
     border: 0; background: transparent; color: var(--settings-text-tertiary);
     width: 28px; height: 28px; padding: 0; border-radius: 50%;
-    font: inherit; font-size: 18px; line-height: 28px; cursor: pointer;
+    font: inherit; font-size: 18px; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1; padding-bottom: 4px; box-sizing: border-box;
   }
   #iv-recipe-close:hover { background: rgba(60, 50, 30, 0.08); }
 
@@ -1811,7 +1813,12 @@
   #wish-search-close {
     border: 0; background: transparent; color: var(--text-3);
     width: 28px; height: 28px; padding: 0; border-radius: 50%;
-    font: inherit; font-size: 18px; line-height: 28px; cursor: pointer;
+    font: inherit; font-size: 18px; cursor: pointer;
+    /* Center the ×'s INK, not its line box: flex-center the glyph and
+       counter the em-box's low ink with a 2px lift (measured: the bare
+       line-height centering left the ink ~1.9px low in WebKit). */
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1; padding-bottom: 4px; box-sizing: border-box;
   }
   #wish-search-close:hover { background: rgba(60, 50, 30, 0.08); }
   .wish-search-track {
