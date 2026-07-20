@@ -1812,7 +1812,6 @@
     border-color: var(--highlight-orange-hover);
   }
   #wish-go:disabled { opacity: 0.42; cursor: default; }
-  .wish-hint { font-size: 11px; color: var(--text-3); margin-top: 8px; }
   #wish-search-view[hidden], #wish-compose[hidden] { display: none; }
   #wish-search-track[hidden], #wish-search-stats[hidden] { display: none; }
   .wish-search-head {
@@ -2152,7 +2151,6 @@
           <input id="wish-input" type="text" aria-label="What should the reply say?" placeholder="the answer you want" autocomplete="off">
           <button id="wish-go" type="button" class="ok" disabled>Search · up to 1 min</button>
         </div>
-        <div class="wish-hint">instead of ⟨<span id="wish-current"></span>⟩ — searches exact cells across the prefilled workspace</div>
       </div>
       <div id="wish-search-view" hidden aria-live="polite">
         <div class="wish-search-head">
@@ -7348,7 +7346,6 @@ function openWishForReplyToken(msgIdx, tokenIdx) {
     sourceStartUtf16,
     sourceEndUtf16,
   };
-  $('wish-current').textContent = lexical.word.trim();
   $('wish-input').value = '';
   $('wish-go').disabled = true;
   uiSetMode({ kind: 'wish', phase: 'compose' });
