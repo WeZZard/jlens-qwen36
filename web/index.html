@@ -1672,11 +1672,17 @@
     max-width: min(360px, calc(100vw - 32px)); pointer-events: auto;
   }
   .recipe-item .recipe-tag {
-    display: grid; grid-template-columns: 12px minmax(0, 1fr) auto;
+    display: grid; grid-template-columns: 12px auto minmax(0, 1fr) auto;
     column-gap: 8px; row-gap: 2px; align-items: center;
     max-width: 340px; white-space: normal;
   }
-  .recipe-item .recipe-meta { grid-column: 2; }
+  /* Letter, radio, and dot each center on the whole capsule; the
+     direction line and its meta share a column so they left-align. */
+  .recipe-name {
+    grid-column: 2; grid-row: 1 / 3; align-self: center; font-weight: 650;
+  }
+  .recipe-item .recipe-main { grid-column: 3; }
+  .recipe-item .recipe-meta { grid-column: 3; }
   .recipe-radio {
     grid-row: 1 / 3; width: 12px; height: 12px; box-sizing: border-box;
     border: 1.5px solid var(--highlight-orange); border-radius: 50%;
@@ -1694,7 +1700,7 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .recipe-status-dot {
-    grid-column: 3; grid-row: 1 / 3; align-self: center;
+    grid-column: 4; grid-row: 1 / 3; align-self: center;
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--text-3);
   }
@@ -5077,10 +5083,12 @@ function renderInterventionRecipes() {
     radio.setAttribute('aria-hidden', 'true');
     const main = document.createElement('span');
     main.className = 'recipe-main';
+    const name = document.createElement('span');
+    name.className = 'recipe-name';
+    name.textContent = recipe.name.replace('Recipe ', '');
     const line = document.createElement('span');
     line.className = 'recipe-line';
-    line.textContent =
-      `${recipe.name.replace('Recipe ', '')} · ${recipeDirectionText(recipe)}`;
+    line.textContent = recipeDirectionText(recipe);
     // Status travels as a colored dot at the right of the direction line
     // (green verified, violet premise, orange promising); the word stays
     // in the button title for hover and assistive tech.
@@ -5091,7 +5099,7 @@ function renderInterventionRecipes() {
     const meta = document.createElement('span');
     meta.className = 'recipe-meta';
     meta.textContent = recipeCellSummary(recipe);
-    btn.append(radio, main, meta, status);
+    btn.append(radio, name, main, meta, status);
     btn.onclick = () => openRecipePreview(recipe.id);
     item.appendChild(btn);
     wrap.appendChild(item);
