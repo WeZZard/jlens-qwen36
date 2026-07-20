@@ -113,9 +113,21 @@ def test_empty_recipe_section_stays_visible_during_search():
     assert "`${search.tested || 0} tested · search ${search.paused ? 'paused' : 'running'}`" in HTML
 
 
-def test_legacy_scan_is_not_exposed_from_the_detail_editor():
-    assert 'id="iv-scan" type="button" hidden aria-hidden="true"' in HTML
-    assert "openWishModal('conclusion')" not in HTML
+def test_legacy_scan_ui_is_fully_removed():
+    assert 'id="iv-scan"' not in HTML
+    assert 'id="scan-backdrop"' not in HTML
+    assert "openWishModal" not in HTML
+    assert "openInterventionScan" not in HTML
+    # The conversation-context helper survives the scan's removal: the
+    # backward search builds its request messages with it.
+    assert "function _scanMessages()" in HTML
+
+
+def test_intervene_panel_adopts_app_tokens_at_panel_scope():
+    assert "--settings-text: var(--text);" in HTML
+    assert "--settings-accent: var(--highlight-orange);" in HTML
+    assert "--status-verified:" in HTML
+    assert "--radius-panel: 28px;" in HTML
 
 
 def test_premise_stage_reaches_the_ui_as_a_labeled_recipe_kind():

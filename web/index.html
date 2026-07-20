@@ -79,6 +79,15 @@
     --radius-sm: 8px;
     --radius-xs: 6px;
     --radius-lg: 24px;
+    /* Bottom-anchored workbench cards (intervene panel + minimap pair,
+       settings modal): one shared squircle geometry. */
+    --radius-panel: 28px;
+    /* Semantic status colors — one value per meaning, app-wide. */
+    --status-verified: #3f8f55;
+    --status-danger: #e0483e;
+    --status-danger-hover: #c93a31;
+    --status-premise: #7059c4;
+    --highlight-orange-hover: #e87900;
     --grid-left-inset: 8px;
     --grid-token-padding: 12px;
     --grid-scrollbar-clearance: 12px;
@@ -187,7 +196,7 @@
     background: rgba(224,72,62,0.10);
     text-decoration-line: underline;
     text-decoration-style: wavy;
-    text-decoration-color: #e0483e;
+    text-decoration-color: var(--status-danger);
     text-decoration-thickness: 1px;
     text-underline-offset: 3px;
   }
@@ -263,7 +272,7 @@
     border-radius: 2px;
     background: currentColor;
   }
-  #stop-btn:hover { background: #e87900; border-color: #e87900; }
+  #stop-btn:hover { background: var(--highlight-orange-hover); border-color: var(--highlight-orange-hover); }
   #stop-btn:active { transform: scale(0.96); }
   /* The two fixed corner wrappers become shared joined button bars below.
      Hiding a mode-specific button automatically collapses its bar. */
@@ -412,7 +421,7 @@
     cursor: pointer;
     transition: background 0.12s, transform 0.1s;
   }
-  #save-current-session:hover { background: #e87900; }
+  #save-current-session:hover { background: var(--highlight-orange-hover); }
   #save-current-session:active { transform: scale(0.96); }
   #save-current-session:disabled {
     opacity: 0.55;
@@ -450,7 +459,7 @@
     color-scheme: light;
     background: var(--settings-glass);
     border: 0;
-    border-radius: 28px;
+    border-radius: var(--radius-panel);
     corner-shape: squircle;
     box-shadow: var(--settings-glass-shadow);
     backdrop-filter: blur(36px) saturate(110%);
@@ -694,6 +703,22 @@
      grid, so — unlike the settings modal — it neither dims, blurs, nor
      blocks the page: the backdrop lets every pointer event through and
      only the panel itself is interactive. Close via Save/Cancel/Esc. */
+  /* And because it sits directly ON the warm paper (no dim layer between
+     them), it adopts the app's warm tokens: the shared frame rules above
+     read the settings modal's token family, remapped here at panel scope.
+     The dimmed settings modal keeps its cooler neutral family. */
+  #intervene-popup {
+    --settings-text: var(--text);
+    --settings-text-secondary: var(--text-2);
+    --settings-text-tertiary: var(--text-3);
+    --settings-accent: var(--highlight-orange);
+    --settings-accent-hover: var(--highlight-orange-hover);
+    --settings-glass:
+      linear-gradient(180deg, rgba(255,255,255,0.10) 0%, rgba(255,255,255,0.02) 42%, rgba(255,255,255,0) 100%),
+      linear-gradient(rgba(255,253,242,0.82), rgba(255,253,242,0.82));
+    --settings-glass-shadow: var(--glass-shadow);
+    --glass-recessed-border: var(--border-2);
+  }
   #intervene-backdrop.visible {
     background-color: transparent;
     backdrop-filter: none;
@@ -902,7 +927,7 @@
        inset 10px in-canvas, past the corner curve's deepest cut, so no
        ingredient is ever cropped and no second corner curve exists. */
     border: 1px solid rgba(60, 50, 30, 0.22);
-    border-radius: 28px;
+    border-radius: var(--radius-panel);
     corner-shape: squircle;
     background: var(--glass-control);
     box-shadow: var(--glass-control-shadow);
@@ -945,7 +970,7 @@
     cursor: pointer;
     box-shadow: 0 2px 8px rgba(255, 138, 0, 0.45);
   }
-  .minimap-more:hover { background: #e87900; }
+  .minimap-more:hover { background: var(--highlight-orange-hover); }
   .minimap-more[hidden] { display: none; }
   #minimap-up { top: 14px; }
   #minimap-down { bottom: 14px; }
@@ -1004,8 +1029,8 @@
   }
   #intervene-popup .actions .spacer { flex: 1; min-width: 0; }
   #intervene-popup .actions button.danger {
-    border-color: rgba(224,72,62,0.5);
-    color: #e0483e;
+    border-color: color-mix(in srgb, var(--status-danger) 50%, transparent);
+    color: var(--status-danger);
   }
   #intervene-popup .actions button.danger:hover { background: rgba(224,72,62,0.12); }
   #intervene-popup .actions button.danger[hidden] { display: none; }
@@ -1029,8 +1054,8 @@
     color: var(--settings-text-tertiary); font-size: 9px; font-weight: 750;
     letter-spacing: 0.07em; text-transform: uppercase;
   }
-  .iv-recipe-status.verified { color: #3f8f55; border-color: rgba(63,143,85,0.34); }
-  .iv-recipe-status.promising { color: var(--settings-accent); border-color: rgba(255,159,10,0.42); }
+  .iv-recipe-status.verified { color: var(--status-verified); border-color: color-mix(in srgb, var(--status-verified) 34%, transparent); }
+  .iv-recipe-status.promising { color: var(--settings-accent); border-color: color-mix(in srgb, var(--settings-accent) 42%, transparent); }
   .iv-recipe-readonly-note {
     margin: 12px 0; padding: 8px 10px; border-radius: 10px;
     background: var(--settings-control-fill); color: var(--settings-text-tertiary);
@@ -1420,7 +1445,7 @@
     color: var(--text-3); text-align: center; white-space: nowrap;
   }
   #detail .readout .rank-delta.up { color: var(--frontier); }
-  #detail .readout .rank-delta.down { color: #e0483e; }
+  #detail .readout .rank-delta.down { color: var(--status-danger); }
   #detail .readout .rank-delta.new { color: var(--highlight-orange); font-weight: 700; }
 
   /* ----- Markups: floating column on the left edge of the screen -----
@@ -1507,14 +1532,14 @@
   .markup-delete {
     width: 30px; height: 30px; flex-shrink: 0;
     border: none; border-radius: 50%;
-    background: #e0483e; color: #ffffff;
+    background: var(--status-danger); color: #ffffff;
     display: none; align-items: center; justify-content: center;
     cursor: pointer;
     box-shadow: 0 4px 14px rgba(224,72,62,0.35), 0 1px 4px rgba(60,50,30,0.10);
     transition: background 0.12s, transform 0.1s;
   }
   .markup-item.active .markup-delete { display: inline-flex; }
-  .markup-delete:hover { background: #c93a31; }
+  .markup-delete:hover { background: var(--status-danger-hover); }
   .markup-delete:active { transform: scale(0.94); }
   .markup-delete svg {
     width: 15px; height: 15px;
@@ -1577,8 +1602,8 @@
     font-weight: 650;
   }
   .recipe-status { color: var(--text-3); font-size: 9px; letter-spacing: 0.06em; }
-  .recipe-item.verified .recipe-status { color: #3f8f55; }
-  .recipe-item.premise .recipe-status { color: #7059c4; }
+  .recipe-item.verified .recipe-status { color: var(--status-verified); }
+  .recipe-item.premise .recipe-status { color: var(--status-premise); }
   .recipe-item.promising .recipe-status { color: var(--highlight-orange); }
   .recipe-meta {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1611,7 +1636,7 @@
     transition: background 0.12s, transform 0.1s, opacity 0.12s;
   }
   #rerun-btn svg, #recipe-rerun-btn svg { width: 10px; height: 10px; fill: currentColor; margin-left: 1px; }
-  #rerun-btn:hover:not(:disabled), #recipe-rerun-btn:hover:not(:disabled) { background: #e87900; }
+  #rerun-btn:hover:not(:disabled), #recipe-rerun-btn:hover:not(:disabled) { background: var(--highlight-orange-hover); }
   #rerun-btn:active:not(:disabled), #recipe-rerun-btn:active:not(:disabled) { transform: scale(0.92); }
   #rerun-btn:disabled, #recipe-rerun-btn:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
   #recipe-rerun-btn[hidden] { display: none; }
@@ -1653,72 +1678,7 @@
   .loading { color: var(--accent); }
   .empty-state { color: var(--text-3); font-size: 13px; padding: 24px; text-align: center; }
 
-  /* ----- Intervention scan modal: the layers × strength outcome map ----- */
-  #scan-backdrop {
-    position: fixed; inset: 0; z-index: 300;
-    background: rgba(60, 50, 30, 0.18);
-    display: flex; align-items: center; justify-content: center;
-  }
-  #scan-backdrop[hidden] { display: none; }
-  #scan-popup {
-    background: #fffdf3;
-    border: 1px solid var(--border-2);
-    border-radius: 20px; corner-shape: squircle;
-    box-shadow: 0 24px 60px rgba(60, 50, 30, 0.25);
-    padding: 18px 20px 14px;
-    max-width: min(92vw, 760px); max-height: 86vh; overflow: auto;
-  }
-  #scan-popup h3 { margin: 0 0 2px; font-size: 15px; }
-  #scan-sub {
-    font-size: 12px; color: var(--text-2); margin-bottom: 12px;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  }
-  #scan-map { display: grid; gap: 3px; margin-bottom: 10px; }
-  .scan-hdr {
-    font-size: 10px; color: var(--text-3);
-    display: flex; align-items: center; justify-content: center;
-    font-family: ui-monospace, "SF Mono", Menlo, monospace;
-    min-height: 20px;
-  }
-  .scan-cell {
-    height: 26px; min-width: 44px;
-    border-radius: 6px; corner-shape: squircle;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 10px; color: var(--text-3);
-    border: 1px dashed var(--border-2);
-    background: transparent;
-  }
-  .scan-cell.done { border-style: solid; cursor: default; color: transparent; }
-  .scan-cell.done.adoptable { cursor: pointer; }
-  .scan-cell.done.adoptable:hover { filter: brightness(0.94); }
-  .scan-cell.done.cls-unchanged { color: var(--text-3); }
-  .scan-cell.armed { outline: 2px solid #e0483e; outline-offset: 1px; }
-  .scan-cell.cls-unchanged { background: rgba(60, 50, 30, 0.07); border-color: rgba(60, 50, 30, 0.14); }
-  .scan-cell.cls-success,
-  .scan-cell.cls-derived { background: #3f9d63; border-color: #37905a; }
-  #scan-backdrop[data-scan-context="wish-conclusion"] .scan-cell.cls-derived {
-    background: #8b98a5; border-color: #7c8996;
-  }
-  .scan-cell.cls-parrot { background: var(--highlight-orange); border-color: #e87900; }
-  .scan-cell.cls-degenerate { background: #e0483e; border-color: #c93a31; }
-  .scan-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; color: var(--text-2); margin-bottom: 10px; }
-  .scan-legend i {
-    display: inline-block; width: 10px; height: 10px; border-radius: 3px;
-    margin-right: 5px; vertical-align: -1px;
-  }
-  .scan-legend .sw-unchanged { background: rgba(60, 50, 30, 0.12); }
-  .scan-legend .sw-success,
-  .scan-legend .sw-derived { background: #3f9d63; }
-  #scan-backdrop[data-scan-context="wish-conclusion"] .scan-legend .sw-derived { background: #8b98a5; }
-  .scan-legend .sw-parrot { background: var(--highlight-orange); }
-  .scan-legend .sw-degenerate { background: #e0483e; }
-  .scan-foot { display: flex; align-items: center; gap: 10px; }
-  .scan-foot .spacer { flex: 1; }
-  #scan-progress { font-size: 11px; color: var(--text-3); }
-  /* Erase-all has no concept to scan for. */
-  #intervene-popup.iv-erase #iv-scan { display: none; }
-
-  /* ----- Output-first wish popover + strategy cards + lesson banner ----- */
+  /* ----- Output-first wish popover ----- */
   #chat-log .msg.assistant .tok { cursor: pointer; }
   html.presentation #chat-log .msg.assistant .tok { cursor: default; }
   #wish-pop {
@@ -1772,7 +1732,7 @@
     border-radius: inherit; background: var(--highlight-orange);
     transition: width 180ms linear, background 160ms ease;
   }
-  #wish-search-view.success #wish-search-fill { background: #3f9d63; }
+  #wish-search-view.success #wish-search-fill { background: var(--status-verified); }
   .wish-search-status {
     display: flex; align-items: baseline; gap: 10px; margin-top: 9px;
     min-height: 19px;
@@ -1789,7 +1749,8 @@
   }
   #wish-search-result[hidden] { display: none; }
   #wish-search-result.verified {
-    background: rgba(63, 157, 99, 0.10); color: #2f7048;
+    background: color-mix(in srgb, var(--status-verified) 10%, transparent);
+    color: var(--status-verified);
   }
   #wish-search-recipe {
     display: block; margin-top: 3px;
@@ -1850,52 +1811,11 @@
     box-shadow: inset 0 0 0 2px var(--highlight-orange);
   }
   #grid td.cell.wish-search-verified .cell-block {
-    box-shadow: 0 0 0 2px #3f9d63, 0 0 12px 3px rgba(63,157,99,0.48);
+    box-shadow: 0 0 0 2px var(--status-verified),
+      0 0 12px 3px color-mix(in srgb, var(--status-verified) 48%, transparent);
   }
   html.wish-search-active #grid td.pos-label { opacity: 0.34; }
   html.wish-search-active #grid td.pos-label.selected-token { opacity: 1; }
-  #scan-strategies {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    margin-bottom: 12px;
-  }
-  #scan-strategies[hidden] { display: none; }
-  .scan-card {
-    border: 1px solid var(--border-2); border-radius: 12px; corner-shape: squircle;
-    padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 8px;
-    background: rgba(255, 255, 255, 0.4);
-  }
-  .scan-card.active { border-color: var(--highlight-orange); box-shadow: 0 0 0 1px var(--highlight-orange) inset; }
-  .scan-card-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); }
-  .scan-card-body { font-size: 12px; color: var(--text-2); line-height: 1.5; }
-  .scan-card-body input {
-    width: 100%; box-sizing: border-box; height: 26px; margin-top: 4px;
-    border: 1px solid var(--border-2); border-radius: 7px;
-    padding: 0 8px; font: inherit; font-size: 12px; background: #ffffff;
-  }
-  .scan-card-go { align-self: flex-end; }
-  #wish-banner {
-    align-self: center; flex-shrink: 0;
-    max-width: 92%;
-    background: #fffdf3;
-    border: 1px solid var(--border-2);
-    border-radius: 14px; corner-shape: squircle;
-    box-shadow: 0 6px 22px rgba(60, 50, 30, 0.12);
-    padding: 10px 14px;
-    font-size: 12px; color: var(--text-2); line-height: 1.55;
-  }
-  #wish-banner .wish-actions { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
-  #wish-banner button {
-    border: 1px solid var(--border-2); border-radius: 999px;
-    background: #ffffff; color: var(--text);
-    font: inherit; font-size: 11px; padding: 4px 12px; cursor: pointer;
-  }
-  #wish-banner button.primary {
-    background: var(--highlight-orange); border-color: var(--highlight-orange); color: #ffffff; font-weight: 600;
-  }
-  #wish-banner .wish-x { margin-left: auto; border: none; background: transparent; color: var(--text-3); font-size: 13px; padding: 2px 4px; }
-  #wish-banner .recap-line { display: block; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
-
   /* ===== Presentation mode: read-only viewer ===== */
   /* No input box, no clearing, no settings, no saving/deleting sessions,
      no adding/removing markups. Detail cards, saved-session loading, and
@@ -1909,7 +1829,6 @@
   html.presentation #detail .markup-save,
   html.presentation #detail .row-actions,
   html.presentation #rerun-btn,
-  html.presentation #iv-scan,
   html.presentation #interventions .iv-toggle {
     display: none !important;
   }
@@ -2188,44 +2107,6 @@
     <button id="variant-intervened" class="corner-action glass-hoverable" type="button" title="Show the intervened run"><span>Intervened</span><span class="diff-chip" hidden></span></button>
   </div>
 
-  <!-- ===== Intervention scan: layers × strength outcome map ===== -->
-  <div id="scan-backdrop" hidden>
-    <div id="scan-popup" role="dialog" aria-label="Intervention scan">
-      <h3>Intervention scan</h3>
-      <div id="scan-sub"></div>
-      <div id="scan-strategies" hidden>
-        <div class="scan-card" id="scan-card-conclusion">
-          <div class="scan-card-title">1 · Edit the conclusion</div>
-          <div class="scan-card-body" id="scan-card-conclusion-body"></div>
-          <button type="button" class="ok scan-card-go" data-strategy="conclusion">Scan</button>
-        </div>
-        <div class="scan-card" id="scan-card-premise">
-          <div class="scan-card-title">2 · Edit the premise</div>
-          <div class="scan-card-body">
-            replace what it <b>thinks</b>:
-            <input id="wish-premise-src" type="text" placeholder="concept it holds" autocomplete="off">
-            <input id="wish-premise-dst" type="text" placeholder="new concept" autocomplete="off">
-          </div>
-          <button type="button" class="ok scan-card-go" data-strategy="premise">Scan</button>
-        </div>
-      </div>
-      <div id="scan-map"></div>
-      <div class="scan-legend">
-        <span><i class="sw-unchanged"></i><span id="scan-lg-unchanged">unchanged — too weak</span></span>
-        <span><i class="sw-success"></i><span id="scan-lg-success">exact requested output — works</span></span>
-        <span><i class="sw-derived"></i><span id="scan-lg-derived">derived answer — works</span></span>
-        <span><i class="sw-parrot"></i><span id="scan-lg-parrot">literal target — forced</span></span>
-        <span><i class="sw-degenerate"></i><span id="scan-lg-degenerate">degenerate — far too strong</span></span>
-      </div>
-      <div class="scan-foot">
-        <span id="scan-progress"></span>
-        <span class="spacer"></span>
-        <button id="scan-rerun" type="button" class="ok" hidden>Re-run now</button>
-        <button id="scan-close" type="button" class="cancel">Close</button>
-      </div>
-    </div>
-  </div>
-
   <!-- ===== Cursor tooltip for the intervening status ===== -->
   <div id="iv-cursor-tip" hidden></div>
 
@@ -2335,8 +2216,6 @@
       <div id="iv-preview-summary" class="iv-preview-summary"></div>
       <div class="actions" id="iv-actions">
         <button class="danger" id="iv-delete" type="button" hidden>Delete</button>
-        <button class="cancel" id="iv-scan" type="button" hidden aria-hidden="true"
-          title="Probe layers × strength on this conversation and map which settings work">Scan…</button>
         <span class="spacer"></span>
         <button class="cancel" id="iv-cancel" type="button">Cancel</button>
         <button class="ok" id="iv-ok" type="button">Save</button>
@@ -3186,7 +3065,7 @@ async function loadInfo() {
     state.modelId = (meta.model && meta.model.model_id) || 'unknown model';
     // layerIntervenable() also admits the final layer (identity transport),
     // but /api/lens only reports fitted source layers. Carry model depth
-    // alongside the lens metadata so output-band scans can include it.
+    // alongside the lens metadata so that layer stays addressable.
     state.lensInfo = meta.lens
       ? { ...meta.lens, n_layers: meta.model && meta.model.n_layers }
       : null;
@@ -5696,8 +5575,7 @@ function commitInterventionEditor() {
   // when re-saving an existing same-purpose spec.
   const alpha = (mode === 'steer' || mode === 'suppress')
     ? alphaFromSlider($('iv-alpha').value)
-    : (mode === 'swap' && _ivDraft.scanAlpha != null ? _ivDraft.scanAlpha
-       : (editingSpec && editingSpec.mode === mode ? editingSpec.alpha : 1));
+    : (editingSpec && editingSpec.mode === mode ? editingSpec.alpha : 1);
   const spec = {
     id: _ivDraft.editId || nextInterventionId(),
     enabled: editingSpec ? editingSpec.enabled : true,
@@ -6063,8 +5941,8 @@ function updateAutoFollowUI() {
 // Two tiers govern every modal surface in the session view:
 // - ui.mode: exactly one screen-owning surface at a time — the wish panel
 //   (phases compose | refusal | searching | done), the intervention editor
-//   (with its layer-picking flag), the recipe preview, the legacy scan,
-//   the presentation session picker, or 'normal'.
+//   (with its layer-picking flag), the recipe preview, the presentation
+//   session picker, or 'normal'.
 // - ui.popover: at most one floating popover over any mode — 'settings' or
 //   'sessionsMenu'.
 // applyUiState() derives every <html> class and panel visibility flag from
@@ -6129,7 +6007,6 @@ function applyUiState() {
   settingsModal.classList.toggle('visible', settingsOpen);
   $('sessions-menu').classList.toggle('visible',
     ui.popover === 'sessionsMenu');
-  $('scan-backdrop').hidden = kind !== 'scan';
   updateShareButton();
 }
 
@@ -6138,7 +6015,6 @@ function applyUiState() {
 // a running search aborts, an editor draft cancels, popovers close, and
 // the wish panel drops (recipes it found stay in state).
 function uiResetForConversationReplace() {
-  if (ui.mode.kind === 'scan') closeInterventionScan();
   if (ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview') {
     closeInterventionEditor();
   }
@@ -7204,12 +7080,6 @@ $('iv-recipe-duplicate').onclick = () => duplicateRecipeAsManual();
 $('iv-recipe-run').onclick = () => runSelectedInterventionRecipe();
 
 // ----- Intervention scan: probe grid over layers × strength -----
-// Streams /api/intervention_scan and paints the outcome map live. Each
-// completed cell is clickable: it adopts that (layer, α) into the draft
-// (panel context) or into a wish spec (output-first context).
-let _scanAbort = null;
-let _scanContext = 'panel';   // 'panel' | 'wish-conclusion' | 'wish-premise'
-
 // Conversation context for probes: everything except the trailing
 // assistant turn — probes regenerate it, exactly like Re-run.
 function _scanMessages() {
@@ -7223,266 +7093,6 @@ function _scanMessages() {
   return msgs;
 }
 
-function openInterventionScan(opts = {}) {
-  if (!_ivDraft || isPresentation()) return;
-  _scanContext = 'panel';
-  $('scan-strategies').hidden = true;
-  $('scan-rerun').hidden = true;
-  const uiMode = _segGet('iv-mode', 'mode') || 'swap';
-  if (uiMode === 'ablate') return;
-  const token = $('iv-token').value;
-  if (!token) { $('iv-token').focus(); return; }
-  const target = $('iv-target').value;
-  if (uiMode === 'swap' && !target) { $('iv-target').focus(); return; }
-  const msgs = _scanMessages();
-  if (!msgs.length) return;
-  const posScope = _segGet('iv-pos-scope', 'scope') || 'from';
-  const fromPos = posScope === 'gen'
-    ? (firstGeneratedPos() ?? 0) : _ivDraft.origin.pos;
-  const body = {
-    messages: msgs,
-    mode: uiMode === 'swap' ? 'swap' : 'steer',
-    token,
-    target: uiMode === 'swap' ? target : null,
-    from_position: fromPos,
-    max_tokens: opts.maxTokens || 4,
-  };
-  if (opts.layers) body.layers = opts.layers;
-  if (opts.alphas) body.alphas = opts.alphas;
-  else if (uiMode === 'suppress') body.alphas = [-50, -100, -200, -400, -800];
-  _runInterventionScan(body, uiMode);
-}
-
-async function _runInterventionScan(body, uiMode) {
-  if (_scanAbort) _scanAbort.abort();
-  _scanArmed = null;
-  uiSetMode({ kind: 'scan' });
-  $('scan-backdrop').dataset.scanContext = _scanContext;
-  $('scan-map').innerHTML = '';
-  const what = uiMode === 'swap'
-    ? `Replace ⟨${body.token.trim()}⟩ → ⟨${(body.target || '').trim()}⟩`
-    : `${uiMode === 'suppress' ? 'Remove' : 'Add'} ⟨${body.token.trim()}⟩`;
-  const rowScope = Array.isArray(body.positions)
-    ? `at row ${body.positions.join(', ')}`
-    : `from row ${body.from_position}`;
-  $('scan-sub').textContent = `${what} · ${rowScope}`;
-  $('scan-progress').textContent = 'starting…';
-  const ctrl = new AbortController();
-  _scanAbort = ctrl;
-  const outcomes = { probes: 0, unchanged: 0, success: 0, derived: 0, parrot: 0, degenerate: 0 };
-  const cellId = (l, a) =>
-    'scan-c-' + l + '-' + String(a).replace('.', '_').replace('-', 'm');
-  try {
-    const resp = await fetch(API + '/api/intervention_scan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-    if (!resp.ok) throw new Error(await resp.text());
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        const lines = frame.split('\n');
-        let event = 'message';
-        let data = '';
-        for (const ln of lines) {
-          if (ln.startsWith('event: ')) event = ln.slice(7).trim();
-          else if (ln.startsWith('data: ')) data += ln.slice(6);
-        }
-        if (!data) continue;
-        let obj;
-        try { obj = JSON.parse(data); } catch (err) { continue; }
-        if (event === 'scan_start') {
-          _buildScanMap(obj, cellId);
-        } else if (event === 'probe') {
-          if (obj.kind === 'baseline') {
-            $('scan-sub').textContent = `${what} · baseline: “${obj.text.trim()}”`;
-            if (_scanContext !== 'panel' && _wish) _wish.outcomes.baseline = obj.text.trim();
-          } else {
-            // Green is a verified result. Orange is a bounded, non-degenerate
-            // partial candidate that may be applied only so the user can test
-            // it with a full re-run. Off-target and degenerate probes stay
-            // diagnostic-only.
-            const shown = (obj.success === true || obj.cls === 'success')
-              ? 'success' : obj.cls;
-            outcomes.probes++;
-            if (Object.prototype.hasOwnProperty.call(outcomes, shown)) outcomes[shown]++;
-            const el = document.getElementById(cellId(obj.layer, obj.alpha));
-            if (el) {
-              const label = _scanLegendText(_scanContext)[shown] || shown;
-              const wishConclusion = _scanContext === 'wish-conclusion';
-              const adoptable = !wishConclusion || shown === 'success' || shown === 'parrot';
-              const choiceHint = !wishConclusion
-                ? 'click to use these settings'
-                : shown === 'success'
-                  ? 'click to apply this verified result'
-                  : shown === 'parrot'
-                    ? 'click to apply this partial candidate, then re-run to verify it'
-                    : 'diagnostic only — cannot be applied';
-              el.classList.add('done', 'cls-' + shown);
-              if (adoptable) el.classList.add('adoptable');
-              el.textContent = shown === 'unchanged' ? '—' : '';
-              el.title = `L${obj.layer} · α ${obj.alpha}\n${label}: “${obj.text.trim()}”\n` +
-                choiceHint;
-              el.onclick = wishConclusion && !adoptable
-                ? null
-                : _scanContext === 'panel'
-                  ? () => _applyScanChoice(obj.layer, obj.alpha, uiMode)
-                  : () => _wishCellClick(el, obj, shown);
-            }
-            $('scan-progress').textContent = `probe ${obj.index}/${obj.total}`;
-          }
-        } else if (event === 'scan_end') {
-          if (outcomes.probes > 0 && outcomes.unchanged === outcomes.probes) {
-            $('scan-progress').textContent =
-              `done — ${outcomes.unchanged}/${outcomes.probes} unchanged; no effective setting found`;
-          } else if (_scanContext === 'wish-conclusion') {
-            if (outcomes.success > 0 || outcomes.parrot > 0) {
-              const candidates = [];
-              if (outcomes.success > 0) candidates.push(`${outcomes.success} exact/verified green`);
-              if (outcomes.parrot > 0) candidates.push(`${outcomes.parrot} partial/risky orange`);
-              const action = outcomes.success > 0 && outcomes.parrot > 0
-                ? 'click green to apply, or orange to test with a full re-run'
-                : outcomes.success > 0
-                  ? 'click a green cell to apply it'
-                  : 'click an orange cell, then use a full re-run to verify it';
-              $('scan-progress').textContent =
-                `done — ${candidates.join(' · ')} · ${action}`;
-            } else {
-              $('scan-progress').textContent =
-                'done — no usable conclusion setting; gray and red cells are diagnostics only';
-            }
-          } else {
-            const changed = outcomes.probes - outcomes.unchanged;
-            $('scan-progress').textContent =
-              `done — ${changed}/${outcomes.probes} changed · click a cell to use its settings`;
-          }
-        } else if (event === 'error') {
-          $('scan-progress').textContent = 'error: ' + obj.error;
-        }
-      }
-    }
-  } catch (e) {
-    if (e.name !== 'AbortError') {
-      $('scan-progress').textContent = 'failed: ' + (e.message || e);
-      console.error('intervention scan failed:', e);
-    }
-  } finally {
-    if (_scanAbort === ctrl) _scanAbort = null;
-  }
-}
-
-function _scanLegendText(context) {
-  if (context === 'wish-conclusion') {
-    return {
-      unchanged: 'unchanged — too weak, not selectable',
-      success: 'exact, terminated result — verified',
-      derived: 'changed off target — not selectable',
-      parrot: 'target appears, but result is incomplete/uncertain — re-run to test',
-      degenerate: 'repetition or collapse — blocked',
-    };
-  }
-  return {
-    unchanged: 'unchanged — too weak',
-    success: 'requested output — works',
-    derived: 'derived answer — works',
-    parrot: 'literal target — forced',
-    degenerate: 'degenerate — far too strong',
-  };
-}
-
-function _applyScanLegend(context) {
-  const t = _scanLegendText(context);
-  $('scan-lg-unchanged').textContent = t.unchanged;
-  $('scan-lg-success').textContent = t.success;
-  $('scan-lg-derived').textContent = t.derived;
-  $('scan-lg-parrot').textContent = t.parrot;
-  $('scan-lg-degenerate').textContent = t.degenerate;
-}
-
-// Pick an evenly spread, bounded set of writable layers from a semantic
-// band. Conclusion edits operate where an answer is emitted; premise edits
-// keep using the endpoint's workspace-band default.
-function _scanLayersForBand(bandId, limit = 7) {
-  const band = LAYER_BANDS.find((b) => b.id === bandId);
-  if (!band) return [];
-  const fitted = new Set(state.lensInfo?.source_layers || []);
-  const available = [];
-  for (let layer = band.coreStart; layer <= band.coreEnd; layer++) {
-    // Scans must use fitted transport only. The generic editor permits the
-    // final identity layer, but L63 has no fitted Jacobian in these lenses.
-    if (fitted.has(layer)) available.push(layer);
-  }
-  if (available.length <= limit) return available;
-  const picked = [];
-  for (let i = 0; i < limit; i++) {
-    const index = Math.round(i * (available.length - 1) / (limit - 1));
-    if (picked[picked.length - 1] !== available[index]) picked.push(available[index]);
-  }
-  return picked;
-}
-
-function _buildScanMap(g, cellId) {
-  _applyScanLegend(_scanContext);
-  const map = $('scan-map');
-  map.style.gridTemplateColumns = `56px repeat(${g.layers.length}, 1fr)`;
-  map.innerHTML = '';
-  const hdr = (text) => {
-    const d = document.createElement('div');
-    d.className = 'scan-hdr';
-    d.textContent = text;
-    return d;
-  };
-  map.appendChild(hdr('α \\ L'));
-  for (const l of g.layers) map.appendChild(hdr('L' + l));
-  for (const a of g.alphas.slice().reverse()) {   // strongest on top
-    map.appendChild(hdr(String(a)));
-    for (const l of g.layers) {
-      const c = document.createElement('div');
-      c.className = 'scan-cell';
-      c.id = cellId(l, a);
-      c.textContent = '·';
-      map.appendChild(c);
-    }
-  }
-}
-
-function _applyScanChoice(layer, alpha, uiMode) {
-  if (!_ivDraft) { closeInterventionScan(); return; }
-  _ivDraft.pickedLayers = [layer];
-  _segSet('iv-layer-scope', 'scope', 'custom');
-  if (uiMode === 'steer' || uiMode === 'suppress') {
-    _setAlphaSlider(Math.abs(alpha));
-    _ivDraft.scanAlpha = null;
-  } else {
-    // Replace commits α = 1 by design; a scanned strength overrides it.
-    _ivDraft.scanAlpha = alpha;
-  }
-  syncInterventionEditorFields();
-  closeInterventionScan();
-}
-
-function closeInterventionScan() {
-  if (_scanAbort) { _scanAbort.abort(); _scanAbort = null; }
-  _wishScanGen++;
-  if (ui.mode.kind === 'scan') uiSetMode({ kind: 'normal' });
-}
-
-$('iv-scan').onclick = () => openInterventionScan();
-$('scan-close').onclick = () => closeInterventionScan();
-$('scan-backdrop').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeInterventionScan();
-});
-
 // ----- Output-first backward search: click a reply token → "Make it say…" -----
 // The visible response and exact selected character span are frozen before
 // search. The server regenerates that baseline deterministically and refuses
@@ -7490,7 +7100,6 @@ $('scan-backdrop').addEventListener('click', (e) => {
 // against a different sampled/session-restored answer.
 let _wish = null;
 let _wishSeed = null;   // pending popover target
-let _wishScanGen = 0;
 let _wishSearchTimer = null;
 const _wishTokenizationCache = new Map();
 
@@ -8480,8 +8089,7 @@ function previewVerifiedWishRecipe() {
 function startWish() {
   const wishText = $('wish-input').value.trim();
   if (!wishText || !_wishSeed) return;
-  _wish = { ..._wishSeed, wishText, stage: null, pending: null,
-            specIds: {}, scanSpecs: {}, outcomes: {}, dismissed: false };
+  _wish = { ..._wishSeed, wishText };
   _wishSeed = null;
   runAdaptiveWishSearch();
 }
@@ -8497,307 +8105,6 @@ $('wish-search-close').onclick = () => dismissWishPopover();
 $('wish-search-deeper').onclick = () => extendWishSearch();
 $('wish-search-apply').onclick = previewVerifiedWishRecipe;
 
-function openWishModal(strategy) {
-  if (!_wish) return;
-  _scanContext = 'wish-' + strategy;
-  uiSetMode({ kind: 'scan' });
-  $('scan-map').innerHTML = '';
-  $('scan-progress').textContent = '';
-  $('scan-rerun').hidden = true;
-  $('scan-strategies').hidden = false;
-  const sourceWord = (_wish.outputWord || _wish.outputTok).trim();
-  $('scan-sub').textContent =
-    `Make it say ⟨${_wish.wishText}⟩ instead of ⟨${sourceWord}⟩`;
-  $('scan-card-conclusion-body').textContent =
-    `Replace ⟨${sourceWord}⟩ → ⟨${_wish.wishText}⟩ — swap the answer word itself: “just change the word.”`;
-  document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
-  $('scan-card-' + strategy).classList.add('active');
-}
-
-async function runWishScan(strategy, opts = {}) {
-  if (!_wish) return;
-  const wish = _wish;
-  const scanGen = ++_wishScanGen;
-  let token, target, tokenId = null, positions = null, fromPos = null;
-  if (strategy === 'conclusion') {
-    token = wish.outputTok;
-    tokenId = wish.outputTokId;
-    target = wish.wishText;
-    // Token p is selected by logits formed at causal predecessor p-1.
-    // Editing from row zero rewrites the entire prompt and every generated
-    // step, which is what caused the observed repetition collapse.
-    if (!Number.isFinite(wish.pos) || wish.pos < 1) {
-      $('scan-progress').textContent = 'cannot scan: the selected token has no causal predecessor';
-      return;
-    }
-    positions = [wish.pos - 1];
-  } else {
-    token = $('wish-premise-src').value;
-    target = $('wish-premise-dst').value;
-    if (!token) { $('wish-premise-src').focus(); return; }
-    if (!target) { $('wish-premise-dst').focus(); return; }
-    fromPos = 0;
-  }
-  const msgs = _scanMessages();
-  if (!msgs.length) return;
-  $('scan-progress').textContent = 'resolving concept tokens…';
-  const requiredConclusionTokens = Math.min(16, Math.max(8, (wish.tokenIdx || 0) + 6));
-  const requestedMax = Number.isFinite(+opts.maxTokens) ? +opts.maxTokens : 0;
-  const maxTokens = strategy === 'conclusion'
-    ? Math.min(16, Math.max(requiredConclusionTokens, requestedMax))
-    : Math.min(16, Math.max(1, requestedMax || 4));
-  const [, resolvedTokenId, canonicalTarget] = await Promise.all([
-    ensureInfoReady(),
-    tokenId != null ? Promise.resolve(tokenId) : _wishExactTokenId(token),
-    _canonicalWishTarget(target, token),
-  ]);
-  tokenId = resolvedTokenId;
-  target = canonicalTarget.text;
-  if (_wish !== wish || scanGen !== _wishScanGen) return;
-  wish.scanSpecs[strategy] = {
-    token,
-    tokenId,
-    target,
-    targetId: canonicalTarget.id,
-    positions: positions ? positions.slice() : null,
-    fromPosition: fromPos,
-  };
-  _scanContext = 'wish-' + strategy;
-  document.querySelectorAll('.scan-card').forEach((c) => c.classList.remove('active'));
-  $('scan-card-' + strategy).classList.add('active');
-  $('scan-rerun').hidden = true;
-  const body = {
-    messages: msgs,
-    mode: 'swap',
-    token,
-    token_id: tokenId,
-    target,
-    target_id: canonicalTarget.id,
-    max_tokens: maxTokens,
-  };
-  if (positions) body.positions = positions;
-  else body.from_position = fromPos;
-  if (strategy === 'conclusion') {
-    body.goal_text = wish.wishText.trim();
-    body.source_text = (wish.outputWord || wish.outputTok).trim();
-  }
-  if (opts.layers) {
-    if (strategy === 'conclusion') {
-      const fitted = new Set(state.lensInfo?.source_layers || []);
-      body.layers = [...new Set(opts.layers.map(Number).filter((layer) => fitted.has(layer)))];
-      if (!body.layers.length) body.layers = _scanLayersForBand('late');
-    } else {
-      body.layers = opts.layers;
-    }
-  } else if (strategy === 'conclusion') {
-    // The answer token is formed in the motor/output band. The generic
-    // endpoint default intentionally samples the workspace band, which is
-    // appropriate for premise edits but made conclusion scans all-grey.
-    const outputLayers = _scanLayersForBand('late');
-    if (outputLayers.length) body.layers = outputLayers;
-  }
-  if (strategy === 'conclusion' && (!body.layers || !body.layers.length)) {
-    $('scan-progress').textContent = 'cannot scan: no fitted motor/output layer is available';
-    return;
-  }
-  if (strategy === 'conclusion') {
-    const requestedAlphas = Array.isArray(opts.alphas) ? opts.alphas : [0.5, 1];
-    body.alphas = [...new Set(requestedAlphas
-      .map(Number)
-      .filter((alpha) => Number.isFinite(alpha) && alpha > 0 && alpha <= 1))];
-    if (!body.alphas.length) body.alphas = [0.5, 1];
-  } else if (Array.isArray(opts.alphas)) {
-    body.alphas = opts.alphas;
-  }
-  return _runInterventionScan(body, 'swap');
-}
-document.querySelectorAll('.scan-card-go').forEach((b) => {
-  b.onclick = () => runWishScan(b.dataset.strategy);
-});
-
-// Conclusion scans allow a backend-declared exact success immediately, or an
-// orange partial candidate for a full re-run. The latter is not represented
-// as verified: the post-run wish banner still judges the actual generation.
-// Premise scans retain their semantic "derived answer" win.
-let _scanArmed = null;
-function _wishCellClick(el, obj, shown) {
-  const said = (obj.text || '').trim();
-  const explicitSuccess = obj.success === true || obj.cls === 'success';
-  const partialCandidate = obj.cls === 'parrot' && shown === 'parrot';
-  const strategy = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
-  if ((strategy === 'conclusion' &&
-       ((explicitSuccess && shown === 'success') || partialCandidate)) ||
-      (strategy === 'premise' && shown === 'derived')) {
-    _scanArmed = null;
-    _wishAdopt(obj.layer, obj.alpha, said, shown);
-    return;
-  }
-  if (strategy === 'premise' && _scanArmed === el) {
-    _scanArmed = null;
-    el.classList.remove('armed');
-    _wishAdopt(obj.layer, obj.alpha, said, shown);
-    return;
-  }
-  if (strategy === 'premise') {
-    if (_scanArmed) _scanArmed.classList.remove('armed');
-    _scanArmed = el;
-    el.classList.add('armed');
-    $('scan-progress').textContent =
-      `this premise setting produced “${said || '—'}” — click again to adopt anyway`;
-    return;
-  }
-  $('scan-progress').textContent =
-    `not adopted — this setting produced “${said || '—'}”, not one exact safe result`;
-}
-
-function _wishAdopt(layer, alpha, said, quality = '') {
-  if (!_wish) return;
-  const strategy = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
-  const scanned = _wish.scanSpecs && _wish.scanSpecs[strategy];
-  if (!scanned || !scanned.token || !scanned.target) {
-    $('scan-progress').textContent = 'scan settings expired — run the scan again';
-    return;
-  }
-  const safeAlpha = Number(alpha);
-  if (!Number.isFinite(safeAlpha) || safeAlpha <= 0 ||
-      (strategy === 'conclusion' && safeAlpha > 1)) {
-    $('scan-progress').textContent = 'not adopted — unsafe swap strength';
-    return;
-  }
-  // The premise stage isolates itself: switch the conclusion edit off so
-  // the re-run shows the premise edit alone.
-  if (strategy === 'premise' && _wish.specIds.conclusion) {
-    const prev = interventionById(_wish.specIds.conclusion);
-    if (prev && prev.enabled) toggleIntervention(prev.id);
-  }
-  if (_wish.specIds[strategy]) removeIntervention(_wish.specIds[strategy]);
-  const predecessor = strategy === 'conclusion' ? _wish.pos - 1 : null;
-  const scope = strategy === 'conclusion'
-    ? { type: 'at', pos: predecessor }
-    : { type: 'from', pos: scanned.fromPosition ?? 0 };
-  const spec = { id: nextInterventionId(), enabled: true, mode: 'swap',
-    token: scanned.token, tokenId: scanned.tokenId,
-    target: scanned.target, targetId: scanned.targetId,
-    alpha: safeAlpha, layers: [layer],
-    scope,
-    origin: { pos: strategy === 'conclusion' ? predecessor : 0, layer },
-    ablateTokenIds: null };
-  addIntervention(spec);
-  _wish.specIds[strategy] = spec.id;
-  const partial = strategy === 'conclusion' && quality === 'parrot';
-  let note = `${partial ? 'adopted partial/risky candidate' : 'adopted'} ` +
-    `L${layer} · α ${alpha} — the probe said “${said}”`;
-  if (partial) note += ' · use Re-run now to verify the complete response';
-  if ((state.settings.temp || 0) > 0) {
-    note += ` · temp ${state.settings.temp} adds sampling noise on re-run`;
-  }
-  $('scan-progress').textContent = note;
-  $('scan-rerun').hidden = false;
-}
-$('scan-rerun').onclick = () => {
-  if (!_wish) return;
-  _wish.pending = _scanContext === 'wish-premise' ? 'premise' : 'conclusion';
-  closeInterventionScan();
-  rerunWithInterventions();
-};
-
-// Stage advance: when a wish-triggered re-run has finished, record the
-// outcome and surface the next lesson step (called from renderChat).
-function _wishTick() {
-  if (!_wish || !_wish.pending || state.streaming) return;
-  const last = state.messages[state.messages.length - 1];
-  if (!last || last.role !== 'assistant' || !last.tokens.length) return;
-  _wish.outcomes[_wish.pending] = last.tokens.map((t) => t.text).join('').trim();
-  _wish.stage = _wish.pending === 'conclusion' ? 'inspect' : 'recap';
-  _wish.pending = null;
-}
-
-function _wishBoundedPhraseCount(text, phrase) {
-  const normalize = (value) => (value || '').normalize('NFKC')
-    .trim().replace(/\s+/gu, ' ').toLocaleLowerCase();
-  const haystack = normalize(text);
-  const needle = normalize(phrase);
-  if (!needle) return 0;
-  // Match the server: lexical boundaries protect ASCII words such as
-  // Beijing from BeijingParis, without rejecting CJK phrases inside normal
-  // unspaced Chinese text.
-  const startsWord = /^[A-Za-z0-9_]/.test(needle);
-  const endsWord = /[A-Za-z0-9_]$/.test(needle);
-  let count = 0;
-  let offset = 0;
-  while (offset <= haystack.length - needle.length) {
-    const index = haystack.indexOf(needle, offset);
-    if (index < 0) break;
-    const before = haystack.slice(0, index);
-    const after = haystack.slice(index + needle.length);
-    const leftBounded = !startsWord || !/[A-Za-z0-9_]$/.test(before);
-    const rightBounded = !endsWord || !/^[A-Za-z0-9_]/.test(after);
-    if (leftBounded && rightBounded) count++;
-    offset = index + Math.max(needle.length, 1);
-  }
-  return count;
-}
-
-function _wishConclusionSucceeded(text, wish) {
-  const targetCount = _wishBoundedPhraseCount(text, wish.wishText);
-  const oldWord = (wish.outputWord || wish.outputTok || '').trim();
-  const oldCount = oldWord ? _wishBoundedPhraseCount(text, oldWord) : 0;
-  return targetCount === 1 && oldCount === 0;
-}
-
-function _wishBanner() {
-  if (!_wish || _wish.dismissed || isPresentation()) return null;
-  if (_wish.pending || !_wish.stage) return null;
-  const div = document.createElement('div');
-  div.id = 'wish-banner';
-  const mkbtn = (label, primary) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = label;
-    if (primary) b.classList.add('primary');
-    return b;
-  };
-  const actions = document.createElement('div');
-  actions.className = 'wish-actions';
-  if (_wish.stage === 'inspect') {
-    const msg = document.createElement('span');
-    const got = (_wish.outcomes.conclusion || '').trim();
-    const hit = _wishConclusionSucceeded(got, _wish);
-    msg.innerHTML = hit
-      ? `It says ⟨${escapeHtml(got)}⟩ — but look at the workspace band: what does it still <b>think</b>?`
-      : `It changed — but to ⟨${escapeHtml(got)}⟩, not ⟨${escapeHtml(_wish.wishText)}⟩: swapping the word's coordinates knocked it off course without landing your word. Changing the <b>thought</b> is more reliable:`;
-    div.appendChild(msg);
-    const show = mkbtn('Show me');
-    show.onclick = () => {
-      const ws = LAYER_BANDS.find((b) => b.id === 'workspace') || LAYER_BANDS[0];
-      const mid = Math.round((ws.coreStart + ws.coreEnd) / 2);
-      const li = state.layers.indexOf(mid);
-      _minimapGlideTo(Math.max(0, _wish.pos - 2), li >= 0 ? li : null);
-    };
-    const next = mkbtn('Try the premise edit →', true);
-    next.onclick = () => openWishModal('premise');
-    actions.append(show, next);
-  } else {
-    const title = document.createElement('span');
-    title.innerHTML = '<b>Lesson recap</b>';
-    div.appendChild(title);
-    const line = (label, text) => {
-      const l = document.createElement('span');
-      l.className = 'recap-line';
-      l.textContent = `${label}: “${text || '—'}”`;
-      return l;
-    };
-    div.appendChild(line('baseline', _wish.outcomes.baseline));
-    div.appendChild(line('conclusion edit (forced — workspace unchanged)', _wish.outcomes.conclusion));
-    div.appendChild(line('premise edit (derived — workspace changed)', _wish.outcomes.premise));
-  }
-  const x = mkbtn('×');
-  x.className = 'wish-x';
-  x.onclick = () => { _wish.dismissed = true; renderChat(); };
-  actions.appendChild(x);
-  div.appendChild(actions);
-  return div;
-}
 $('iv-alpha').addEventListener('input', () => {
   const slider = $('iv-alpha');
   updateRangeProgress(slider);
@@ -8848,7 +8155,6 @@ document.addEventListener('keydown', (e) => {
   // mode owns the screen.
   if (ui.popover === 'settings') { cancelSettings(); return; }
   if (ui.popover === 'sessionsMenu') { closeSessionsMenu(); return; }
-  if (ui.mode.kind === 'scan') { closeInterventionScan(); return; }
   if (ui.mode.kind === 'editor' || ui.mode.kind === 'recipePreview') {
     cancelInterventionEditor();
     return;
