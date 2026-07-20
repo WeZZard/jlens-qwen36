@@ -1672,10 +1672,11 @@
     max-width: min(360px, calc(100vw - 32px)); pointer-events: auto;
   }
   .recipe-item .recipe-tag {
-    display: grid; grid-template-columns: 12px minmax(0, 1fr);
+    display: grid; grid-template-columns: 12px minmax(0, 1fr) auto;
     column-gap: 8px; row-gap: 2px; align-items: center;
     max-width: 340px; white-space: normal;
   }
+  .recipe-item .recipe-meta { grid-column: 2; }
   .recipe-radio {
     grid-row: 1 / 3; width: 12px; height: 12px; box-sizing: border-box;
     border: 1.5px solid var(--highlight-orange); border-radius: 50%;
@@ -1693,7 +1694,7 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .recipe-status-dot {
-    flex-shrink: 0; margin-left: auto;
+    grid-column: 3; grid-row: 1 / 3; align-self: center;
     width: 7px; height: 7px; border-radius: 50%;
     background: var(--text-3);
   }
@@ -5086,11 +5087,11 @@ function renderInterventionRecipes() {
     const status = document.createElement('span');
     status.className = 'recipe-status-dot';
     status.setAttribute('aria-hidden', 'true');
-    main.append(line, status);
+    main.append(line);
     const meta = document.createElement('span');
     meta.className = 'recipe-meta';
     meta.textContent = recipeCellSummary(recipe);
-    btn.append(radio, main, meta);
+    btn.append(radio, main, meta, status);
     btn.onclick = () => openRecipePreview(recipe.id);
     item.appendChild(btn);
     wrap.appendChild(item);
@@ -5428,12 +5429,13 @@ function renderRecipePreview(recipe) {
     const location = document.createElement('div');
     location.className = 'iv-recipe-cell-location';
     location.textContent = `position ${cell.position} · L${cell.layer}`;
-    const role = document.createElement('div');
-    role.className = 'iv-recipe-cell-role';
-    role.textContent = all.length === 1
-      ? 'Exact workspace cell'
-      : `Cell ${index + 1} of ${all.length} · applied together`;
-    copy.append(location, role);
+    copy.append(location);
+    if (all.length > 1) {
+      const role = document.createElement('div');
+      role.className = 'iv-recipe-cell-role';
+      role.textContent = `Cell ${index + 1} of ${all.length} · applied together`;
+      copy.append(role);
+    }
     const alpha = document.createElement('span');
     alpha.className = 'iv-recipe-cell-alpha';
     alpha.textContent = `α ${formatAlpha(cell.alpha)}`;
