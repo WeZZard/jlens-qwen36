@@ -55,6 +55,16 @@ thousands of rows.
 | [ui-01](ui-01.md) | Append-only grid + debounced persistence | per-token render 180 ms → 5 ms |
 | [ui-02](ui-02.md) | Grid virtualization | render only the visible row window |
 
+### `planner` — backward intervention search
+
+Profiling the resident model as a text-only candidate-recipe planner, without
+mixing J-lens readout or UI work into the measurement.
+
+| # | Iteration | Headline |
+|---|-----------|----------|
+| [planner-01](planner-01.md) | Contradiction prompt matrix + full-paper bound | distilled planner ~15 s; complete paper exceeds the 3-minute budget during prefill |
+| [planner-02](planner-02.md) | Bounded full-replay throughput | 60 s judges 90–160 singles; staged 180 s covers 472 pairs/triples |
+
 ## The one rule that held throughout
 
 **No optimization shipped without an exactness gate.** Every change to the

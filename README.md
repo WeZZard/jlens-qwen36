@@ -66,6 +66,22 @@ project ships a **custom Metal backward kernel** for GDN
 that fits a full-depth lens in ~2.75 h on an M4 Pro.
 See [`docs/perf/`](docs/perf/) for how it was made fast.
 
+## Interventions: writing to the workspace
+
+The lens is a write surface too. Click any cell → **Intervene** (or hover
+a readout row for quick ＋/－/⇄ actions) to **replace, add, remove, or
+erase what the model is thinking** at chosen layers and positions;
+**Re-run** regenerates with the edits applied inside the cached decode,
+and a **Baseline / Intervened** toggle flips the whole grid + chat
+between the two runs with token-level diffs.
+
+Swapping ⟨France→China⟩ at L30/40/48 makes *"What is the capital of
+France?"* answer **Beijing** — and the band shows the swap fighting the
+context (middle layers re-derive *France* from the prompt) until *China*
+wins the workspace by L48. Edits are exposed on `/api/chat_stream` as
+`interventions: [...]`; see [`docs/interventions.md`](docs/interventions.md)
+for the math, scopes, and API.
+
 ## The bundled lens
 
 Fit on 20 prompts across all 63 layers. Readouts are interpretable but

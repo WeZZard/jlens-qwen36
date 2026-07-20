@@ -78,15 +78,13 @@ class JacobianLens:
         readout. Call this at server startup instead.
         """
         for l in self.source_layers:
-            if l not in self._mx_jacobians:
-                J = mx.array(self.jacobians[l].astype(np.float16))
-                mx.eval(J)
-                self._mx_jacobians[l] = J
+            self.jacobian_mx(l)
 
-    def transport(self, residual: mx.array, layer: int) -> mx.array:
-        """Map a residual at `layer` into the final-layer basis: J_l @ h.
+    def jacobian_mx(self, layer: int) -> mx.array:
+        """The memoized fp16 GPU copy of J_layer, [D, D].
 
-        residual: [..., D] mx.array. Returns [..., D] mx.array.
+        fp16 matches the on-disk precision. Shared by transport() (which
+        needs J.T) and the intervention vector builder (which needs J).
         """
         if layer not in self.jacobians:
             raise KeyError(f"layer {layer} not in source_layers {self.source_layers}")
@@ -95,6 +93,14 @@ class JacobianLens:
             J = mx.array(self.jacobians[layer].astype(np.float16))  # [D, D]
             mx.eval(J)
             self._mx_jacobians[layer] = J
+        return J
+
+    def transport(self, residual: mx.array, layer: int) -> mx.array:
+        """Map a residual at `layer` into the final-layer basis: J_l @ h.
+
+        residual: [..., D] mx.array. Returns [..., D] mx.array.
+        """
+        J = self.jacobian_mx(layer)
         # residual @ J.T -> [..., D]; fp16 matmul (the lens has fp16
         # information content anyway), fp32 result for downstream readout.
         return mx.matmul(residual.astype(mx.float16), J.T).astype(mx.float32)

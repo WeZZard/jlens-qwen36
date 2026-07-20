@@ -1,0 +1,269 @@
+{
+  "schema_version": 1,
+  "name": "jspace_backward_search_contradictions",
+  "description": "Counterfactual reply edits for profiling and evaluating a backward J-Space recipe planner. Oracle fields are evaluation-only and must never be included in planner input.",
+  "paper": {
+    "title": "The Assistant Axis: Situating and Stabilizing the Model's Workspace",
+    "url": "https://transformer-circuits.pub/2026/workspace/index.html",
+    "published": "2026-07-06"
+  },
+  "protocol": {
+    "scope": "The canned assistant reply isolates planner request latency. This corpus does not establish baseline eligibility or intervention success by itself.",
+    "temperature": 0,
+    "eligibility": "First establish the baseline response. Record a case as ineligible when the expected source span is absent or ambiguous.",
+    "verification": "A proposed recipe passes only when replay produces the requested reply cleanly. The oracle latent swap is not required if a different recipe works.",
+    "planner_must_not_receive": [
+      "oracle"
+    ]
+  },
+  "timing_suite": [
+    "country_capital",
+    "country_language",
+    "country_continent",
+    "spider_ant",
+    "rhyme_planning",
+    "bandit_repeat_switch"
+  ],
+  "cases": [
+    {
+      "id": "country_capital",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Flexible generalization",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-generalization"
+      },
+      "conversation": {
+        "user": "Complete with one city name: The capital of France is the city of",
+        "assistant": "Paris"
+      },
+      "requested_edit": {
+        "source_span": "Paris",
+        "replacement_span": "Beijing"
+      },
+      "oracle": {
+        "workspace_concept_from": "France",
+        "workspace_concept_to": "China",
+        "workspace_anchor": "France"
+      },
+      "tags": ["country", "capital", "single_token_candidate"]
+    },
+    {
+      "id": "country_language",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Flexible generalization",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-generalization"
+      },
+      "conversation": {
+        "user": "Complete with one language: Most people in France speak",
+        "assistant": "French"
+      },
+      "requested_edit": {
+        "source_span": "French",
+        "replacement_span": "Chinese"
+      },
+      "oracle": {
+        "workspace_concept_from": "France",
+        "workspace_concept_to": "China",
+        "workspace_anchor": "France"
+      },
+      "tags": ["country", "language", "single_token_candidate"]
+    },
+    {
+      "id": "country_continent",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Flexible generalization",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-generalization"
+      },
+      "conversation": {
+        "user": "Complete with one continent: France is a country on the continent of",
+        "assistant": "Europe"
+      },
+      "requested_edit": {
+        "source_span": "Europe",
+        "replacement_span": "Asia"
+      },
+      "oracle": {
+        "workspace_concept_from": "France",
+        "workspace_concept_to": "China",
+        "workspace_anchor": "France"
+      },
+      "tags": ["country", "continent", "single_token_candidate"]
+    },
+    {
+      "id": "spider_ant",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Internal reasoning",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-reasoning"
+      },
+      "conversation": {
+        "user": "Complete with one numeral: The number of legs on the animal that spins webs is",
+        "assistant": "8"
+      },
+      "requested_edit": {
+        "source_span": "8",
+        "replacement_span": "6"
+      },
+      "oracle": {
+        "workspace_concept_from": "spider",
+        "workspace_concept_to": "ant",
+        "workspace_anchor": "webs"
+      },
+      "tags": ["latent_identity", "reasoning", "single_token_candidate"]
+    },
+    {
+      "id": "rhyme_planning",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Internal reasoning",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-reasoning"
+      },
+      "conversation": {
+        "user": "Complete this rhyming couplet with one line: The soldier marched into the night,",
+        "assistant": "Prepared to face the coming fight."
+      },
+      "requested_edit": {
+        "source_span": "coming fight",
+        "replacement_span": "morning light"
+      },
+      "oracle": {
+        "workspace_concept_from": "fight",
+        "workspace_concept_to": "light",
+        "workspace_anchor": "night"
+      },
+      "tags": ["planning", "rhyme", "multi_token_stretch"]
+    },
+    {
+      "id": "bandit_repeat_switch",
+      "tier": "core",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Internal reasoning",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#fig-repeat-switch"
+      },
+      "conversation": {
+        "user": "Past choices: A A B A B B B A A A A A. You are happy. Repeat or switch the last choice? Reply A or B only.",
+        "assistant": "A"
+      },
+      "requested_edit": {
+        "source_span": "A",
+        "replacement_span": "B"
+      },
+      "oracle": {
+        "workspace_concept_from": "repeat",
+        "workspace_concept_to": "switch",
+        "workspace_anchor": "happy"
+      },
+      "tags": ["strategy", "bandit", "single_token_candidate"]
+    },
+    {
+      "id": "country_currency",
+      "tier": "extended",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Flexible generalization",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-generalization"
+      },
+      "conversation": {
+        "user": "Name the currency now used in France. Answer with one word.",
+        "assistant": "euro"
+      },
+      "requested_edit": {
+        "source_span": "euro",
+        "replacement_span": "yuan"
+      },
+      "oracle": {
+        "workspace_concept_from": "France",
+        "workspace_concept_to": "China",
+        "workspace_anchor": "France"
+      },
+      "tags": ["country", "currency", "single_token_candidate"]
+    },
+    {
+      "id": "bandit_switch_repeat",
+      "tier": "extended",
+      "language": "en",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Internal reasoning",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#fig-repeat-switch"
+      },
+      "conversation": {
+        "user": "Past choices: A A B A B B B A A A A A. You are sad. Repeat or switch the last choice? Reply A or B only.",
+        "assistant": "B"
+      },
+      "requested_edit": {
+        "source_span": "B",
+        "replacement_span": "A"
+      },
+      "oracle": {
+        "workspace_concept_from": "switch",
+        "workspace_concept_to": "repeat",
+        "workspace_anchor": "sad"
+      },
+      "tags": ["strategy", "bandit", "single_token_candidate"]
+    },
+    {
+      "id": "chinese_antonym",
+      "tier": "extended",
+      "language": "zh",
+      "provenance": {
+        "kind": "adapted_from_paper",
+        "section": "Internal reasoning",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-reasoning"
+      },
+      "conversation": {
+        "user": "\"小\"的反义词是？只回答一个汉字。",
+        "assistant": "大"
+      },
+      "requested_edit": {
+        "source_span": "大",
+        "replacement_span": "长"
+      },
+      "oracle": {
+        "workspace_concept_from": "big / bigger",
+        "workspace_concept_to": "long / longer",
+        "workspace_anchor": "小"
+      },
+      "tags": ["multilingual", "antonym", "tokenization_stretch"]
+    },
+    {
+      "id": "japan_china_transfer",
+      "tier": "extended",
+      "language": "en",
+      "provenance": {
+        "kind": "synthetic_generalization",
+        "section": "Flexible generalization",
+        "url": "https://transformer-circuits.pub/2026/workspace/index.html#ws-generalization"
+      },
+      "conversation": {
+        "user": "Name the capital of Japan. Answer with one city only.",
+        "assistant": "Tokyo"
+      },
+      "requested_edit": {
+        "source_span": "Tokyo",
+        "replacement_span": "Beijing"
+      },
+      "oracle": {
+        "workspace_concept_from": "Japan",
+        "workspace_concept_to": "China",
+        "workspace_anchor": "Japan"
+      },
+      "tags": ["country", "generalization", "single_token_candidate"]
+    }
+  ]
+}
