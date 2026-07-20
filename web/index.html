@@ -1041,10 +1041,15 @@
   #iv-recipe-view[hidden], #iv-editor-view[hidden] { display: none; }
   .iv-recipe-head {
     display: flex; align-items: flex-start; justify-content: space-between;
-    gap: 14px; margin-bottom: 4px;
+    gap: 14px;
   }
-  .iv-recipe-head h3 { margin: 0 0 3px; }
+  .iv-recipe-head h3 { margin: 0; }
+  .iv-recipe-subhead {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin: 3px 0 4px;
+  }
   .iv-recipe-direction {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     color: var(--settings-text-secondary);
     font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
   }
@@ -1091,6 +1096,14 @@
     white-space: pre-wrap;
   }
   #iv-recipe-actions { margin-top: 16px; }
+  /* Bottom hero action: the panel's one decision spans its full width.
+     (Scoped under #intervene-popup to outrank the shared :is(#settings-
+     popup, #intervene-popup) .actions button rule's ID specificity.) */
+  #intervene-popup #iv-recipe-run {
+    flex: 1; padding: 12px 18px;
+    border-radius: 14px;
+    font-size: 14px; font-weight: 600;
+  }
   #iv-recipe-run:disabled { opacity: 0.42; cursor: default; }
   /* Same × idiom as the wish panel's close. */
   #iv-recipe-close {
@@ -2231,12 +2244,12 @@
       </div>
       <div id="iv-recipe-view" hidden>
         <div class="iv-recipe-head">
-          <div>
-            <h3 id="iv-recipe-title">Recipe</h3>
-            <div id="iv-recipe-direction" class="iv-recipe-direction"></div>
-          </div>
-          <span id="iv-recipe-status" class="iv-recipe-status"></span>
+          <h3 id="iv-recipe-title">Recipe</h3>
           <button id="iv-recipe-close" type="button" aria-label="Close recipe preview">×</button>
+        </div>
+        <div class="iv-recipe-subhead">
+          <div id="iv-recipe-direction" class="iv-recipe-direction"></div>
+          <span id="iv-recipe-status" class="iv-recipe-status"></span>
         </div>
         <div class="iv-recipe-readonly-note">System-composed recipe · read only</div>
         <div id="iv-recipe-cells" class="iv-recipe-cells"></div>
@@ -2245,7 +2258,6 @@
           <blockquote id="iv-recipe-output"></blockquote>
         </div>
         <div class="actions" id="iv-recipe-actions">
-          <span class="spacer"></span>
           <button class="ok" id="iv-recipe-run" type="button">Run this recipe</button>
         </div>
       </div>
