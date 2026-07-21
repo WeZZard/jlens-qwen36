@@ -6,6 +6,7 @@ toward at every layer and token position.
 
 > **Try it live at [jlens.wezzard.com](https://jlens.wezzard.com)** — a
 > read-only presentation mode of this project, running in the browser.
+> Every conversation has a shareable URL.
 
 ![Global-workspace concept readout](assets/screenshot_blackmail.png)
 
@@ -75,18 +76,40 @@ erase what the model is thinking** at chosen layers and positions;
 and a **Baseline / Intervened** toggle flips the whole grid + chat
 between the two runs with token-level diffs.
 
-Swapping ⟨France→China⟩ at L30/40/48 makes *"What is the capital of
-France?"* answer **Beijing** — and the band shows the swap fighting the
-context (middle layers re-derive *France* from the prompt) until *China*
-wins the workspace by L48. Edits are exposed on `/api/chat_stream` as
-`interventions: [...]`; see [`docs/interventions.md`](docs/interventions.md)
-for the math, scopes, and API.
+### "Make it say…" — backward search
+
+Click a word in the model's reply and type what it should say instead.
+The app searches the workspace for an edit that produces exactly that
+reply. It ranks prefill positions by J-lens evidence, replays exact
+(position, layer) swaps against a deterministic baseline, and keeps
+searching until the time budget runs out. Every find lands as a
+**recipe** in the left rail. A green dot means verified: a fresh greedy
+replay reproduced the requested reply byte for byte. Running a recipe
+shows its A/B compare.
+
+When no literal swap works, the search asks the model itself for the
+premise behind the reply. To make ⟨Paris⟩ say ⟨Beijing⟩ it proposes
+swapping ⟨France⟩→⟨China⟩, replays that clamped across the workspace
+band, and bisects to the smallest band that still redirects the answer.
+Premise recipes carry a violet dot. Their replay says *"The capital of
+China is Beijing."*: the model re-derives the reply from the new
+premise instead of parroting the requested words, and the band shows
+the swap fighting the context until the new premise wins the workspace.
+
+The search needs a measured workspace band for the loaded lens. One
+ships for the Neuronpedia lens;
+[`scripts/measure_bands.py`](scripts/measure_bands.py) measures one for
+any other. Edits are exposed on `/api/chat_stream` as
+`interventions: [...]`; the search streams from
+`/api/intervention_search_adaptive`; see
+[`docs/interventions.md`](docs/interventions.md) for the math, scopes,
+search stages, and API.
 
 ## The bundled lens
 
 Fit on 20 prompts across all 63 layers. Readouts are interpretable but
-noisy; interventions are causal (swapping France→China redirects the answer
-to Beijing) but concept-dependent. For research-grade quality, load
+noisy; interventions are causal but concept-dependent. For research-grade
+quality, load
 [Neuronpedia's n=1000 lens](https://neuronpedia.org/jlens) (the paper's
 fitting scale — [setup](docs/lenses.md)) or fit 100+ prompts yourself — the
 analytic pipeline makes that affordable.
