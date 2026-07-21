@@ -69,37 +69,39 @@ See [`docs/perf/`](docs/perf/) for how it was made fast.
 
 ## Interventions: writing to the workspace
 
-The lens is a write surface too, in two modes: **edit a cell by hand**,
-or **name the reply you want** and let the app search backward for the
-edit.
+The lens writes as well as reads. Edit the workspace by hand, or name
+the reply you want and let the app find the edit.
 
-### Manual: click a cell
+### Manual: edit a cell
 
-Click a cell → **Intervene** to replace, add, remove, or erase what the
-model is thinking at chosen layers and positions. **Re-run** regenerates
-with the edits applied; a **Baseline / Intervened** toggle flips the
-grid + chat between the two runs with token-level diffs.
+Click a cell, pick Replace / Add / Remove / Erase, and type the new
+thought. Choose how far it reaches: one cell, a layer band, or the whole
+reply. **Re-run** regenerates, and a **Baseline / Intervened** toggle
+diffs the two runs.
 
-![Replacing the France thought with China at L40](assets/screenshot_intervene.png)
+![Replacing the France thought with China across the workspace band](assets/screenshot_intervene.png)
+
+Replacing *France* with *China* across the band rewrites the answer:
+
+![The reply now reads: the capital of China is Beijing](assets/screenshot_intervene_result.png)
 
 ### Backward search: "Make it say…"
 
-Click a word in the reply and type the replacement. The search replays
-exact workspace swaps against a deterministic baseline for its whole
-time budget; finds land in the rail as **recipes**. A green dot means a
-fresh greedy replay reproduced the requested reply byte for byte. When
-no literal swap works, the search asks the model for the premise behind
-the reply (⟨France⟩→⟨China⟩ to make ⟨Paris⟩ say ⟨Beijing⟩), clamps it
-across the workspace band, and bisects to the smallest band that still
-redirects the answer. Premise recipes (violet dot) re-derive the reply:
-*"The capital of China is Beijing."*
+Click a word in the reply, type the replacement, and the search replays
+workspace swaps against a clean baseline until its time runs out. Each
+hit becomes a **recipe**; a green dot means a replay reproduced your
+reply exactly.
 
-![A verified Paris→Beijing recipe from the backward search](assets/screenshot_recipe.png)
+![Two verified Paris→Beijing recipes found mid-search](assets/screenshot_search.png)
+
+When no direct swap works, the search asks the model for the premise
+behind the reply: ⟨France⟩→⟨China⟩ to move ⟨Paris⟩ to ⟨Beijing⟩. It
+clamps that across the band, then shrinks it to the smallest band that
+still works. Those recipes carry a violet dot.
 
 Backward search needs a measured workspace band. One ships for the
 Neuronpedia lens; [`scripts/measure_bands.py`](scripts/measure_bands.py)
-measures others. See [`docs/interventions.md`](docs/interventions.md)
-for the math, scopes, and API.
+measures others. Details in [`docs/interventions.md`](docs/interventions.md).
 
 ## The bundled lens
 
