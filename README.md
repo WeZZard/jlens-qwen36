@@ -87,21 +87,17 @@ Replacing *France* with *China* across the band rewrites the answer:
 
 ### Backward search: "Make it say…"
 
-Click a word in the reply, type the replacement, and the search replays
-workspace swaps against a clean baseline until its time runs out. Each
-hit becomes a **recipe**; a green dot means a replay reproduced your
-reply exactly.
+Click a word in the reply and type what it should say instead. The app
+searches for an edit that produces that reply and collects what it finds
+as **recipes**. A green dot marks a verified one.
 
 ![Two verified Paris→Beijing recipes found mid-search](assets/screenshot_search.png)
 
-When no direct swap works, the search asks the model for the premise
-behind the reply: ⟨France⟩→⟨China⟩ to move ⟨Paris⟩ to ⟨Beijing⟩. It
-clamps that across the band, then shrinks it to the smallest band that
-still works. Those recipes carry a violet dot.
+When no direct edit works, it looks for the premise behind the reply:
+swap ⟨France⟩→⟨China⟩ to move ⟨Paris⟩ to ⟨Beijing⟩. Those recipes carry
+a violet dot.
 
-Backward search needs a measured workspace band. One ships for the
-Neuronpedia lens; [`scripts/measure_bands.py`](scripts/measure_bands.py)
-measures others. Details in [`docs/interventions.md`](docs/interventions.md).
+See [`docs/interventions.md`](docs/interventions.md) for the details.
 
 ## The bundled lens
 
