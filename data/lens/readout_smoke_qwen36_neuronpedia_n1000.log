@@ -1,0 +1,73 @@
+model: MLXLensModel(n_layers=64, d_model=5120)  (16s)
+lens: JacobianLens(d_model=5120, n_prompts=1000, source_layers=[0, 8, 16, 24, 32, 40, 44, 48, 52, 56, 60, 62])
+
+### 'Answer: The capital of France is'
+model next token: ' Paris'
+layer  J-lens         logit-lens    
+    0  '.'            ' '           
+    8  '.'            ' '           
+   16  '...'          '...'         
+   24  ' \\n\\n'      '...'         
+   32  '<|im_end|>'   '\xa0'        
+   40  '<|im_end|>'   '...'         
+   44  '<|im_end|>'   '...'         
+   48  '____'         '...'         
+   52  ' Paris'       '...'          J=model
+   56  ' Paris'       ' indeed'      J=model
+   60  ' Paris'       ' Paris'       J=model
+   62  ' Paris'       ' Paris'       J=model
+first layer agreeing with model: J-lens=52 logit-lens=60
+
+### 'Answer: A spider has'
+model next token: ' '
+layer  J-lens         logit-lens    
+    0  ','            ' '           
+    8  '.'            ' '           
+   16  's'            '...'         
+   24  '\\n\\n'       '...'         
+   32  ' ______'      ' '           
+   40  ' ____'        ' '           
+   44  ' ____'        '...'         
+   48  ' ____'        '...'         
+   52  ' eight'       ' four'       
+   56  ' eight'       ' eight'      
+   60  ' eight'       ' eight'      
+   62  ' eight'       ' eight'      
+first layer agreeing with model: J-lens=None logit-lens=0
+
+### 'Monday, Tuesday, Wednesday, Thursday,'
+model next token: ' Friday'
+layer  J-lens         logit-lens    
+    0  ','            ' '           
+    8  '.'            ' '           
+   16  ','            '\\n'         
+   24  '\\n\\n'       '...'         
+   32  ' '            '...'         
+   40  ' Friday'      ' '            J=model
+   44  ' daily'       ' '           
+   48  '.'            ' '           
+   52  ' Friday'      ' and'         J=model
+   56  ' Friday'      ' Friday'      J=model
+   60  ' Friday'      ' Friday'      J=model
+   62  ' Friday'      ' Friday'      J=model
+first layer agreeing with model: J-lens=40 logit-lens=56
+
+### 'The chemical symbol for water is'
+model next token: ' H'
+layer  J-lens         logit-lens    
+    0  '.'            ' '           
+    8  '.'            ' '           
+   16  ','            '...'         
+   24  ' ______'      '       '     
+   32  ' ______'      '...'         
+   40  '____'         '...'         
+   44  '____'         '...'         
+   48  '____'         '...'         
+   52  '____'         ' ____'       
+   56  ' ___'         ' water'      
+   60  '\\n\\n'       ' H'          
+   62  ' H'           ' H'           J=model
+first layer agreeing with model: J-lens=62 logit-lens=60
+
+layers agreeing with the model's next token: J-lens 10/48, logit-lens 11/48
+total 21s

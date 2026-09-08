@@ -50,8 +50,10 @@ Needs an Apple-Silicon Mac and ~24 GB free RAM; the model auto-downloads
 from HuggingFace on first run (~15 GB).
 
 **Other lenses** — point `JLENS_PATH` at any compatible `.npz`: load
-[Neuronpedia's n=1000 lens](https://neuronpedia.org/jlens), fit your own, or
-run with no lens (logit lens). See [`docs/lenses.md`](docs/lenses.md).
+[Neuronpedia's n=1000 lens](https://neuronpedia.org/jlens), use the
+[Qwen3.8-27B n=1000 lens](docs/lenses.md#5-qwen38-27b-lens-1000-prompts)
+from the `v0.3-qwen38-n1000` release, fit your own, or run with no lens
+(logit lens). See [`docs/lenses.md`](docs/lenses.md).
 
 ## How it works
 

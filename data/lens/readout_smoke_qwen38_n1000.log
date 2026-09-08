@@ -1,0 +1,73 @@
+model: MLXLensModel(n_layers=64, d_model=5120)  (24s)
+lens: JacobianLens(d_model=5120, n_prompts=1000, source_layers=[0, 8, 16, 24, 32, 40, 44, 48, 52, 56, 60, 62])
+
+### 'Answer: The capital of France is'
+model next token: ' Paris'
+layer  J-lens         logit-lens    
+    0  'ness'         ' '           
+    8  'นาคม'         ' '           
+   16  ' shemale'     ' -'          
+   24  ' shemale'     ' a'          
+   32  ' shemale'     '\xa0'        
+   40  '巴黎'           '...'         
+   44  ' Paris'       '...'          J=model
+   48  ' .**'         '...'         
+   52  ' **.**'       '...'         
+   56  'Paris'        ' indeed'     
+   60  '巴黎'           ' Paris'      
+   62  ' ปารีส'       ' Paris'      
+first layer agreeing with model: J-lens=44 logit-lens=60
+
+### 'Answer: A spider has'
+model next token: ' eight'
+layer  J-lens         logit-lens    
+    0  's'            ' '           
+    8  'an'           ' '           
+   16  ' shemale'     ' '           
+   24  'animals'      ' '           
+   32  ' Shemale'     ' '           
+   40  ' spiders'     ' fewer'      
+   44  ' eight'       '...'          J=model
+   48  '六个'           '...'         
+   52  '八个'           ' four'       
+   56  '八'            ' spider'     
+   60  '八'            ' eight'      
+   62  '八'            ' eight'      
+first layer agreeing with model: J-lens=44 logit-lens=60
+
+### 'Monday, Tuesday, Wednesday, Thursday,'
+model next token: ' Friday'
+layer  J-lens         logit-lens    
+    0  'ങ്ങള്'        ' '           
+    8  'ങ്ങള്'        ' '           
+   16  ' milfs'       ' '           
+   24  ' milfs'       '\\n'         
+   32  ' milfs'       '...'         
+   40  ' milfs'       '...'         
+   44  'weekday'      '\\n'         
+   48  ' milfs'       '\\n'         
+   52  '周五'           ' and'        
+   56  '周五'           ' Friday'     
+   60  '周五'           ' Friday'     
+   62  ' Vendredi'    ' Friday'     
+first layer agreeing with model: J-lens=None logit-lens=56
+
+### 'The chemical symbol for water is'
+model next token: ' H'
+layer  J-lens         logit-lens    
+    0  'ness'         ' '           
+    8  'otope'        ' '           
+   16  ' shemale'     ' '           
+   24  '化学'           '原子'          
+   32  ' shemale'     '____'        
+   40  '化学'           '...'         
+   44  '化学'           '...'         
+   48  ':__'          '...'         
+   52  ':__'          '...'         
+   56  '_water'       ' water'      
+   60  ':__'          ' H'          
+   62  ':H'           ' H'          
+first layer agreeing with model: J-lens=None logit-lens=60
+
+layers agreeing with the model's next token: J-lens 2/48, logit-lens 9/48
+total 779s

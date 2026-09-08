@@ -5,11 +5,18 @@ MLP branches with input norms folded per-position (analytic_attn.py) —
 and the closed-form final-norm Jacobian.
 
 With include_gbeta=True (measured g/beta gap 4.9-7.5%, see
-scripts/measure_gbeta_gap.py) the GDN branch runs the ops BPTT:
-~27s per GDN layer, ~1.4s per FA layer => ~22 min/prompt full depth,
-~7h for 20 prompts. With include_gbeta=False (Metal kernel path) it
-drops to ~3.5s/layer => ~1h for 20 prompts, at the cost of dropping
-the decay-gate paths (readout-grade, not intervention-grade).
+scripts/measure_gbeta_gap.py) the GDN branch runs the ops BPTT.
+Measured full depth (63 source layers) on an M4 Pro / 64 GB:
+**437s/prompt** (7.3 min; n=5, range 428-445s, data/lens/full_depth_fit_v2.log
+— the run that produced the shipped v0.2-fulldepth lens), i.e. ~2.4h for
+20 prompts and ~5 days for 1000. With include_gbeta=False (Metal kernel
+path) it drops to ~3.5s/layer => ~1h for 20 prompts, at the cost of
+dropping the decay-gate paths (readout-grade, not intervention-grade).
+
+An earlier revision of this docstring quoted ~27s/GDN layer => ~22
+min/prompt. That predates the fit optimizations in docs/perf/fit-*.md
+(which took the fit from ~34.5 min/prompt to the 7.3 min above) and is
+about 3x too slow; docs/perf/LEDGER.md and the logs are authoritative.
 
 Chain convention: J_l transports acts[l] (see fit_analytic_single_prompt).
 """

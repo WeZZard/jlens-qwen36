@@ -2,7 +2,7 @@
 
 The server loads the lens at `JLENS_PATH` (default `data/lens/lens.npz`).
 Any lens with this project's NPZ schema works — a per-layer `J_ℓ` dict plus
-`n_prompts` and `d_model`, using the `J @ h` transport orientation. Four
+`n_prompts` and `d_model`, using the `J @ h` transport orientation. Five
 ways to get one:
 
 ## 1. Bundled pre-fitted lens (default)
@@ -89,6 +89,52 @@ exploring the UI.
 ```bash
 uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
 ```
+
+## 5. Qwen3.8-27B lens (1000 prompts)
+
+The `v0.3-qwen38-n1000` release: 1000 c4 prompts, all 63 source layers
+(L0–L62), intervention-grade (`include_gbeta=True`), fitted with this
+repo's analytic pipeline against `mlx-community/Qwen3.8-27B-4bit`
+(driver: `fit_qwen38_n1000.py`).
+
+```bash
+# Download (3.3 GB, two parts) and reassemble
+gh release download v0.3-qwen38-n1000 --repo WeZZard/jlens-qwen36 \
+  --pattern 'jlens-qwen3.8-*' --dir data/lens/
+cat data/lens/jlens-qwen3.8-27b-4bit-1000prompt-63layer.npz.part-* \
+  > data/lens/qwen38_27b_n1000.npz && rm data/lens/*.part-*
+
+# Serve — the model id is not optional here
+JLENS_MODEL=mlx-community/Qwen3.8-27B-4bit \
+JLENS_PATH=data/lens/qwen38_27b_n1000.npz \
+  uv run python -m uvicorn jlens_qwen.serve:app --host 127.0.0.1 --port 8765
+```
+
+**This lens is only valid for Qwen3.8-27B.** Qwen3.6-27B and Qwen3.8-27B
+share the `qwen3_5` architecture and identical shapes (64 layers, d_model
+5120, vocab 248320), so the lens loads against either model without any
+error and produces confident nonsense on the wrong one. Nothing in
+`JacobianLens.load()` or the server checks this. The release ships a
+`.provenance.json` sidecar recording `model_id`; check it before trusting a
+readout. A J-lens is fitted to weights, not architecture — never reuse one
+across model versions.
+
+Readout behaviour (`scripts/readout_smoke.py`, logs in
+`data/lens/readout_smoke_*.log`) matches the bundled 20-prompt lens run on
+Qwen3.6: formatting tokens dominate the middle band, and the late layers
+read out the answer concept but often in another language or script
+(`八` for ` eight`, `周五` for ` Friday`), so exact top-1 agreement with the
+model's next token is low. The 1000-prompt fit commits earlier: ` Paris`
+and ` eight` surface at layer 44 instead of 56 and 52. For comparison, the
+Neuronpedia lens on Qwen3.6 reads out the exact English token from layer
+52 on; that difference is a property of the two fitting pipelines, not of
+this fit.
+
+Fit cost on a base M4 Mac mini (16 GB), per-prompt wall time from the
+log's "prompt N done in" lines (`data/lens/qwen38_27b_n1000_fit.log`):
+1161 s per prompt against 437 s on an M4 Pro, plus about 2 min per prompt
+writing the 6.6 GB checkpoint at `checkpoint_every=1` — 356.5 h wall in
+all for 1000 prompts. Raise `checkpoint_every` for the next long fit.
 
 ## Using a different model
 
