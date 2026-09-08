@@ -4,7 +4,8 @@ Uses fit_analytic (the optimized analytic path, ~437s/prompt on an M4 Pro),
 NOT scripts/run_fit.py, which calls the older fit() at ~34.5 min/prompt.
 
 Checkpoints every prompt, so a crash or reboot resumes at the last completed
-prompt. Writes a provenance sidecar recording the model the lens was fitted
+prompt, and deletes the 6.6 GB checkpoint once the final lens is saved.
+Writes a provenance sidecar recording the model the lens was fitted
 against: 3.6 and 3.8 share identical shapes (64 layers, d_model 5120,
 vocab 248320), so nothing in JacobianLens.load() would catch a mismatch.
 """
@@ -68,6 +69,9 @@ def main() -> None:
     lens = JacobianLens(J, n_prompts=N_PROMPTS, d_model=model.d_model)
     lens.save(OUT)
     print(f"saved {OUT}: {lens}", flush=True)
+    if os.path.exists(CKPT):
+        os.remove(CKPT)
+        print(f"removed checkpoint {CKPT}", flush=True)
 
     with open(OUT.replace(".npz", ".provenance.json"), "w") as f:
         json.dump({
